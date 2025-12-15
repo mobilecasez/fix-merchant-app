@@ -1,0 +1,107 @@
+# ====================================
+# Production Configuration Template
+# ====================================
+# Copy this file to shopify.app.toml for production
+# Update all placeholder values with your actual production URLs
+
+# Learn more: https://shopify.dev/docs/apps/tools/cli/configuration
+
+# ====================================
+# App Identity
+# ====================================
+client_id = "YOUR_CLIENT_ID_FROM_PARTNER_DASHBOARD"
+name = "product-import-pro"
+handle = "product-import-pro"
+
+# IMPORTANT: Update this to your production URL after deployment
+application_url = "https://your-production-url.com"
+
+# Embedded app runs inside Shopify admin
+embedded = true
+
+[build]
+# Automatically update URLs during development
+automatically_update_urls_on_dev = true
+# Include files for deployment
+include_config_on_deploy = true
+
+# ====================================
+# Webhooks Configuration
+# ====================================
+[webhooks]
+api_version = "2024-07"
+
+  # Triggered when merchant uninstalls the app
+  [[webhooks.subscriptions]]
+  topics = [ "app/uninstalled" ]
+  uri = "/webhooks/app/uninstalled"
+
+  # Triggered when merchant updates app permissions
+  [[webhooks.subscriptions]]
+  topics = [ "app/scopes_update" ]
+  uri = "/webhooks/app/scopes_update"
+
+  # Optional: Subscription updates (for billing changes)
+  # [[webhooks.subscriptions]]
+  # topics = [ "app_subscriptions/update" ]
+  # uri = "/webhooks/app/subscription/update"
+
+# ====================================
+# API Access Scopes
+# ====================================
+[access_scopes]
+# Permissions required by the app
+scopes = "read_products,write_products,read_locations"
+
+# For future features, you might need:
+# scopes = "read_products,write_products,read_locations,read_orders,write_customers"
+
+# ====================================
+# OAuth Configuration
+# ====================================
+[auth]
+# IMPORTANT: Update these URLs after deployment
+redirect_urls = [
+  "https://your-production-url.com/auth/callback",
+  "https://your-production-url.com/auth/shopify/callback",
+  "https://your-production-url.com/api/auth/callback"
+]
+
+# ====================================
+# Point of Sale (disabled for this app)
+# ====================================
+[pos]
+embedded = false
+
+# ====================================
+# App Proxy (if needed for storefront features)
+# ====================================
+# [app_proxy]
+# url = "https://your-production-url.com"
+# subpath = "apps"
+# prefix = "apps"
+
+# ====================================
+# NOTES FOR PRODUCTION:
+# ====================================
+# 1. Get client_id from Partner Dashboard after creating app
+# 2. Update application_url immediately after first deployment
+# 3. Update all redirect_urls to match your production domain
+# 4. Test OAuth flow after updating URLs
+# 5. Verify webhooks are receiving events
+# 6. Consider adding more webhook subscriptions as needed
+# 7. Review scopes - only request what you actually need
+# 8. Keep api_version updated with latest stable version
+# ====================================
+
+# ====================================
+# DEPLOYMENT CHECKLIST:
+# ====================================
+# [ ] client_id set from Partner Dashboard
+# [ ] application_url updated to production URL
+# [ ] All redirect_urls updated with production domain
+# [ ] Webhooks tested and receiving events
+# [ ] App installed on test store successfully
+# [ ] OAuth flow working correctly
+# [ ] All features tested in production environment
+# ====================================

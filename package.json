@@ -16,7 +16,14 @@
     "shopify": "shopify",
     "prisma": "prisma",
     "graphql-codegen": "graphql-codegen",
-    "vite": "vite"
+    "vite": "vite",
+    "db:migrate": "prisma migrate deploy",
+    "db:seed": "node seed-subscription-plans.js",
+    "db:setup": "npm run db:migrate && npm run db:seed",
+    "generate:env": "node generate-secure-env.js",
+    "precheck": "node pre-deployment-check.js",
+    "prod:build": "npm run precheck && npm run build",
+    "prod:start": "NODE_ENV=production npm start"
   },
   "type": "module",
   "engines": {
