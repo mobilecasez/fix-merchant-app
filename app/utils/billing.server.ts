@@ -26,29 +26,77 @@ export async function requestBilling(
     throw new Error("Invalid subscription plan");
   }
 
-  const billingCheck = await billing.require({
-    plans: [
-      {
-        amount: plan.price,
-        currencyCode: "USD",
-        interval: "EVERY_30_DAYS" as const,
-      },
-    ],
-    isTest: process.env.NODE_ENV === "development", // Set to true for testing
-    onFailure: async () => {
-      // Handle billing failure
-      throw new Error("Billing check failed");
+  // Request the billing charge
+  const billingCheck = await billing.request({
+    plan: {
+      amount: plan.price,
+      currencyCode: "USD",
+      interval: billing.Interval.Every30Days,
     },
+    isTest: process.env.NODE_ENV === "development",
+    returnUrl: returnUrl || `${process.env.SHOPIFY_APP_URL}/app/billing-callback?planId=${planId}`,
   });
 
   // Get the confirmation URL for the charge
-  const confirmationUrl = billingCheck.appSubscriptions?.[0]?.confirmationUrl;
+  const confirmationUrl = billingCheck.confirmationUrl;
 
   if (!confirmationUrl) {
     throw new Error("Failed to get billing confirmation URL");
   }
 
   return confirmationUrl;
+}
+
+/**
+ * Check if a billing charge has been confirmed
+ */
+export async function checkBillingStatus(request: Request, chargeId: string) {
+  const { billing } = await authenticate.admin(request);
+  
+  try {
+    const subscription = await billing.check({
+      chargeId,
+    });
+
+    return {
+      isActive: subscription?.active || false,
+      chargeId: subscription?.id,
+    };
+  } catch (error) {
+    console.error("Error checking billing status:", error);
+    return { isActive: false, chargeId: null };
+  }
+}
+
+/**
+ * Require active billing for a shop
+ */
+export async function requireBilling(request: Request, planId: string) {
+  const { billing, session } = await authenticate.admin(request);
+  
+  const plan = await prisma.subscriptionPlan.findUnique({
+    where: { id: planId },
+  });
+
+  if (!plan || !plan.isActive) {
+    throw new Error("Invalid subscription plan");
+  }
+
+  // Check if shop already has active billing
+  const billingCheck = await billing.require({
+    plans: [{
+      amount: plan.price,
+      currencyCode: "USD",
+      interval: billing.Interval.Every30Days,
+    }],
+    isTest: process.env.NODE_ENV === "development",
+    onFailure: async () => {
+      // This callback is triggered if billing is not active
+      throw new Error("No active billing found");
+    },
+  });
+
+  return billingCheck;
 }
 
 /**
