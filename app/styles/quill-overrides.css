@@ -1,0 +1,6 @@
+/* Override Quill editor styles */
+.ql-editor {
+  min-height: 160px; /* Set the desired height for the editor content */
+}
+
+/* You can add other Quill overrides here if needed */

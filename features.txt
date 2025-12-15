@@ -1,0 +1,25 @@
+# Future Features
+
+- AI-Powered Product Creation from URL:
+  - Create a new product form similar to the Shopify Product Add Form.
+  - The form will have a field for the user to enter a URL from any e-commerce website.
+  - Use AI to crawl the provided URL and fetch all product details.
+  - This includes product title, description, price, variants, and images.
+  - The fetched details will be automatically filled into the product form.
+  - The user can then review and edit the details before creating the product in their Shopify store.
+
+
+
+-Cross Selling read_products
+
+-Generate Tags
+
+-Generate Menu Items
+
+
+
+
+-Dashboard
+  - Issues on overall website
+  - Missing Important Pages
+  - Broken Links

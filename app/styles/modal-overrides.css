@@ -1,0 +1,36 @@
+.wide-modal .Polaris-Modal-Dialog__Container {
+  max-width: 80%;
+  width: 80%;
+}
+
+.before-box {
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.correction-box {
+  height: 375px; /* Reduced by 25% from 500px */
+  overflow-y: auto;
+  border: 1px solid #e1e3e5;
+  border-radius: 8px;
+  padding: 0.5rem;
+  background-color: #f9fafb;
+}
+
+.report-correction-box {
+  border: 1px solid #e1e3e5;
+  border-radius: 8px;
+  padding: 0.5rem;
+  background-color: #f9fafb;
+}
+
+.original-value-label {
+  color: var(--p-color-text-critical); /* Red color for original value */
+  font-size: var(--p-font-size-100); /* Smaller font size */
+  margin-bottom: var(--p-space-100); /* Small margin below */
+  display: block; /* Ensure it takes its own line */
+  white-space: nowrap; /* Prevent wrapping */
+  overflow: hidden; /* Hide overflow */
+  text-overflow: ellipsis; /* Show ellipsis for truncated text */
+  max-width: 100%; /* Ensure it respects parent width */
+}

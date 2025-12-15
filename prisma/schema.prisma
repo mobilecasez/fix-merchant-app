@@ -1,0 +1,88 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// Note that some adapters may set a maximum length for the String type by default, please ensure your strings are long
+// enough when changing adapters.
+// See https://www.prisma.io/docs/orm/reference/prisma-schema-reference#string for more information
+datasource db {
+  provider = "sqlite"
+  url      = "file:dev.sqlite"
+}
+
+model Session {
+  id            String    @id
+  shop          String
+  state         String
+  isOnline      Boolean   @default(false)
+  scope         String?
+  expires       DateTime?
+  accessToken   String
+  userId        BigInt?
+  firstName     String?
+  lastName      String?
+  email         String?
+  accountOwner  Boolean   @default(false)
+  locale        String?
+  collaborator  Boolean?  @default(false)
+  emailVerified Boolean?  @default(false)
+}
+
+model AppSettings {
+  id                      String   @id @default(cuid())
+  shop                    String   @unique
+  addProductReplicaEnabled Boolean @default(true)
+  dashboardEnabled        Boolean  @default(false)
+  additionalEnabled       Boolean  @default(false)
+  reportEnabled           Boolean  @default(false)
+  storeErrorReportEnabled Boolean  @default(false)
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+}
+
+model SubscriptionPlan {
+  id            String   @id @default(cuid())
+  name          String
+  price         Float
+  productLimit  Int
+  isActive      Boolean  @default(true)
+  description   String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  subscriptions ShopSubscription[]
+}
+
+model ShopSubscription {
+  id                  String   @id @default(cuid())
+  shop                String   @unique
+  planId              String
+  plan                SubscriptionPlan @relation(fields: [planId], references: [id])
+  status              String   @default("active") // active, cancelled, expired, pending, trial
+  chargeId            String?  @unique // Shopify recurring charge ID
+  productsUsed        Int      @default(0)
+  billingCycleStart   DateTime @default(now())
+  billingCycleEnd     DateTime?
+  
+  // Per-plan trial tracking (2 free products per plan)
+  trialProductsUsed   Int      @default(0) // Products used during current trial
+  triedPlanIds        String   @default("") // Comma-separated list of plan IDs already tried
+  
+  cancelledAt         DateTime?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+}
+
+model UsageHistory {
+  id                  String   @id @default(cuid())
+  shop                String
+  date                DateTime @default(now())
+  productsCreated     Int      @default(0)
+  planName            String
+  planLimit           Int
+  createdAt           DateTime @default(now())
+  
+  @@index([shop, date])
+}

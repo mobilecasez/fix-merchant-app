@@ -1,0 +1,31 @@
+# Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
+
+client_id = "0d5b2e2f1bb93b2acdcd5cf27ae5b6e8"
+name = "fix-merchant-center-app"
+handle = "fix-merchant-center-app"
+application_url = "https://polo-please-removed-jacksonville.trycloudflare.com"
+embedded = true
+
+[build]
+automatically_update_urls_on_dev = true
+
+[webhooks]
+api_version = "2024-07"
+
+  [[webhooks.subscriptions]]
+  topics = [ "app/uninstalled" ]
+  uri = "/webhooks/app/uninstalled"
+
+  [[webhooks.subscriptions]]
+  topics = [ "app/scopes_update" ]
+  uri = "/webhooks/app/scopes_update"
+
+[access_scopes]
+# Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
+scopes = "read_products,write_products,read_locations"
+
+[auth]
+redirect_urls = ["https://polo-please-removed-jacksonville.trycloudflare.com/auth/callback", "https://polo-please-removed-jacksonville.trycloudflare.com/auth/shopify/callback", "https://polo-please-removed-jacksonville.trycloudflare.com/api/auth/callback"]
+
+[pos]
+embedded = false
