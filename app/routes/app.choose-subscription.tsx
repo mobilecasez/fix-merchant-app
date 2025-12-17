@@ -61,12 +61,6 @@ export const loader: LoaderFunction = async ({ request }) => {
   });
 };
 
-  // Check if trial has been used
-  const trialUsed = await hasUsedTrial(session.shop);
-
-  return json({ plans, currentSubscription, shop: session.shop, trialUsed });
-};
-
 export const action: ActionFunction = async ({ request }) => {
   const { session } = await authenticate.admin(request);
   const formData = await request.formData();
@@ -342,18 +336,6 @@ export default function ChooseSubscription() {
                 </Text>
               </BlockStack>
             </Card>
-          </Layout.Section>
-        </Layout>
-      </Page>
-                              ? "Start Free Trial"
-                              : "Choose Plan"
-                        }
-                      </Button>
-                    </BlockStack>
-                  </Card>
-                );
-              })}
-            </BlockStack>
           </Layout.Section>
 
           <Layout.Section>
