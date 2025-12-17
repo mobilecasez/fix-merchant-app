@@ -5,7 +5,7 @@
  * Run: node generate-secure-env.js
  */
 
-const crypto = require('crypto');
+import crypto from 'crypto';
 
 console.log('\n🔐 Secure Environment Variable Generator\n');
 console.log('=========================================\n');
