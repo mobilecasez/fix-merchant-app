@@ -6,25 +6,53 @@ import puppeteer, { Browser } from "puppeteer";
  */
 export async function launchBrowser(): Promise<Browser> {
   const executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
+  const isProduction = process.env.NODE_ENV === "production";
   
+  // Base args for all environments
+  const baseArgs = [
+    '--no-sandbox',
+    '--disable-setuid-sandbox',
+    '--disable-dev-shm-usage',
+    '--disable-accelerated-2d-canvas',
+    '--no-first-run',
+    '--disable-gpu',
+  ];
+
+  // Additional args needed for Alpine Linux / containers
+  const containerArgs = [
+    '--disable-software-rasterizer',
+    '--disable-features=VizDisplayCompositor',
+    '--disable-background-networking',
+    '--disable-default-apps',
+    '--disable-extensions',
+    '--disable-sync',
+    '--disable-translate',
+    '--hide-scrollbars',
+    '--metrics-recording-only',
+    '--mute-audio',
+    '--no-zygote',
+    '--single-process',
+    '--headless=new',
+  ];
+
   const options: any = {
     headless: true,
-    args: [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
-      '--disable-accelerated-2d-canvas',
-      '--no-first-run',
-      '--no-zygote',
-      '--single-process',
-      '--disable-gpu'
-    ]
+    args: isProduction ? [...baseArgs, ...containerArgs] : baseArgs,
   };
 
   // Use system Chromium if path is set (Railway/Docker)
   if (executablePath) {
     options.executablePath = executablePath;
+    console.log(`Using Chromium at: ${executablePath}`);
   }
 
-  return puppeteer.launch(options);
+  try {
+    console.log("Launching browser with options:", JSON.stringify({ ...options, args: options.args.length + " args" }));
+    const browser = await puppeteer.launch(options);
+    console.log("Browser launched successfully");
+    return browser;
+  } catch (error) {
+    console.error("Failed to launch browser:", error);
+    throw error;
+  }
 }

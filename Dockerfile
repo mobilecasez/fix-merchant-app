@@ -1,20 +1,24 @@
 FROM node:18-alpine
 
-# Install dependencies for Puppeteer/Chromium
+# Install dependencies for Puppeteer/Chromium on Alpine
 RUN apk add --no-cache \
     openssl \
     chromium \
     nss \
     freetype \
+    freetype-dev \
     harfbuzz \
     ca-certificates \
     ttf-freefont \
-    nodejs \
-    yarn
+    font-noto-emoji \
+    udev \
+    dbus
 
 # Tell Puppeteer to skip installing Chromium and use the installed package
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
-    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
+    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser \
+    CHROME_BIN=/usr/bin/chromium-browser \
+    CHROMIUM_FLAGS="--disable-software-rasterizer --disable-dev-shm-usage"
 
 EXPOSE 3000
 
