@@ -147,20 +147,36 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     let productData;
     if (scraper) {
       console.log("Using local scraper.");
-      productData = await scraper(html, url);
-      
-      // Validate that scraper returned valid data
-      if (!productData.productName || productData.productName.trim() === "") {
-        console.log("Scraper returned empty product name, treating as failed scrape");
-        return json({ 
-          error: "Unable to fetch product data. Please add product manually." 
-        }, { status: 400 });
+      try {
+        productData = await scraper(html, url);
+        
+        // Validate that scraper returned valid data
+        if (!productData.productName || productData.productName.trim() === "") {
+          console.log("Scraper returned empty product name, falling back to AI scraper");
+          // Fall back to AI extraction
+          const dom = new JSDOM(html);
+          const body = dom.window.document.body.innerHTML;
+          productData = await extractProductDataWithAI(url, body);
+        }
+      } catch (scraperError) {
+        console.error("Local scraper failed, falling back to AI:", scraperError);
+        // Fall back to AI extraction on scraper error
+        const dom = new JSDOM(html);
+        const body = dom.window.document.body.innerHTML;
+        productData = await extractProductDataWithAI(url, body);
       }
     } else {
       console.log("Using AI scraper.");
       const dom = new JSDOM(html);
       const body = dom.window.document.body.innerHTML;
       productData = await extractProductDataWithAI(url, body);
+    }
+
+    // Final validation
+    if (!productData || !productData.productName || productData.productName.trim() === "") {
+      return json({ 
+        error: "Unable to fetch product data. The website may be blocking automated access. Please add product manually." 
+      }, { status: 400 });
     }
 
     return json(productData);
