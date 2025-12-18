@@ -7,10 +7,31 @@ export async function scrapeAmazon(html: string, url: string): Promise<ScrapedPr
   try {
     browser = await launchBrowser();
     const page = await browser.newPage();
+    
+    // Better anti-detection
     await page.setUserAgent(
-      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/104.0.0.0 Safari/537.36",
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     );
-    await page.goto(url, { waitUntil: "networkidle2" });
+    
+    // Set extra headers to look more like a real browser
+    await page.setExtraHTTPHeaders({
+      'Accept-Language': 'en-US,en;q=0.9',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+    });
+
+    // Set viewport
+    await page.setViewport({ width: 1920, height: 1080 });
+
+    // Navigate with longer timeout and domcontentloaded instead of networkidle2
+    await page.goto(url, { 
+      waitUntil: "domcontentloaded",
+      timeout: 30000 
+    });
+    
+    // Wait a bit for dynamic content
+    await page.waitForSelector('#productTitle', { timeout: 10000 }).catch(() => {
+      console.log('Amazon: productTitle not found, continuing anyway');
+    });
 
     const pageData = await page.evaluate(() => {
       const productName =
