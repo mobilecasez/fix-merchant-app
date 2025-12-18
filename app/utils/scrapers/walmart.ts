@@ -1,11 +1,11 @@
-import puppeteer from "puppeteer";
+import { launchBrowser } from "./browser";
 import { ScrapedProductData } from "./types";
 import { cleanProductName, ensureCompareAtPrice, parseWeight, estimateWeight } from "./helpers";
 
 export async function scrapeWalmart(html: string, url: string): Promise<ScrapedProductData> {
   let browser;
   try {
-    browser = await puppeteer.launch();
+    browser = await launchBrowser();
     const page = await browser.newPage();
     await page.setUserAgent(
       "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/104.0.0.0 Safari/537.36",

@@ -345,9 +345,9 @@ export default function ChooseSubscription() {
                   Need help choosing?
                 </Text>
                 <Text as="p" tone="subdued">
-                  {trialUsed 
+                  {triedPlanIds.length > 0
                     ? "All plans include full access to our product import features. Choose based on how many products you need to add per month. You can upgrade or downgrade at any time."
-                    : "Start with a free 7-day trial to test all features. After that, choose a plan based on how many products you need to add per month. You can upgrade or downgrade at any time."
+                    : "Start with a free trial to test all features. Each plan offers 2 free product imports. After that, choose a plan based on how many products you need to add per month."
                   }
                 </Text>
               </BlockStack>
