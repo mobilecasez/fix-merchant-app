@@ -7,7 +7,13 @@ import path from "path";
 
 async function extractProductDataWithAI(url: string, htmlContent: string) {
   const apiKey = process.env.GOOGLE_GEMINI_API_KEY;
-  const apiUrl = `https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+  console.log("[AI-Scraper] Using Gemini API, key present:", !!apiKey, "key length:", apiKey?.length || 0);
+  
+  if (!apiKey) {
+    throw new Error("GOOGLE_GEMINI_API_KEY environment variable is not set");
+  }
+  
+  const apiUrl = `https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
 
   const categoriesPath = path.resolve(process.cwd(), "categories.txt");
   const categoriesContent = fs.readFileSync(categoriesPath, "utf-8");

@@ -30,6 +30,7 @@ import {
 
 export const loader: LoaderFunction = async ({ request }) => {
   const { session } = await authenticate.admin(request);
+  console.log("[choose-subscription] Loading plans for shop:", session.shop);
 
   // Get all active plans (exclude old Free Trial plan)
   const plans = await prisma.subscriptionPlan.findMany({
@@ -41,17 +42,20 @@ export const loader: LoaderFunction = async ({ request }) => {
     },
     orderBy: { price: 'asc' },
   });
+  console.log("[choose-subscription] Found plans:", plans.length, plans.map(p => p.name));
 
   // Get current subscription
   const currentSubscription = await prisma.shopSubscription.findUnique({
     where: { shop: session.shop },
     include: { plan: true },
   });
+  console.log("[choose-subscription] Current subscription:", currentSubscription?.id || "none");
 
   // Get which plans have been tried (for per-plan trial tracking)
   const triedPlanIds = currentSubscription?.triedPlanIds 
     ? currentSubscription.triedPlanIds.split(',').filter((id: string) => id.length > 0)
     : [];
+  console.log("[choose-subscription] Tried plan IDs:", triedPlanIds);
 
   return json({ 
     plans, 
