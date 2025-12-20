@@ -1,6 +1,6 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
-client_id = "0d5b2e2f1bb93b2acdcd5cf27ae5b6e8"
+client_id = "85d12decc346b5ec3cdfebacdce7f290"
 name = "ShopFlix AI"
 handle = "shopflix-ai"
 application_url = "https://fix-merchant-center-production.up.railway.app"
