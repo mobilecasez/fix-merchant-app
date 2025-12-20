@@ -380,7 +380,7 @@ export default function Index() {
 
   return (
     <Page fullWidth>
-      <TitleBar title="FeedFixer AI" />
+      <TitleBar title="ShopFlix AI" />
       <BlockStack gap="500">
         {!subscription && (
           <Card>
@@ -418,7 +418,7 @@ export default function Index() {
 
         <Card>
           <BlockStack gap="200">
-            <Text as="h2" variant="headingLg">Welcome to FeedFixer AI</Text>
+            <Text as="h2" variant="headingLg">Welcome to ShopFlix AI</Text>
             <Text variant="bodyMd" as="p">AI-powered app to fix Google Merchant feed issues in one click. Enhance titles and descriptions with SEO best practices to boost your Google rankings and product visibility.</Text>
             <Button variant="primary" size="large" onClick={handleSync} loading={isLoading}>
               Sync Products

@@ -1,5 +1,5 @@
 {
-  "name": "fix-merchant-center-app",
+  "name": "shopflix-ai",
   "private": true,
   "scripts": {
     "build": "remix vite:build",
