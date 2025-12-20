@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#12B886" />
+      <stop offset="100%" stop-color="#2F80ED" />
+    </linearGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#F9D423" />
+      <stop offset="100%" stop-color="#FF8C37" />
+    </linearGradient>
+  </defs>
+
+  <!-- Soft rounded background -->
+  <rect x="6" y="6" width="116" height="116" rx="30" fill="url(#bg)" />
+
+  <!-- Abstract cart (no arrow) -->
+  <g transform="translate(24 30)" stroke="white" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <!-- handle and basket rim -->
+    <path d="M4 10h14l4 10h46l-8 30H26l-4-12" />
+    <!-- wheels -->
+    <circle cx="30" cy="66" r="5" fill="white" />
+    <circle cx="60" cy="66" r="5" fill="white" />
+  </g>
+
+  <!-- AI neural nodes inside cart area -->
+  <g transform="translate(42 38)" fill="#E8FFF7" opacity="0.9">
+    <circle cx="0" cy="6" r="3" />
+    <circle cx="16" cy="0" r="3" />
+    <circle cx="32" cy="8" r="3" />
+    <circle cx="12" cy="20" r="3" />
+    <circle cx="30" cy="24" r="3" />
+    <circle cx="18" cy="34" r="3" />
+  </g>
+  <g transform="translate(42 38)" stroke="#E8FFF7" stroke-width="1.5" stroke-linecap="round" opacity="0.9">
+    <line x1="0" y1="6" x2="16" y2="0" />
+    <line x1="16" y1="0" x2="32" y2="8" />
+    <line x1="12" y1="20" x2="30" y2="24" />
+    <line x1="16" y1="0" x2="12" y2="20" />
+    <line x1="30" y1="24" x2="18" y2="34" />
+    <line x1="12" y1="20" x2="18" y2="34" />
+  </g>
+
+  <!-- Accent sparkle badge for "AI assistant" feel -->
+  <g transform="translate(90 34) scale(1)">
+    <circle cx="0" cy="0" r="14" fill="url(#accent)" stroke="white" stroke-width="3" />
+    <path d="M0 -6 L2 -1 L7 0 L2 1 L0 6 L-2 1 L-7 0 L-2 -1 Z" fill="white" opacity="0.9" />
+  </g>
+</svg>

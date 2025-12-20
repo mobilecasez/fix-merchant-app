@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#008060;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#004C3F;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Rounded square background (Shopify style) -->
+  <rect x="4" y="4" width="120" height="120" rx="28" fill="url(#bgGrad)"/>
+  
+  <!-- Stylized "F" for FeedFixer -->
+  <path d="M 40 32 L 40 96 L 52 96 L 52 68 L 75 68 L 75 56 L 52 56 L 52 44 L 80 44 L 80 32 Z" fill="white"/>
+  
+  <!-- AI circuit/neural dots -->
+  <circle cx="88" cy="40" r="4" fill="#9FEDD7"/>
+  <circle cx="100" cy="52" r="3" fill="#9FEDD7"/>
+  <circle cx="96" cy="68" r="4" fill="#9FEDD7"/>
+  <circle cx="104" cy="80" r="3" fill="#9FEDD7"/>
+  
+  <!-- Connecting lines (AI network) -->
+  <line x1="88" y1="40" x2="100" y2="52" stroke="#9FEDD7" stroke-width="1.5" opacity="0.7"/>
+  <line x1="100" y1="52" x2="96" y2="68" stroke="#9FEDD7" stroke-width="1.5" opacity="0.7"/>
+  <line x1="96" y1="68" x2="104" y2="80" stroke="#9FEDD7" stroke-width="1.5" opacity="0.7"/>
+  
+  <!-- Sparkle (AI magic) -->
+  <g transform="translate(85, 85)">
+    <path d="M 12 0 L 14 8 L 22 10 L 14 12 L 12 20 L 10 12 L 2 10 L 10 8 Z" fill="#FFD43B"/>
+  </g>
+</svg>

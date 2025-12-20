@@ -17,6 +17,7 @@ export default function App() {
           rel="stylesheet"
           href="https://cdn.shopify.com/static/fonts/inter/v4/styles.css"
         />
+        <link rel="icon" type="image/svg+xml" href="/logo-ai-modern-alt.svg" />
         <Meta />
         <Links />
       </head>
