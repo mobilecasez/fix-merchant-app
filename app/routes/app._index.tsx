@@ -503,16 +503,22 @@ export default function Index() {
                 Import products from any of these 11+ global platforms
               </Text>
             </BlockStack>
-            <Box borderColor="border" borderWidth="025" borderRadius="200">
-              <InlineStack wrap gap="400" blockAlign="center" align="start" style={{ padding: "24px", flexWrap: "wrap" }}>
-                {["Amazon", "eBay", "Walmart", "AliExpress", "Shopee", "Taobao", "JD.com", "Temu", "Mercado Libre", "Coupang", "Flipkart"].map((platform) => (
-                  <Box key={platform} background="bg-surface-secondary" borderRadius="200" padding="300" style={{ flex: "0 0 calc(25% - 12px)", minWidth: "120px", textAlign: "center" }}>
-                    <Text as="p" variant="bodyMd" fontWeight="bold">
-                      {platform}
-                    </Text>
-                  </Box>
+            <Box borderColor="border" borderWidth="025" borderRadius="200" padding="400">
+              <BlockStack gap="300">
+                {["Amazon", "eBay", "Walmart", "AliExpress", "Shopee", "Taobao", "JD.com", "Temu", "Mercado Libre", "Coupang", "Flipkart"].map((platform, index) => (
+                  index % 4 === 0 ? (
+                    <InlineStack key={platform} gap="300" wrap>
+                      {["Amazon", "eBay", "Walmart", "AliExpress", "Shopee", "Taobao", "JD.com", "Temu", "Mercado Libre", "Coupang", "Flipkart"].slice(index, index + 4).map((p) => (
+                        <Box key={p} background="bg-surface-secondary" borderRadius="200" padding="300">
+                          <Text as="p" variant="bodyMd" fontWeight="bold">
+                            {p}
+                          </Text>
+                        </Box>
+                      ))}
+                    </InlineStack>
+                  ) : null
                 ))}
-              </InlineStack>
+              </BlockStack>
             </Box>
           </BlockStack>
         </Card>
