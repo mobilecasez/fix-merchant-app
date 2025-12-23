@@ -23,6 +23,7 @@ import prisma from "../db.server";
 import RichTextEditor from "../components/RichTextEditor";
 import DOMPurify from "dompurify";
 import "../styles/modal-overrides.css";
+import "../styles/dashboard.css";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
@@ -416,44 +417,230 @@ export default function Index() {
           </Card>
         )}
 
+        {/* Hero Section - AI Product Import */}
         <Card>
-          <BlockStack gap="200">
-            <Text as="h2" variant="headingLg">Welcome to ShopFlix AI</Text>
-            <Text variant="bodyMd" as="p">AI-powered app to fix Google Merchant feed issues in one click. Enhance titles and descriptions with SEO best practices to boost your Google rankings and product visibility.</Text>
-            <Button variant="primary" size="large" onClick={handleSync} loading={isLoading}>
-              Sync Products
-            </Button>
+          <Box background="bg-surface-success-subdued" borderRadius="300" padding="600">
+            <BlockStack gap="400">
+              <BlockStack gap="200">
+                <Text as="h2" variant="headingLg" tone="success">
+                  🤖 AI-Powered Product Import
+                </Text>
+                <Text variant="bodyMd" as="p">
+                  Import products from 11+ e-commerce platforms with AI-optimized descriptions. Get professional product listings in seconds, not hours.
+                </Text>
+              </BlockStack>
+              <Link to="/app/add-product-replica">
+                <Button variant="primary" size="large">
+                  Start Importing Products
+                </Button>
+              </Link>
+            </BlockStack>
+          </Box>
+        </Card>
+
+        {/* Quick Stats */}
+        <Layout>
+          <Layout.Section oneThird>
+            <Card>
+              <BlockStack gap="300">
+                <Box>
+                  <Text as="h2" variant="headingMd" tone="subdued">
+                    📊 Products Imported
+                  </Text>
+                </Box>
+                <Text as="p" variant="headingLg">
+                  {subscription?.productsUsed || 0}
+                </Text>
+                <Text variant="bodySm" tone="subdued">
+                  out of {subscription?.plan.productLimit || 0} this month
+                </Text>
+              </BlockStack>
+            </Card>
+          </Layout.Section>
+          <Layout.Section oneThird>
+            <Card>
+              <BlockStack gap="300">
+                <Box>
+                  <Text as="h2" variant="headingMd" tone="subdued">
+                    ✨ Plan Type
+                  </Text>
+                </Box>
+                <Text as="p" variant="headingMd">
+                  {subscription?.plan.name || "Free Trial"}
+                </Text>
+                <Text variant="bodySm" tone="subdued">
+                  ${subscription?.plan.price || 0}/month
+                </Text>
+              </BlockStack>
+            </Card>
+          </Layout.Section>
+          <Layout.Section oneThird>
+            <Card>
+              <BlockStack gap="300">
+                <Box>
+                  <Text as="h2" variant="headingMd" tone="subdued">
+                    🚀 Next Steps
+                  </Text>
+                </Box>
+                <Link to="/app/add-product-replica">
+                  <Button fullWidth variant="secondary">
+                    Import Products
+                  </Button>
+                </Link>
+              </BlockStack>
+            </Card>
+          </Layout.Section>
+        </Layout>
+
+        {/* Platform Showcase */}
+        <Card>
+          <BlockStack gap="400">
+            <BlockStack gap="200">
+              <Text as="h2" variant="headingLg">
+                🌍 Supported e-Commerce Platforms
+              </Text>
+              <Text variant="bodyMd" tone="subdued">
+                Import products from any of these 11+ global platforms
+              </Text>
+            </BlockStack>
+            <Box borderColor="border" borderWidth="025" borderRadius="200">
+              <InlineStack wrap gap="400" blockAlign="center" align="start" style={{ padding: "24px", flexWrap: "wrap" }}>
+                {["Amazon", "eBay", "Walmart", "AliExpress", "Shopee", "Taobao", "JD.com", "Temu", "Mercado Libre", "Coupang", "Flipkart"].map((platform) => (
+                  <Box key={platform} background="bg-surface-secondary" borderRadius="200" padding="300" style={{ flex: "0 0 calc(25% - 12px)", minWidth: "120px", textAlign: "center" }}>
+                    <Text as="p" variant="bodyMd" fontWeight="bold">
+                      {platform}
+                    </Text>
+                  </Box>
+                ))}
+              </InlineStack>
+            </Box>
+          </BlockStack>
+        </Card>
+
+        {/* Features Highlight */}
+        <Layout>
+          <Layout.Section oneThird>
+            <Card>
+              <BlockStack gap="300">
+                <Box>
+                  <Text as="h3" variant="headingMd">
+                    🤖 AI Descriptions
+                  </Text>
+                </Box>
+                <Text variant="bodySm">
+                  Automatically generate SEO-optimized product descriptions using advanced AI.
+                </Text>
+              </BlockStack>
+            </Card>
+          </Layout.Section>
+          <Layout.Section oneThird>
+            <Card>
+              <BlockStack gap="300">
+                <Box>
+                  <Text as="h3" variant="headingMd">
+                    🔍 GTIN Finder
+                  </Text>
+                </Box>
+                <Text variant="bodySm">
+                  AI-powered GTIN/UPC finder automatically identifies missing product codes.
+                </Text>
+              </BlockStack>
+            </Card>
+          </Layout.Section>
+          <Layout.Section oneThird>
+            <Card>
+              <BlockStack gap="300">
+                <Box>
+                  <Text as="h3" variant="headingMd">
+                    ✅ Compliance Check
+                  </Text>
+                </Box>
+                <Text variant="bodySm">
+                  Automatically check Google Merchant Center compliance for all products.
+                </Text>
+              </BlockStack>
+            </Card>
+          </Layout.Section>
+        </Layout>
+
+        {/* Getting Started Guide */}
+        <Card>
+          <BlockStack gap="400">
+            <Text as="h2" variant="headingLg">
+              🚀 Getting Started
+            </Text>
+            <Box borderColor="border-divider" borderWidth="025">
+              <BlockStack gap="0">
+                <Box borderBottomColor="border-divider" borderBottomWidth="025" padding="400">
+                  <InlineStack gap="400" align="start" blockAlign="start">
+                    <Box>
+                      <Box background="bg-surface-selected" borderRadius="600" style={{ width: "40px", height: "40px", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                        <Text as="span" variant="headingMd" tone="subdued">1</Text>
+                      </Box>
+                    </Box>
+                    <BlockStack gap="100" style={{ flex: 1 }}>
+                      <Text as="h3" variant="headingMd">Choose Your Subscription Plan</Text>
+                      <Text variant="bodySm" tone="subdued">Select a plan that fits your needs (Free Trial includes 2 products)</Text>
+                      <Link to="/app/choose-subscription">
+                        <Button size="small" variant="secondary">View Plans</Button>
+                      </Link>
+                    </BlockStack>
+                  </InlineStack>
+                </Box>
+                <Box borderBottomColor="border-divider" borderBottomWidth="025" padding="400">
+                  <InlineStack gap="400" align="start" blockAlign="start">
+                    <Box>
+                      <Box background="bg-surface-selected" borderRadius="600" style={{ width: "40px", height: "40px", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                        <Text as="span" variant="headingMd" tone="subdued">2</Text>
+                      </Box>
+                    </Box>
+                    <BlockStack gap="100" style={{ flex: 1 }}>
+                      <Text as="h3" variant="headingMd">Find a Product You Want to Import</Text>
+                      <Text variant="bodySm" tone="subdued">Copy the product URL from Amazon, eBay, Walmart, or any of 11+ supported platforms</Text>
+                    </BlockStack>
+                  </InlineStack>
+                </Box>
+                <Box borderBottomColor="border-divider" borderBottomWidth="025" padding="400">
+                  <InlineStack gap="400" align="start" blockAlign="start">
+                    <Box>
+                      <Box background="bg-surface-selected" borderRadius="600" style={{ width: "40px", height: "40px", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                        <Text as="span" variant="headingMd" tone="subdued">3</Text>
+                      </Box>
+                    </Box>
+                    <BlockStack gap="100" style={{ flex: 1 }}>
+                      <Text as="h3" variant="headingMd">Let AI Optimize Your Product</Text>
+                      <Text variant="bodySm" tone="subdued">Our AI automatically generates SEO-optimized titles, descriptions, and finds missing GTINs</Text>
+                    </BlockStack>
+                  </InlineStack>
+                </Box>
+                <Box padding="400">
+                  <InlineStack gap="400" align="start" blockAlign="start">
+                    <Box>
+                      <Box background="bg-surface-selected" borderRadius="600" style={{ width: "40px", height: "40px", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                        <Text as="span" variant="headingMd" tone="subdued">4</Text>
+                      </Box>
+                    </Box>
+                    <BlockStack gap="100" style={{ flex: 1 }}>
+                      <Text as="h3" variant="headingMd">Review & Publish</Text>
+                      <Text variant="bodySm" tone="subdued">Review the AI suggestions, customize if needed, and publish directly to your Shopify store</Text>
+                      <Link to="/app/add-product-replica">
+                        <Button size="small" variant="primary">Start Now</Button>
+                      </Link>
+                    </BlockStack>
+                  </InlineStack>
+                </Box>
+              </BlockStack>
+            </Box>
           </BlockStack>
         </Card>
 
         <Card>
-          {isLoading ? <Spinner /> : error ? <Text as="p" tone="critical">{error}</Text> : products.length > 0 ? (
-            <BlockStack gap="400">
-              <Text as="h3" variant="headingMd">Products with Potential Issues</Text>
-              <DataTable
-                columnContentTypes={['text', 'text']}
-                headings={['Product Title', 'Actions']}
-                rows={productRows}
-              />
-              <InlineStack align="center">
-                <Pagination
-                  hasPrevious={currentPage > 1}
-                  onPrevious={() => setCurrentPage(p => p - 1)}
-                  hasNext={currentPage * PRODUCTS_PER_PAGE < products.length}
-                  onNext={() => setCurrentPage(p => p + 1)}
-                />
-              </InlineStack>
-            </BlockStack>
-          ) : (
-            <Text as="p" variant="bodyMd">Sync products to find and fix issues.</Text>
-          )}
-        </Card>
-
-        <Card>
           <BlockStack gap="200">
-            <Text as="h2" variant="headingMd">Bulk Operations</Text>
-            <Text as="p" variant="bodyMd">Automatically fix all products in the background.</Text>
-            <Button size="large" disabled={products.length === 0}>Fix All Products in Background</Button>
+            <Text as="h2" variant="headingMd">Sync Your Existing Products</Text>
+            <Text variant="bodyMd" as="p" tone="subdued">Scan and optimize your existing products using AI. Check for Google Merchant Center compliance issues.</Text>
+            <Button variant="secondary" size="large" onClick={handleSync} loading={isLoading}>
+              {isLoading ? "Syncing..." : "Sync Products"}
+            </Button>
           </BlockStack>
         </Card>
       </BlockStack>
