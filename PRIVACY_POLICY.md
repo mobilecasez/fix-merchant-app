@@ -1,10 +1,10 @@
-# Privacy Policy for Product Import Pro
+# Privacy Policy for ShopFlix AI
 
-**Last Updated: December 15, 2025**
+**Last Updated: December 23, 2025**
 
 ## Introduction
 
-This Privacy Policy describes how Product Import Pro ("we," "us," or "our") collects, uses, and shares information when you use our Shopify application (the "App"). We are committed to protecting your privacy and handling your data in accordance with applicable data protection laws, including GDPR and CCPA.
+This Privacy Policy describes how ShopFlix AI ("we," "us," or "our") collects, uses, and shares information when you use our Shopify application (the "App"). We are committed to protecting your privacy and handling your data in accordance with applicable data protection laws, including GDPR and CCPA.
 
 ## Information We Collect
 
@@ -121,7 +121,7 @@ You have the following rights regarding your personal data:
 - Object to certain data processing activities
 - Withdraw consent at any time
 
-To exercise these rights, contact us at: **privacy@yourapp.com**
+To exercise these rights, contact us at: **support@shopflixai.com**
 
 ## GDPR Compliance (EU Users)
 
@@ -133,7 +133,7 @@ If you are located in the European Economic Area (EEA):
 - **Consent**: For optional features and marketing communications
 
 ### Data Protection Officer
-- Contact: dpo@yourapp.com
+- Contact: support@shopflixai.com
 
 ### Supervisory Authority
 You have the right to lodge a complaint with your local data protection authority.
@@ -154,7 +154,7 @@ If you are a California resident:
 - Internet activity (usage logs)
 
 ### Request Form
-Email: **ccpa@yourapp.com** with subject "CCPA Request"
+Email: **support@shopflixai.com** with subject "CCPA Request"
 
 ## Children's Privacy
 
@@ -199,9 +199,9 @@ In the event of a data breach affecting your personal information, we will:
 
 For privacy-related questions or concerns:
 
-**Email**: privacy@yourapp.com  
-**Support**: support@yourapp.com  
-**Address**: [Your Company Address]
+**Email**: support@shopflixai.com  
+**Support Portal**: https://fix-merchant-center-production.up.railway.app  
+**Website**: https://fix-merchant-center-production.up.railway.app
 
 ## Shopify-Specific Information
 
@@ -224,6 +224,6 @@ By installing and using the App, you consent to this Privacy Policy.
 
 ---
 
-**Product Import Pro**  
+**ShopFlix AI**  
 Version 1.0  
-Last Updated: December 15, 2025
+Last Updated: December 23, 2025

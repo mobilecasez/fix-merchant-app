@@ -1,6 +1,6 @@
-# Product Import Pro - Shopify App
+# ShopFlix AI - Shopify App
 
-Import products from 11+ major e-commerce platforms with AI-powered optimization.
+Import products from 11+ e-commerce platforms with AI-powered optimization and Google Merchant Center compliance.
 
 ## 🌟 Features
 
@@ -30,11 +30,13 @@ Import products seamlessly from:
 - Fix suggestions for common issues
 - Store-wide health monitoring
 
-### Subscription Plans
-- **Basic**: $4.99/month - 20 products
-- **Professional**: $9.99/month - 50 products
-- **Premium**: $14.99/month - 100 products
-- **Free Trial**: 2 products per plan to test features
+### Flexible Subscription Plans
+- **Free Trial**: 2 free product imports (no credit card required)
+- **Basic**: $4.99/month - 20 products/month
+- **Professional**: $9.99/month - 50 products/month
+- **Premium**: $14.99/month - 100 products/month
+
+Cancel anytime. Monthly reset on billing date. Upgrade or downgrade at any time.
 
 ### Analytics Dashboard
 - Usage tracking
@@ -59,17 +61,20 @@ Import products seamlessly from:
 
 ## 🔒 Privacy & Security
 
-- Your data is encrypted and secure
-- We never share your information
-- GDPR compliant
+- Your data is encrypted and stored securely
+- We never share your information with unauthorized parties
+- GDPR compliant with data deletion on app uninstall
+- CCPA compliant for California residents
 - Easy data export and deletion
+- Industry-standard security measures
+- Secure API token management
 
 ## 📞 Support
 
 Need help? Contact us:
-- Email: support@yourapp.com
-- Documentation: https://docs.yourapp.com
-- Live Chat: Available in app
+- Email: support@shopflixai.com
+- Support Portal: In-app support
+- Response Time: Within 24 hours for paid users
 
 ## 🛠️ Technical Requirements
 
@@ -79,21 +84,28 @@ Need help? Contact us:
 
 ## 📋 Changelog
 
-### Version 1.0.0 (Initial Release)
-- Multi-platform product import
-- AI-powered descriptions
-- Subscription management
-- Usage analytics
-- Google Merchant Center compliance
-- Trial system (2 free products per plan)
+### Version 1.0.0 (December 2025)
+- Multi-platform product import (11+ platforms)
+- AI-powered description rewriting
+- GTIN/UPC finder using AI
+- Subscription management with flexible plans
+- Usage analytics and dashboard
+- Google Merchant Center compliance checking
+- Store-wide product health reports
+- Free trial system (2 free products)
+- Automatic category matching
+- Product duplicate detection
 
-## 🏆 Why Choose Product Import Pro?
+## 🏆 Why Choose ShopFlix AI?
 
 1. **Save Time**: Import products in seconds, not hours
-2. **AI-Powered**: Get professional descriptions automatically
-3. **Stay Compliant**: Built-in Google Merchant Center checking
-4. **Flexible Pricing**: Pay only for what you need
-5. **Try Before You Buy**: 2 free products to test each plan
+2. **AI-Powered**: Get professional descriptions automatically optimized for SEO
+3. **Stay Compliant**: Built-in Google Merchant Center compliance checking
+4. **Multi-Platform**: Import from 11+ global e-commerce platforms
+5. **Flexible Pricing**: Start free, pay only for what you need
+6. **Try Before You Buy**: 2 free products to test features
+7. **Smart Categories**: AI matches products to Google categories
+8. **Secure**: Enterprise-grade security and GDPR/CCPA compliant
 
 ## 📸 Screenshots
 
@@ -107,13 +119,16 @@ Need help? Contact us:
 7. Product preview before import
 8. Multi-platform selection
 
-## 🔗 Links
+## 🔗 Legal & Resources
 
-- Privacy Policy: [URL]
-- Terms of Service: [URL]
-- Support: [URL]
-- Documentation: [URL]
+- [Privacy Policy](https://fix-merchant-center-production.up.railway.app/privacy)
+- [Terms of Service](https://fix-merchant-center-production.up.railway.app/terms)
+- Support Email: support@shopflixai.com
+- Website: https://fix-merchant-center-production.up.railway.app
 
 ---
 
-**Ready to streamline your product imports? Install now and try 2 products free!**
+**Ready to streamline your product imports? Install now and get 2 products free—no credit card required!**
+
+### Recommended Shopify Plan
+Works with any Shopify plan (Starter, Basic, Shopify, Advanced, Plus)

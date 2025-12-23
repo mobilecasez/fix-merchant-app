@@ -1,19 +1,21 @@
-# Terms of Service for Product Import Pro
+# Terms of Service for ShopFlix AI
 
-**Last Updated: December 15, 2025**
+**Last Updated: December 23, 2025**
 
 ## 1. Acceptance of Terms
 
-By installing, accessing, or using Product Import Pro (the "App"), you agree to be bound by these Terms of Service ("Terms"). If you do not agree to these Terms, do not use the App.
+By installing, accessing, or using ShopFlix AI (the "App"), you agree to be bound by these Terms of Service ("Terms"). If you do not agree to these Terms, do not use the App.
 
 ## 2. Description of Service
 
-Product Import Pro is a Shopify application that provides:
-- Product import from multiple e-commerce platforms
-- AI-powered product description generation
-- Automated image importing
+ShopFlix AI is a Shopify application that provides:
+- Product import from 11+ e-commerce platforms (Amazon, eBay, Walmart, AliExpress, Shopee, Taobao, JD.com, Temu, Mercado Libre, Coupang, Flipkart)
+- AI-powered product description generation and rewriting
+- Automated GTIN/UPC finder
 - Google Merchant Center compliance checking
-- Product management tools
+- Product category matching
+- Store-wide product compliance reports
+- Usage analytics and dashboard
 
 ## 3. Account Requirements
 
@@ -133,9 +135,9 @@ You are solely responsible for:
 - We strive for 99% uptime but do not guarantee availability
 - Scheduled maintenance will be announced when possible
 - No compensation for service interruptions
-
-### 8.2 Support
-- Email support at: support@yourapp.com
+shopflixai.com
+- Response time: Within 24 hours for paid users, 48 hours for free users
+- Support available 24/7 via email
 - Response time: Within 48 hours for paid users
 - Support hours: Monday-Friday, 9 AM - 5 PM EST
 - Emergency support available for critical issues
@@ -221,14 +223,14 @@ We may modify these Terms at any time:
 Previous versions available upon request
 
 ## 13. Dispute Resolution
-
-### 13.1 Governing Law
-These Terms are governed by the laws of [Your Jurisdiction], without regard to conflict of law principles.
+the United States, without regard to conflict of law principles.
 
 ### 13.2 Arbitration
 Any disputes shall be resolved through:
 - Good faith negotiation first
-- Binding arbitration if negotiation fails
+- Binding arbitration under JAMS rules if negotiation fails
+- Individual basis only (no class actions)
+- Cost-sharing per JAMS rulesn fails
 - Individual basis only (no class actions)
 - [Arbitration Service] rules apply
 
@@ -257,8 +259,8 @@ We are not liable for delays or failures due to circumstances beyond our control
 
 ### 14.6 Notices
 Legal notices must be sent to:
-**Email**: legal@yourapp.com  
-**Address**: [Your Company Address]
+**Email**: support@shopflixai.com  
+**Website**: https://fix-merchant-center-production.up.railway.app
 
 ### 14.7 Language
 English version of Terms prevails in case of translation conflicts.
@@ -267,10 +269,9 @@ English version of Terms prevails in case of translation conflicts.
 
 For questions about these Terms:
 
-**Email**: legal@yourapp.com  
-**Support**: support@yourapp.com  
-**Website**: [Your Website]  
-**Address**: [Your Company Address]
+**Email**: support@shopflixai.com  
+**Support Portal**: https://fix-merchant-center-production.up.railway.app  
+**Website**: https://fix-merchant-center-production.up.railway.app
 
 ## 16. App Store Compliance
 
@@ -287,5 +288,6 @@ By using Product Import Pro, you acknowledge that you have read, understood, and
 ---
 
 **Product Import Pro**  
+VeShopFlix AI**  
 Version 1.0  
-Last Updated: December 15, 2025
+Last Updated: December 23
