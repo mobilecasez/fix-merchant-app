@@ -312,7 +312,7 @@ export default function SubscriptionPlans() {
                 autoComplete="off"
                 prefix="$"
                 placeholder="4.99"
-                step="0.01"
+                step={0.01}
               />
               
               <TextField

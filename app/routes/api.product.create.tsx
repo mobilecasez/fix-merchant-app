@@ -1,6 +1,6 @@
 import { json, ActionFunctionArgs } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
-import { canCreateProduct, incrementProductUsage } from "../utils/billing.server";
+import { canCreateProduct } from "../utils/billing.server";
 
 export const action = async ({ request }: ActionFunctionArgs) => {
   const { admin, session } = await authenticate.admin(request);
@@ -298,9 +298,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         }
       );
     }
-
-    // Increment product usage counter
-    await incrementProductUsage(session.shop);
 
     return json({ product: createdProduct });
   } catch (error) {

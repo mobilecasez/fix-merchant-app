@@ -20,10 +20,7 @@ import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { 
   createSubscription, 
-  hasUsedTrial, 
-  startFreeTrial, 
   changePlan,
-  requestBilling,
   startPlanTrial,
   hasTriedPlan 
 } from "../utils/billing.server";
@@ -103,35 +100,20 @@ export const action: ActionFunction = async ({ request }) => {
 
     // Handle plan change (upgrade/downgrade) from active subscription
     if (currentSubscription?.status === "active" && actionType === "change") {
-      // Request new billing for the plan change
-      const confirmationUrl = await requestBilling(
-        request,
-        planId,
-        `${process.env.SHOPIFY_APP_URL}/app/billing-callback?planId=${planId}&action=change`
-      );
-      
-      return redirect(confirmationUrl);
+      await changePlan(session.shop, planId);
+      return redirect("/app/subscription-success?planId=" + planId + "&action=change");
     }
 
     // Handle upgrade from trial to paid plan
     if (currentSubscription?.status === "trial" && actionType === "upgrade") {
-      const confirmationUrl = await requestBilling(
-        request,
-        planId,
-        `${process.env.SHOPIFY_APP_URL}/app/billing-callback?planId=${planId}&action=upgrade`
-      );
-      
-      return redirect(confirmationUrl);
+      await createSubscription(session.shop, planId);
+      return redirect("/app/subscription-success?planId=" + planId + "&action=upgrade");
     }
 
-    // For new paid plan subscription, request Shopify billing
-    const confirmationUrl = await requestBilling(
-      request,
-      planId,
-      `${process.env.SHOPIFY_APP_URL}/app/billing-callback?planId=${planId}`
-    );
+    // For new paid plan subscription, create directly
+    await createSubscription(session.shop, planId);
     
-    return redirect(confirmationUrl);
+    return redirect("/app/subscription-success?planId=" + planId);
 
   } catch (error) {
     console.error("Subscription error:", error);
@@ -166,7 +148,11 @@ export default function ChooseSubscription() {
 
   return (
     <Frame>
-      <Page title="Choose Your Subscription Plan" narrowWidth>
+      <Page 
+        title="Choose Your Subscription Plan" 
+        narrowWidth
+        backAction={{ content: "Dashboard", url: "/app" }}
+      >
         <Layout>
           {currentSubscription && currentSubscription.status === "active" && (
             <Layout.Section>

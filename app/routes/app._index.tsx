@@ -16,6 +16,8 @@ import {
   TextField,
   Pagination,
   DataTable,
+  Badge,
+  Icon,
 } from "@shopify/polaris";
 import { TitleBar } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
@@ -34,7 +36,12 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     include: { plan: true },
   });
   
-  return json({ subscription });
+  // Get review status
+  const review = await prisma.shopReview.findUnique({
+    where: { shop: session.shop },
+  });
+  
+  return json({ subscription, review });
 };
 
 // Action to handle updating a product
@@ -182,11 +189,17 @@ const PRODUCTS_PER_PAGE = 10;
 export default function Index() {
   const loaderData = useLoaderData<typeof loader>();
   const subscription = loaderData?.subscription;
+  const initialReview = loaderData?.review;
   
   const [products, setProducts] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
+
+  // Review banner state
+  const [reviewBannerDismissed, setReviewBannerDismissed] = useState(initialReview?.dismissed || false);
+  const [userRating, setUserRating] = useState<number | null>(initialReview?.rating || null);
+  const [showRatingThankYou, setShowRatingThankYou] = useState(false);
 
   // Modal state
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -204,9 +217,47 @@ export default function Index() {
   const [activeProductForAutoFix, setActiveProductForAutoFix] = useState<any | null>(null);
   const [isFindingGtin, setIsFindingGtin] = useState(false);
 
+  // Video tutorial modal state
+  const [isVideoModalOpen, setIsVideoModalOpen] = useState(false);
+
   const submit = useSubmit();
   const updateFetcher = useFetcher<typeof action>();
   const isUpdating = updateFetcher.state !== "idle";
+
+  // Handle rating submission
+  const handleRating = useCallback(async (rating: number) => {
+    setUserRating(rating);
+    setShowRatingThankYou(true);
+    
+    try {
+      await fetch("/api/submit-rating", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rating, dismissed: false }),
+      });
+    } catch (error) {
+      console.error("Error submitting rating:", error);
+    }
+    
+    // Hide thank you message after 2 seconds
+    setTimeout(() => setShowRatingThankYou(false), 2000);
+  }, []);
+
+  // Handle dismiss
+  const handleDismiss = useCallback(async (e: React.MouseEvent<HTMLAnchorElement>) => {
+    e.preventDefault();
+    setReviewBannerDismissed(true);
+    
+    try {
+      await fetch("/api/submit-rating", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dismissed: true }),
+      });
+    } catch (error) {
+      console.error("Error dismissing banner:", error);
+    }
+  }, []);
 
   const handleSync = useCallback(async () => {
     setIsLoading(true);
@@ -380,277 +431,179 @@ export default function Index() {
   ]), [paginatedProducts]);
 
   return (
+    <>
+    <div className="landing-page">
     <Page fullWidth>
-      <TitleBar title="ShopFlix AI" />
-      <BlockStack gap="500">
-        {!subscription && (
-          <Card>
-            <BlockStack gap="300">
-              <Text as="h2" variant="headingLg">Choose a Subscription Plan</Text>
-              <Text variant="bodyMd" as="p">
-                Get started by selecting a subscription plan to import and optimize your products.
-              </Text>
-              <Link to="/app/choose-subscription">
-                <Button variant="primary" size="large">
-                  View Plans
-                </Button>
-              </Link>
-            </BlockStack>
-          </Card>
-        )}
-        
-        {subscription && (
-          <Card>
-            <BlockStack gap="200">
-              <InlineStack align="space-between" blockAlign="center">
-                <BlockStack gap="100">
-                  <Text as="h3" variant="headingMd">Current Plan: {subscription.plan.name}</Text>
-                  <Text variant="bodyMd" as="p" tone="subdued">
-                    Products used: {subscription.productsUsed} / {subscription.plan.productLimit} this month
-                  </Text>
-                </BlockStack>
-                <Link to="/app/choose-subscription">
-                  <Button>Manage Subscription</Button>
-                </Link>
-              </InlineStack>
-            </BlockStack>
-          </Card>
-        )}
+      <div className="landing-container">
+        {/* 1. App Header & Branding */}
+        <div className="header-section">
+          <div className="header-content">
+            <div className="logo-icon">📦</div>
+            <h1 className="app-title">ShopFlix AI</h1>
+          </div>
+        </div>
 
-        {/* Hero Section - AI Product Import */}
-        <Card>
-          <Box background="bg-surface-success-subdued" borderRadius="300" padding="600">
-            <BlockStack gap="400">
-              <BlockStack gap="200">
-                <Text as="h2" variant="headingLg" tone="success">
-                  🤖 AI-Powered Product Import
-                </Text>
-                <Text variant="bodyMd" as="p">
-                  Import products from 11+ e-commerce platforms with AI-optimized descriptions. Get professional product listings in seconds, not hours.
-                </Text>
-              </BlockStack>
-              <Link to="/app/add-product-replica">
-                <Button variant="primary" size="large">
-                  Start Importing Products
-                </Button>
-              </Link>
-            </BlockStack>
-          </Box>
-        </Card>
-
-        {/* Quick Stats */}
-        <Layout>
-          <Layout.Section oneThird>
-            <Card>
-              <BlockStack gap="300">
-                <Box>
-                  <Text as="h2" variant="headingMd" tone="subdued">
-                    📊 Products Imported
-                  </Text>
-                </Box>
-                <Text as="p" variant="headingLg">
-                  {subscription?.productsUsed || 0}
-                </Text>
-                <Text variant="bodySm" tone="subdued">
-                  out of {subscription?.plan.productLimit || 0} this month
-                </Text>
-              </BlockStack>
-            </Card>
-          </Layout.Section>
-          <Layout.Section oneThird>
-            <Card>
-              <BlockStack gap="300">
-                <Box>
-                  <Text as="h2" variant="headingMd" tone="subdued">
-                    ✨ Plan Type
-                  </Text>
-                </Box>
-                <Text as="p" variant="headingMd">
-                  {subscription?.plan.name || "Free Trial"}
-                </Text>
-                <Text variant="bodySm" tone="subdued">
-                  ${subscription?.plan.price || 0}/month
-                </Text>
-              </BlockStack>
-            </Card>
-          </Layout.Section>
-          <Layout.Section oneThird>
-            <Card>
-              <BlockStack gap="300">
-                <Box>
-                  <Text as="h2" variant="headingMd" tone="subdued">
-                    🚀 Next Steps
-                  </Text>
-                </Box>
-                <Link to="/app/add-product-replica">
-                  <Button fullWidth variant="secondary">
-                    Import Products
-                  </Button>
-                </Link>
-              </BlockStack>
-            </Card>
-          </Layout.Section>
-        </Layout>
-
-        {/* Platform Showcase */}
-        <Card>
-          <BlockStack gap="400">
-            <BlockStack gap="200">
-              <Text as="h2" variant="headingLg">
-                🌍 Supported e-Commerce Platforms
-              </Text>
-              <Text variant="bodyMd" tone="subdued">
-                Import products from any of these 11+ global platforms
-              </Text>
-            </BlockStack>
-            <Box borderColor="border" borderWidth="025" borderRadius="200" padding="400">
-              <BlockStack gap="300">
-                {["Amazon", "eBay", "Walmart", "AliExpress", "Shopee", "Taobao", "JD.com", "Temu", "Mercado Libre", "Coupang", "Flipkart"].map((platform, index) => (
-                  index % 4 === 0 ? (
-                    <InlineStack key={platform} gap="300" wrap>
-                      {["Amazon", "eBay", "Walmart", "AliExpress", "Shopee", "Taobao", "JD.com", "Temu", "Mercado Libre", "Coupang", "Flipkart"].slice(index, index + 4).map((p) => (
-                        <Box key={p} background="bg-surface-secondary" borderRadius="200" padding="300">
-                          <Text as="p" variant="bodyMd" fontWeight="bold">
-                            {p}
-                          </Text>
-                        </Box>
-                      ))}
-                    </InlineStack>
-                  ) : null
+        {/* 2. Review Request Banner */}
+        {!reviewBannerDismissed && (
+          <div className="review-banner">
+            <div className="review-content">
+              <div className="review-left">
+                {!showRatingThankYou ? (
+                  <>
+                    <p className="review-text">How's your experience with ShopFlix AI?</p>
+                    <p className="review-subtext">
+                      <a href="#" onClick={handleDismiss} className="review-link">Rate us by clicking on stars. Dismiss.</a>
+                    </p>
+                  </>
+                ) : (
+                  <p className="review-text">✓ Thank you for your feedback!</p>
+                )}
+              </div>
+              <div className="review-stars">
+                {[1, 2, 3, 4, 5].map((star) => (
+                  <button 
+                    key={star} 
+                    className={`star-button ${userRating && star <= userRating ? 'rated' : ''}`}
+                    onClick={() => handleRating(star)}
+                    aria-label={`Rate ${star} stars`}
+                    disabled={showRatingThankYou}
+                  >
+                    {userRating && star <= userRating ? '⭐' : '☆'}
+                  </button>
                 ))}
-              </BlockStack>
-            </Box>
-          </BlockStack>
-        </Card>
+              </div>
+            </div>
+          </div>
+        )}
 
-        {/* Features Highlight */}
-        <Layout>
-          <Layout.Section oneThird>
-            <Card>
-              <BlockStack gap="300">
-                <Box>
-                  <Text as="h3" variant="headingMd">
-                    🤖 AI Descriptions
-                  </Text>
-                </Box>
-                <Text variant="bodySm">
-                  Automatically generate SEO-optimized product descriptions using advanced AI.
-                </Text>
-              </BlockStack>
-            </Card>
-          </Layout.Section>
-          <Layout.Section oneThird>
-            <Card>
-              <BlockStack gap="300">
-                <Box>
-                  <Text as="h3" variant="headingMd">
-                    🔍 GTIN Finder
-                  </Text>
-                </Box>
-                <Text variant="bodySm">
-                  AI-powered GTIN/UPC finder automatically identifies missing product codes.
-                </Text>
-              </BlockStack>
-            </Card>
-          </Layout.Section>
-          <Layout.Section oneThird>
-            <Card>
-              <BlockStack gap="300">
-                <Box>
-                  <Text as="h3" variant="headingMd">
-                    ✅ Compliance Check
-                  </Text>
-                </Box>
-                <Text variant="bodySm">
-                  Automatically check Google Merchant Center compliance for all products.
-                </Text>
-              </BlockStack>
-            </Card>
-          </Layout.Section>
-        </Layout>
+        {/* 3. App Introduction & Roadmap Summary */}
+        <div className="intro-card">
+          <h2 className="intro-heading">Streamline Your Product Imports.</h2>
+          <p className="intro-paragraph">
+            Instantly extract product details from external e-commerce URLs like Amazon or Flipkart and fill them directly into your store—no messy Excel imports required. Get ready for powerful upcoming features, including automated Google Merchant Center compliance checks and full AI-powered SEO rewriting for titles and descriptions.
+          </p>
+        </div>
 
-        {/* Getting Started Guide */}
-        <Card>
-          <BlockStack gap="400">
-            <Text as="h2" variant="headingLg">
-              🚀 Getting Started
-            </Text>
-            <Box borderColor="border-divider" borderWidth="025">
-              <BlockStack gap="0">
-                <Box borderBottomColor="border-divider" borderBottomWidth="025" padding="400">
-                  <InlineStack gap="400" align="start" blockAlign="start">
-                    <Box>
-                      <Box background="bg-surface-selected" borderRadius="600" style={{ width: "40px", height: "40px", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                        <Text as="span" variant="headingMd" tone="subdued">1</Text>
-                      </Box>
-                    </Box>
-                    <BlockStack gap="100" style={{ flex: 1 }}>
-                      <Text as="h3" variant="headingMd">Choose Your Subscription Plan</Text>
-                      <Text variant="bodySm" tone="subdued">Select a plan that fits your needs (Free Trial includes 2 products)</Text>
-                      <Link to="/app/choose-subscription">
-                        <Button size="small" variant="secondary">View Plans</Button>
-                      </Link>
-                    </BlockStack>
-                  </InlineStack>
-                </Box>
-                <Box borderBottomColor="border-divider" borderBottomWidth="025" padding="400">
-                  <InlineStack gap="400" align="start" blockAlign="start">
-                    <Box>
-                      <Box background="bg-surface-selected" borderRadius="600" style={{ width: "40px", height: "40px", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                        <Text as="span" variant="headingMd" tone="subdued">2</Text>
-                      </Box>
-                    </Box>
-                    <BlockStack gap="100" style={{ flex: 1 }}>
-                      <Text as="h3" variant="headingMd">Find a Product You Want to Import</Text>
-                      <Text variant="bodySm" tone="subdued">Copy the product URL from Amazon, eBay, Walmart, or any of 11+ supported platforms</Text>
-                    </BlockStack>
-                  </InlineStack>
-                </Box>
-                <Box borderBottomColor="border-divider" borderBottomWidth="025" padding="400">
-                  <InlineStack gap="400" align="start" blockAlign="start">
-                    <Box>
-                      <Box background="bg-surface-selected" borderRadius="600" style={{ width: "40px", height: "40px", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                        <Text as="span" variant="headingMd" tone="subdued">3</Text>
-                      </Box>
-                    </Box>
-                    <BlockStack gap="100" style={{ flex: 1 }}>
-                      <Text as="h3" variant="headingMd">Let AI Optimize Your Product</Text>
-                      <Text variant="bodySm" tone="subdued">Our AI automatically generates SEO-optimized titles, descriptions, and finds missing GTINs</Text>
-                    </BlockStack>
-                  </InlineStack>
-                </Box>
-                <Box padding="400">
-                  <InlineStack gap="400" align="start" blockAlign="start">
-                    <Box>
-                      <Box background="bg-surface-selected" borderRadius="600" style={{ width: "40px", height: "40px", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                        <Text as="span" variant="headingMd" tone="subdued">4</Text>
-                      </Box>
-                    </Box>
-                    <BlockStack gap="100" style={{ flex: 1 }}>
-                      <Text as="h3" variant="headingMd">Review & Publish</Text>
-                      <Text variant="bodySm" tone="subdued">Review the AI suggestions, customize if needed, and publish directly to your Shopify store</Text>
-                      <Link to="/app/add-product-replica">
-                        <Button size="small" variant="primary">Start Now</Button>
-                      </Link>
-                    </BlockStack>
-                  </InlineStack>
-                </Box>
-              </BlockStack>
-            </Box>
-          </BlockStack>
-        </Card>
+        {/* 4. Feature Cards Grid */}
+        <div className="feature-cards-grid">
+          {/* Left Card - Active: Import Products */}
+          <div className="feature-card">
+            <div className="feature-card-header">
+              <div className="feature-card-icon">📥</div>
+              <h3 className="feature-card-title">Import Products</h3>
+            </div>
+            <p className="feature-card-description">
+              Copy an external e-commerce URL and we'll extract all data to create a perfect product replica in your store.
+            </p>
+            <Link to="/app/add-product-replica" style={{ textDecoration: 'none' }}>
+              <button className="feature-card-button">
+                Go to Product Replica
+              </button>
+            </Link>
+          </div>
 
-        <Card>
-          <BlockStack gap="200">
-            <Text as="h2" variant="headingMd">Sync Your Existing Products</Text>
-            <Text variant="bodyMd" as="p" tone="subdued">Scan and optimize your existing products using AI. Check for Google Merchant Center compliance issues.</Text>
-            <Button variant="secondary" size="large" onClick={handleSync} loading={isLoading}>
-              {isLoading ? "Syncing..." : "Sync Products"}
-            </Button>
-          </BlockStack>
-        </Card>
-      </BlockStack>
+          {/* Middle Card - Coming Soon: GMC Compliance */}
+          <div className="feature-card">
+            <div className="feature-card-header">
+              <div className="feature-card-icon">🛡️</div>
+              <h3 className="feature-card-title">Google Merchant Center Compliance</h3>
+            </div>
+            <p className="feature-card-description">
+              Automatically scan your entire store inventory to identify and flag GMC policy errors before they cause suspensions.
+            </p>
+            <button className="feature-card-button" disabled>
+              Coming Soon
+            </button>
+          </div>
 
+          {/* Right Card - Coming Soon: SEO Rewrite */}
+          <div className="feature-card">
+            <div className="feature-card-header">
+              <div className="feature-card-icon">✨</div>
+              <h3 className="feature-card-title">AI SEO & GMC Rewrite</h3>
+            </div>
+            <p className="feature-card-description">
+              Utilize AI to rewrite product titles and details specifically optimized for Google's search and merchant standards.
+            </p>
+            <button className="feature-card-button" disabled>
+              Coming Soon
+            </button>
+          </div>
+        </div>
+
+        {/* 5. Onboarding & Tutorial Card */}
+        <div className="onboarding-card">
+          <h2 className="onboarding-heading">Get Started with ShopFlix AI</h2>
+          <p className="onboarding-text">
+            Learn how to extract products from external URLs, customize your product details, and import them to your Shopify store in minutes. Just hit play to get started!
+          </p>
+          <button className="tutorial-button" onClick={() => setIsVideoModalOpen(true)}>
+            <span className="play-icon">▶</span>
+            Watch Tutorial
+          </button>
+        </div>
+
+        {/* 6. Subscription & Usage Card */}
+        <div className="subscription-card">
+          <div className="subscription-content">
+            <div className="subscription-left">
+              <h2 className="subscription-title">Subscription Plan</h2>
+              <p className="subscription-value-prop">
+                You're on the Free Tier with 2 product imports. Upgrade now to increase your product import limit and gain early access to Google Merchant Center compliance automation and AI-powered SEO rewriting.
+              </p>
+            </div>
+            <div className="subscription-right">
+              <div className="usage-tracker">
+                <div className="usage-label-top">Monthly Imports</div>
+                <div className="progress-bar-container">
+                  <div className="progress-bar-track">
+                    <div 
+                      className="progress-bar-fill" 
+                      style={{ 
+                        width: subscription ? 
+                          `${(subscription.productsUsed / subscription.plan.productLimit) * 100}%` : 
+                          '0%' 
+                      }}
+                    ></div>
+                  </div>
+                </div>
+                <div className="usage-label-bottom">
+                  {subscription ? 
+                    `${subscription.productsUsed} / ${subscription.plan.productLimit} Used` : 
+                    '0 / 2 Used'
+                  }
+                </div>
+              </div>
+              <Link to="/app/choose-subscription" style={{ textDecoration: 'none' }}>
+                <button className="upgrade-button">
+                  <span className="crown-icon">👑</span>
+                  Upgrade to Pro
+                </button>
+              </Link>
+            </div>
+          </div>
+        </div>
+        <div className="cta-section">
+          {!subscription ? (
+            <Link to="/app/choose-subscription">
+              <Button variant="primary" size="large">
+                Choose a Plan to Get Started
+              </Button>
+            </Link>
+          ) : (
+            <Link to="/app/add-product-replica">
+              <Button variant="primary" size="large">
+                Start Importing Products
+              </Button>
+            </Link>
+          )}
+        </div>
+      </div>
+    </Page>
+    </div>
+
+    {/* Modals Page */}
+    <Page fullWidth>
       <div className="wide-modal">
         <Modal
           open={isModalOpen}
@@ -785,7 +738,100 @@ export default function Index() {
             )}
           </Modal.Section>
         </Modal>
+
+        {/* Video Tutorial Modal */}
+        {isVideoModalOpen && (
+          <div style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.8)',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            zIndex: 9999,
+            padding: '20px',
+          }}>
+            <div style={{
+              backgroundColor: 'white',
+              borderRadius: '8px',
+              maxWidth: '900px',
+              width: '100%',
+              maxHeight: '80vh',
+              display: 'flex',
+              flexDirection: 'column',
+              overflow: 'auto',
+            }}>
+              <div style={{
+                padding: '16px',
+                borderBottom: '1px solid #e5e5e5',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+              }}>
+                <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 600 }}>ShopFlix AI Tutorial</h2>
+                <button
+                  onClick={() => setIsVideoModalOpen(false)}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    fontSize: '24px',
+                    cursor: 'pointer',
+                    padding: '0',
+                    lineHeight: 1,
+                  }}
+                >
+                  ×
+                </button>
+              </div>
+              <div style={{
+                flex: 1,
+                padding: '16px',
+                backgroundColor: '#000',
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center',
+              }}>
+                <video
+                  width="100%"
+                  height="auto"
+                  controls
+                  autoPlay
+                  style={{ display: 'block', maxHeight: 'calc(80vh - 100px)' }}
+                >
+                  <source src="/ShopFlixAI.mp4" type="video/mp4" />
+                  Your browser does not support the video tag.
+                </video>
+              </div>
+              <div style={{
+                padding: '16px',
+                borderTop: '1px solid #e5e5e5',
+                display: 'flex',
+                justifyContent: 'flex-end',
+              }}>
+                <button
+                  onClick={() => setIsVideoModalOpen(false)}
+                  style={{
+                    backgroundColor: '#006ECB',
+                    color: 'white',
+                    border: 'none',
+                    padding: '8px 16px',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontSize: '14px',
+                    fontWeight: 500,
+                  }}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </Page>
+    </>
   );
 }

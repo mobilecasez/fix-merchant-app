@@ -13,52 +13,74 @@ async function main() {
     return;
   }
 
-  // Create the three subscription plans
+  // Create the subscription plans (all monthly billing)
   const trialPlan = await prisma.subscriptionPlan.create({
     data: {
       name: 'Free Trial',
       price: 0,
-      productLimit: 10,
-      description: '7-day free trial - Test all features with up to 10 products',
+      productLimit: 2,
+      description: '7-day free trial - Test all features with up to 2 products',
       isActive: true,
     },
   });
 
-  const basicPlan = await prisma.subscriptionPlan.create({
+  const plan1 = await prisma.subscriptionPlan.create({
     data: {
-      name: 'Basic',
+      name: 'Starter',
       price: 4.99,
       productLimit: 20,
-      description: 'Perfect for getting started - Add up to 20 products per month',
+      description: '$4.99/month - Import up to 20 products',
       isActive: true,
     },
   });
 
-  const proPlan = await prisma.subscriptionPlan.create({
+  const plan2 = await prisma.subscriptionPlan.create({
     data: {
-      name: 'Professional',
+      name: 'Basic',
       price: 9.99,
       productLimit: 50,
-      description: 'Great for growing businesses - Add up to 50 products per month',
+      description: '$9.99/month - Import up to 50 products',
       isActive: true,
     },
   });
 
-  const premiumPlan = await prisma.subscriptionPlan.create({
+  const plan3 = await prisma.subscriptionPlan.create({
     data: {
-      name: 'Premium',
-      price: 14.99,
+      name: 'Professional',
+      price: 17.99,
       productLimit: 100,
-      description: 'For power users - Add up to 100 products per month',
+      description: '$17.99/month - Import up to 100 products',
+      isActive: true,
+    },
+  });
+
+  const plan4 = await prisma.subscriptionPlan.create({
+    data: {
+      name: 'Advanced',
+      price: 24.99,
+      productLimit: 150,
+      description: '$24.99/month - Import up to 150 products',
+      isActive: true,
+    },
+  });
+
+  const enterprisePlan = await prisma.subscriptionPlan.create({
+    data: {
+      name: 'Enterprise',
+      price: 99.00,
+      productLimit: 999,
+      description: '$99.00/month - Import up to 999 products',
       isActive: true,
     },
   });
 
   console.log('✓ Created subscription plans:');
   console.log(`  - ${trialPlan.name}: $${trialPlan.price} (${trialPlan.productLimit} products) - FREE TRIAL`);
-  console.log(`  - ${basicPlan.name}: $${basicPlan.price} (${basicPlan.productLimit} products)`);
-  console.log(`  - ${proPlan.name}: $${proPlan.price} (${proPlan.productLimit} products)`);
-  console.log(`  - ${premiumPlan.name}: $${premiumPlan.price} (${premiumPlan.productLimit} products)`);
+  console.log(`  - ${plan1.name}: $${plan1.price} (${plan1.productLimit} products)`);
+  console.log(`  - ${plan2.name}: $${plan2.price} (${plan2.productLimit} products)`);
+  console.log(`  - ${plan3.name}: $${plan3.price} (${plan3.productLimit} products)`);
+  console.log(`  - ${plan4.name}: $${plan4.price} (${plan4.productLimit} products)`);
+  console.log(`  - ${enterprisePlan.name}: $${enterprisePlan.price} (${enterprisePlan.productLimit} products)`);
 }
 
 main()

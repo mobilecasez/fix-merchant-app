@@ -11,7 +11,7 @@
     "env": "shopify app env",
     "start": "HOST=0.0.0.0 remix-serve ./build/server/index.js",
     "docker-start": "npm run setup && npm run start",
-    "setup": "node setup-db-with-retry.js",
+    "setup": "prisma generate && prisma db push --accept-data-loss && node seed-subscription-plans.js",
     "lint": "eslint --cache --cache-location ./node_modules/.cache/eslint .",
     "shopify": "shopify",
     "prisma": "prisma",

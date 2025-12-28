@@ -1,6 +1,8 @@
 import React, { useState, useCallback, useEffect } from "react";
 import { useFetcher, useLoaderData } from "@remix-run/react";
 import { json, LoaderFunction } from "@remix-run/node";
+import { authenticate } from "../shopify.server";
+import prisma from "../db.server";
 import { getProductCategories } from "../utils/categories.server";
 import {
   Page,
@@ -31,13 +33,24 @@ import RichTextEditor from "../components/RichTextEditor";
 import HierarchicalSelect from "../components/HierarchicalSelect";
 import { XIcon } from '@shopify/polaris-icons';
 
-export const loader: LoaderFunction = async () => {
+export const loader: LoaderFunction = async ({ request }) => {
+  const { session } = await authenticate.admin(request);
   const categories = getProductCategories();
-  return json({ categories });
+  
+  const subscription = await prisma.shopSubscription.findUnique({
+    where: { shop: session.shop },
+    include: { plan: true },
+  });
+  
+  const remainingQuota = subscription
+    ? subscription.plan.productLimit - subscription.productsUsed
+    : 0;
+  
+  return json({ categories, remainingQuota, subscription });
 };
 
 export default function AddProductReplica() {
-  const { categories } = useLoaderData<typeof loader>();
+  const { categories, remainingQuota, subscription } = useLoaderData<typeof loader>();
   const [productUrl, setProductUrl] = useState("");
   const [productName, setProductName] = useState("");
   const [description, setDescription] = useState("");
@@ -78,6 +91,7 @@ export default function AddProductReplica() {
   const [hasVariants, setHasVariants] = useState(false);
   const [options, setOptions] = useState([{ name: "", values: "" }]);
   const [variants, setVariants] = useState<any[]>([]);
+  const [currentRemainingQuota, setCurrentRemainingQuota] = useState(remainingQuota);
   const fetcher = useFetcher();
   const saveFetcher = useFetcher();
   const processAllFetcher = useFetcher();
@@ -198,6 +212,17 @@ export default function AddProductReplica() {
       }
 
       setToastMessage("Product data fetched and rewritten successfully!");
+      
+      // Increment product usage counter on successful import and update local quota
+      (async () => {
+        try {
+          await fetch("/api/increment-usage", { method: "POST" });
+          // Update local quota immediately after successful increment
+          setCurrentRemainingQuota((prev: number) => Math.max(0, prev - 1));
+        } catch (error) {
+          console.error("Failed to increment usage:", error);
+        }
+      })();
       setToastError(false);
       setToastActive(true);
     }
@@ -400,7 +425,7 @@ export default function AddProductReplica() {
   return (
     <Frame>
       <Page
-        title="Add product"
+        title={`Add product (${currentRemainingQuota}/${subscription?.plan.productLimit || 0} used)`}
         backAction={{ content: "Products", url: "/app" }}
         primaryAction={{
           content: "Save product",
