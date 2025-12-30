@@ -3,7 +3,7 @@
 client_id = "85d12decc346b5ec3cdfebacdce7f290"
 name = "ShopFlix AI"
 handle = "shopflix-ai"
-application_url = "https://fix-merchant-center-production.up.railway.app"
+application_url = "https://shopflix-ai-production.up.railway.app"
 embedded = true
 
 [build]
@@ -25,7 +25,7 @@ api_version = "2024-07"
 scopes = "read_products,write_products,read_locations"
 
 [auth]
-redirect_urls = ["https://fix-merchant-center-production.up.railway.app/auth/callback", "https://fix-merchant-center-production.up.railway.app/auth/shopify/callback", "https://fix-merchant-center-production.up.railway.app/api/auth/callback"]
+redirect_urls = ["https://shopflix-ai-production.up.railway.app/auth/callback", "https://shopflix-ai-production.up.railway.app/auth/shopify/callback", "https://shopflix-ai-production.up.railway.app/api/auth/callback"]
 
 [pos]
 embedded = false
