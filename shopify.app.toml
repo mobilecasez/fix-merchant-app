@@ -2,7 +2,7 @@
 
 client_id = "2d4dfddeb80f9318dfb43e30a9175bc6"
 name = "ShopFlix AI"
-handle = "shopflix-ai"
+handle = "shopflix-ai-1"
 application_url = "https://web-production-b2e0e.up.railway.app"
 embedded = true
 
