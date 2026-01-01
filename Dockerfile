@@ -40,7 +40,4 @@ RUN npx prisma generate
 
 RUN npm run build
 
-# Make startup script executable
-RUN chmod +x docker-start.sh
-
-CMD ["sh", "-c", "npx prisma db push --skip-generate --accept-data-loss && npm start"]
+CMD ["npm", "run", "prod-start"]
