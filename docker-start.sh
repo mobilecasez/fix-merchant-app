@@ -1,12 +1,14 @@
 #!/bin/sh
 set -e
 
-echo "Database location: /tmp/prod.db"
+echo "=== Starting ShopFlix AI ==="
+echo "Database: /tmp/prod.db"
 
-echo "Applying Prisma schema to database..."
+echo "=== Step 1: Creating database schema ==="
 npx prisma db push --force-reset --skip-generate --accept-data-loss
 
-echo "Database schema applied successfully"
+echo "=== Step 2: Waiting for database to be ready ==="
+sleep 5
 
-echo "Starting application..."
-exec PORT=${PORT:-3000} HOST=0.0.0.0 npm start
+echo "=== Step 3: Starting application ==="
+PORT=${PORT:-3000} HOST=0.0.0.0 npm start
