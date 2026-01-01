@@ -40,4 +40,7 @@ RUN npx prisma generate
 
 RUN npm run build
 
-CMD ["npm", "start"]
+# Make startup script executable
+RUN chmod +x docker-start.sh
+
+CMD ["./docker-start.sh"]
