@@ -1,9 +1,7 @@
 #!/bin/sh
 set -e
 
-echo "Creating database directory with proper permissions..."
-mkdir -p /app/prisma
-chmod -R 777 /app/prisma
+echo "Database will be created in /tmp (writable location)"
 
 echo "Applying Prisma schema (SQLite)..."
 npx prisma db push --skip-generate
