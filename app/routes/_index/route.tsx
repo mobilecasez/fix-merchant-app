@@ -1,4 +1,4 @@
-import type { LoaderFunctionArgs } from "@remix-run/node";
+import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { redirect } from "@remix-run/node";
 import { Form, useLoaderData } from "@remix-run/react";
 
@@ -16,6 +16,16 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   return { showForm: Boolean(login) };
 };
 
+export const action = async ({ request }: ActionFunctionArgs) => {
+  const { shop } = Object.fromEntries(await request.formData());
+
+  if (typeof shop !== "string") {
+    throw new Error("Shop parameter is required");
+  }
+
+  return await login({ rawRequest: request, shop });
+};
+
 export default function App() {
   const { showForm } = useLoaderData<typeof loader>();
 
@@ -27,7 +37,7 @@ export default function App() {
           A tagline about [your app] that describes your value proposition.
         </p>
         {showForm && (
-          <Form className={styles.form} method="post" action="/auth/login">
+          <Form className={styles.form} method="post">
             <label className={styles.label}>
               <span>Shop domain</span>
               <input className={styles.input} type="text" name="shop" />
