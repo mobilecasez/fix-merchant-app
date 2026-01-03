@@ -9,12 +9,12 @@
 # ====================================
 # App Identity
 # ====================================
-client_id = "2d4dfddeb80f9318dfb43e30a9175bc6"
-name = "ShopFlix AI"
-handle = "shopflix-ai-1"
+client_id = "YOUR_CLIENT_ID_FROM_PARTNER_DASHBOARD"
+name = "product-import-pro"
+handle = "product-import-pro"
 
 # IMPORTANT: Update this to your production URL after deployment
-application_url = "https://web-production-b2e0e.up.railway.app"
+application_url = "https://your-production-url.com"
 
 # Embedded app runs inside Shopify admin
 embedded = true
@@ -22,6 +22,8 @@ embedded = true
 [build]
 # Automatically update URLs during development
 automatically_update_urls_on_dev = true
+# Include files for deployment
+include_config_on_deploy = true
 
 # ====================================
 # Webhooks Configuration
@@ -60,9 +62,9 @@ scopes = "read_products,write_products,read_locations"
 [auth]
 # IMPORTANT: Update these URLs after deployment
 redirect_urls = [
-  "https://web-production-b2e0e.up.railway.app/auth/callback",
-  "https://web-production-b2e0e.up.railway.app/auth/shopify/callback",
-  "https://web-production-b2e0e.up.railway.app/api/auth/callback"
+  "https://your-production-url.com/auth/callback",
+  "https://your-production-url.com/auth/shopify/callback",
+  "https://your-production-url.com/api/auth/callback"
 ]
 
 # ====================================

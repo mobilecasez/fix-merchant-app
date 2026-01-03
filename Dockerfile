@@ -35,11 +35,6 @@ RUN npm remove @shopify/cli
 
 COPY . .
 
-# Generate Prisma client after copying source code
-RUN npx prisma generate
-
 RUN npm run build
 
-RUN chmod +x docker-start.sh
-
-ENTRYPOINT ["./docker-start.sh"]
+CMD ["npm", "run", "docker-start"]

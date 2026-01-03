@@ -1,34 +1,20 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
-client_id = "85d12decc346b5ec3cdfebacdce7f290"
-name = "ShopFlix AI"
-application_url = "https://fix-merchant-center-production.up.railway.app"
+client_id = "fdd381ef781b772b72b0896d612f2d6b"
+name = "shopflix-ai"
+application_url = "https://example.com"
 embedded = true
 
 [build]
 automatically_update_urls_on_dev = true
+include_config_on_deploy = true
 
 [webhooks]
-api_version = "2024-07"
-
-  [[webhooks.subscriptions]]
-  topics = [ "app/uninstalled" ]
-  uri = "/webhooks/app/uninstalled"
-
-  [[webhooks.subscriptions]]
-  topics = [ "app/scopes_update" ]
-  uri = "/webhooks/app/scopes_update"
+api_version = "2026-04"
 
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
-scopes = "read_products,write_products,read_locations"
+scopes = "read_locations,read_products,write_products"
 
 [auth]
-redirect_urls = [
-  "https://fix-merchant-center-production.up.railway.app/auth/callback",
-  "https://fix-merchant-center-production.up.railway.app/auth/shopify/callback",
-  "https://fix-merchant-center-production.up.railway.app/api/auth/callback"
-]
-
-[pos]
-embedded = false
+redirect_urls = [ "https://example.com/api/auth" ]

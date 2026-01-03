@@ -5,7 +5,7 @@ CREATE TABLE "Session" (
     "state" TEXT NOT NULL,
     "isOnline" BOOLEAN NOT NULL DEFAULT false,
     "scope" TEXT,
-    "expires" TIMESTAMP(3),
+    "expires" DATETIME,
     "accessToken" TEXT NOT NULL,
     "userId" BIGINT,
     "firstName" TEXT,
@@ -26,20 +26,20 @@ CREATE TABLE "AppSettings" (
     "additionalEnabled" BOOLEAN NOT NULL DEFAULT false,
     "reportEnabled" BOOLEAN NOT NULL DEFAULT false,
     "storeErrorReportEnabled" BOOLEAN NOT NULL DEFAULT false,
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL
 );
 
 -- CreateTable
 CREATE TABLE "SubscriptionPlan" (
     "id" TEXT NOT NULL PRIMARY KEY,
     "name" TEXT NOT NULL,
-    "price" DOUBLE PRECISION NOT NULL,
+    "price" REAL NOT NULL,
     "productLimit" INTEGER NOT NULL,
     "isActive" BOOLEAN NOT NULL DEFAULT true,
     "description" TEXT,
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL
 );
 
 -- CreateTable
@@ -50,13 +50,13 @@ CREATE TABLE "ShopSubscription" (
     "status" TEXT NOT NULL DEFAULT 'active',
     "chargeId" TEXT,
     "productsUsed" INTEGER NOT NULL DEFAULT 0,
-    "billingCycleStart" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "billingCycleEnd" TIMESTAMP(3),
+    "billingCycleStart" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "billingCycleEnd" DATETIME,
     "trialProductsUsed" INTEGER NOT NULL DEFAULT 0,
     "triedPlanIds" TEXT NOT NULL DEFAULT '',
-    "cancelledAt" TIMESTAMP(3),
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL,
+    "cancelledAt" DATETIME,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL,
     CONSTRAINT "ShopSubscription_planId_fkey" FOREIGN KEY ("planId") REFERENCES "SubscriptionPlan" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
 );
 
@@ -64,11 +64,11 @@ CREATE TABLE "ShopSubscription" (
 CREATE TABLE "UsageHistory" (
     "id" TEXT NOT NULL PRIMARY KEY,
     "shop" TEXT NOT NULL,
-    "date" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "date" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "productsCreated" INTEGER NOT NULL DEFAULT 0,
     "planName" TEXT NOT NULL,
     "planLimit" INTEGER NOT NULL,
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 -- CreateTable
@@ -77,8 +77,8 @@ CREATE TABLE "ShopReview" (
     "shop" TEXT NOT NULL,
     "rating" INTEGER NOT NULL DEFAULT 0,
     "dismissed" BOOLEAN NOT NULL DEFAULT false,
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL
 );
 
 -- CreateIndex
