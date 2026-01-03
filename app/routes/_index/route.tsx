@@ -19,11 +19,11 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 export const action = async ({ request }: ActionFunctionArgs) => {
   const { shop } = Object.fromEntries(await request.formData());
 
-  if (typeof shop !== "string") {
+  if (typeof shop !== "string" || !shop) {
     throw new Error("Shop parameter is required");
   }
 
-  return await login({ rawRequest: request, shop });
+  return await login(request);
 };
 
 export default function App() {
