@@ -17,13 +17,23 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
-  const { shop } = Object.fromEntries(await request.formData());
+  const formData = await request.formData();
+  const shop = formData.get("shop");
 
   if (typeof shop !== "string" || !shop) {
     throw new Error("Shop parameter is required");
   }
 
-  return await login(request);
+  // Reconstruct the request with the shop parameter in the URL
+  const url = new URL(request.url);
+  url.searchParams.set("shop", shop);
+  
+  const newRequest = new Request(url.toString(), {
+    method: request.method,
+    headers: request.headers,
+  });
+
+  return await login(newRequest);
 };
 
 export default function App() {
