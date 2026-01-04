@@ -1,23 +1,48 @@
-# 🚀 Production Deployment Quick Checklist
+# 🚀 Railway Deployment Checklist - ShopFlixAI
 
-Use this checklist when deploying to production.
+Use this checklist when deploying to Railway production.
 
 ## Pre-Deployment
 
-- [ ] Run `npm run generate:env` to generate secure keys
-- [ ] Update `.env` with all production values
-- [ ] Run `npm run precheck` to validate configuration
-- [ ] Choose hosting platform (Railway/Fly.io/Heroku)
-- [ ] Set up production database (PostgreSQL)
+- [x] Code tested locally and committed (v1.0.0-production)
+- [x] All bug fixes applied and verified
+- [x] GitHub repository connected
+- [x] Dockerfile configured for production
+- [x] railway.json configuration ready
+- [ ] Railway project "ShopFlixAI" created
 
-## Environment Variables
+## Railway Setup Steps
 
-Copy and update these in your hosting platform:
+### 1. PostgreSQL Database
+- [ ] Create new PostgreSQL service in Railway
+- [ ] Wait for service to be "Ready" (green status)
+- [ ] Verify DATABASE_URL auto-populated
 
-```bash
-SHOPIFY_API_KEY=           # From Partner Dashboard
-SHOPIFY_API_SECRET=        # From Partner Dashboard
-SHOPIFY_APP_URL=           # Set after first deployment
+### 2. Environment Variables (Set in Railway Dashboard)
+
+**Shopify Configuration:**
+```
+SHOPIFY_API_KEY=2c65115880221c91a310482a43be0355
+SHOPIFY_API_SECRET=a17b3423313852c02c332f81e1685547
+SCOPES=write_products,read_products,read_script_tags,write_script_tags
+SHOPIFY_DEV_STORE=quickstart-8d0b502f.myshopify.com
+```
+
+**API Keys:**
+```
+GOOGLE_GEMINI_API_KEY=AIzaSyAqnrP-b2epwan7GVTmtAknQedQ106clxo
+```
+
+**Database & Environment:**
+```
+DATABASE_URL=[Auto-set by Railway from PostgreSQL]
+NODE_ENV=production
+```
+
+**App URL (Set after first deploy):**
+```
+SHOPIFY_APP_URL=https://[your-railway-domain].up.railway.app
+```
 DATABASE_URL=              # PostgreSQL connection string
 ENCRYPTION_STRING=         # Generated via npm run generate:env
 NODE_ENV=production
