@@ -18,7 +18,12 @@ Use this checklist when deploying to Railway production.
 - [ ] Wait for service to be "Ready" (green status)
 - [ ] Verify DATABASE_URL auto-populated
 
-### 2. Environment Variables (Set in Railway Dashboard)
+### 3. Database Configuration
+- **Development Database**: SQLite (file:./dev.db) - lightweight, file-based
+- **Production Database**: PostgreSQL (managed by Railway) - scalable, reliable
+- Prisma schema: `provider = "postgresql"` (configured for Railway)
+- Schema is database-agnostic and works with migrations
+- When DATABASE_URL changes, Prisma uses the appropriate driver
 
 **Shopify Configuration:**
 ```

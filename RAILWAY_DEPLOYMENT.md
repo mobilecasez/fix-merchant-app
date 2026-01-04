@@ -103,11 +103,12 @@ After deployment:
 ## Database Initialization
 
 The app will automatically:
-1. Run `prisma generate` - generates Prisma client
-2. Run `prisma db push` - applies schema to PostgreSQL
-3. Run seed script - creates subscription plans
+1. Detect PostgreSQL database from DATABASE_URL
+2. Run `prisma generate` - generates Prisma client
+3. Run `prisma db push` - applies schema to PostgreSQL
+4. Run seed script - creates subscription plans
 
-These commands are included in the `docker-start` npm script.
+**Note**: Development uses SQLite (file:./dev.db), but schema automatically uses PostgreSQL when DATABASE_URL points to a PostgreSQL instance.
 
 ## Troubleshooting
 
