@@ -84,12 +84,17 @@ GOOGLE_GEMINI_API_KEY=AIzaSyAqnrP-b2epwan7GVTmtAknQedQ106clxo
 # Environment
 NODE_ENV=production
 
-# Database (AUTO-SET by PostgreSQL service)
+# Database (AUTO-SET by PostgreSQL service - Prisma uses this)
 DATABASE_URL=postgresql://[auto-populated]
 
 # Your app URL (ADD AFTER FIRST SUCCESSFUL DEPLOY)
 SHOPIFY_APP_URL=https://[your-railway-app-url].up.railway.app
 ```
+
+**Note**: 
+- Development uses SQLite (local `dev.db` file)
+- Production on Railway uses PostgreSQL (managed by Railway)
+- Prisma schema is configured for PostgreSQL
 
 #### 4. Connect GitHub for Auto-Deploy
 ```
@@ -196,8 +201,14 @@ After successful deployment:
 - `app/routes/` - All page routes and API endpoints
 - `app/utils/billing.server.ts` - Subscription and billing logic
 - `app/components/` - React components
-- `prisma/schema.prisma` - Database schema
+- `prisma/schema.prisma` - Database schema (PostgreSQL for production)
 - `prisma/migrations/` - Database migrations
+
+### Database
+- **Development**: SQLite (file-based: `dev.db`)
+- **Production (Railway)**: PostgreSQL (managed by Railway service)
+- Prisma provider configured for PostgreSQL production deployment
+- Migrations are database-agnostic and compatible with both
 
 ### Documentation
 - `RAILWAY_DEPLOYMENT.md` - Detailed deployment guide
