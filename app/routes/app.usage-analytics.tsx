@@ -17,20 +17,16 @@ import {
 } from "@shopify/polaris";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
-import { getUsageStats, getUsageWarning } from "../utils/billing.server";
+import { getUsageStats, getUsageWarning, getOrCreateSubscription, getProductsUsed } from "../utils/billing.server";
 
 export const loader: LoaderFunction = async ({ request }) => {
   const { session } = await authenticate.admin(request);
 
-  // Get subscription
-  const subscription = await prisma.shopSubscription.findUnique({
-    where: { shop: session.shop },
-    include: { plan: true },
-  });
+  // Get or create subscription (auto-initializes with free trial if new shop)
+  const subscription = await getOrCreateSubscription(session.shop);
 
-  if (!subscription) {
-    return json({ error: "No subscription found" });
-  }
+  // Calculate products used on server side
+  const productsUsed = getProductsUsed(subscription);
 
   // Get usage stats for last 30 days
   const stats = await getUsageStats(session.shop, 30);
@@ -45,6 +41,7 @@ export const loader: LoaderFunction = async ({ request }) => {
 
   return json({
     subscription,
+    productsUsed,
     stats,
     warning,
     daysRemaining,
@@ -64,8 +61,9 @@ export default function UsageAnalytics() {
     );
   }
 
-  const { subscription, stats, warning, daysRemaining } = data;
-  const usagePercentage = (subscription.productsUsed / subscription.plan.productLimit) * 100;
+  const { subscription, productsUsed, stats, warning, daysRemaining } = data;
+  
+  const usagePercentage = (productsUsed / subscription.plan.productLimit) * 100;
 
   return (
     <Page
@@ -111,7 +109,7 @@ export default function UsageAnalytics() {
               <BlockStack gap="200">
                 <InlineStack align="space-between">
                   <Text as="p" variant="bodyLg" fontWeight="semibold">
-                    {subscription.productsUsed} / {subscription.plan.productLimit}
+                    {productsUsed} / {subscription.plan.productLimit}
                   </Text>
                   <Text as="p" variant="bodyMd" tone="subdued">
                     {Math.round(usagePercentage)}% used
@@ -131,7 +129,7 @@ export default function UsageAnalytics() {
                       Products Remaining
                     </Text>
                     <Text as="p" variant="headingMd">
-                      {subscription.plan.productLimit - subscription.productsUsed}
+                      {subscription.plan.productLimit - productsUsed}
                     </Text>
                   </BlockStack>
                 </Box>
@@ -234,7 +232,7 @@ export default function UsageAnalytics() {
                 <Banner tone="info">
                   <p>
                     You've used more than half your limit. Based on your average of {stats.avgPerDay.toFixed(1)} products per day, 
-                    you'll reach your limit in approximately {Math.round((subscription.plan.productLimit - subscription.productsUsed) / (stats.avgPerDay || 1))} days.
+                    you'll reach your limit in approximately {Math.round((subscription.plan.productLimit - productsUsed) / (stats.avgPerDay || 1))} days.
                   </p>
                 </Banner>
               )}

@@ -22,6 +22,7 @@ import {
 import { TitleBar } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
+import { getOrCreateSubscription, getProductsUsed } from "../utils/billing.server";
 import RichTextEditor from "../components/RichTextEditor";
 import DOMPurify from "dompurify";
 import "../styles/modal-overrides.css";
@@ -30,18 +31,18 @@ import "../styles/dashboard.css";
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
   
-  // Get subscription info
-  const subscription = await prisma.shopSubscription.findUnique({
-    where: { shop: session.shop },
-    include: { plan: true },
-  });
+  // Get or create subscription (auto-initializes with free trial if new shop)
+  const subscription = await getOrCreateSubscription(session.shop);
+  
+  // Calculate products used on server side
+  const productsUsed = getProductsUsed(subscription);
   
   // Get review status
   const review = await prisma.shopReview.findUnique({
     where: { shop: session.shop },
   });
   
-  return json({ subscription, review });
+  return json({ subscription, review, productsUsed });
 };
 
 // Action to handle updating a product
@@ -190,6 +191,7 @@ export default function Index() {
   const loaderData = useLoaderData<typeof loader>();
   const subscription = loaderData?.subscription;
   const initialReview = loaderData?.review;
+  const productsUsed = loaderData?.productsUsed ?? 0;
   
   const [products, setProducts] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -561,7 +563,7 @@ export default function Index() {
                       className="progress-bar-fill" 
                       style={{ 
                         width: subscription ? 
-                          `${(subscription.productsUsed / subscription.plan.productLimit) * 100}%` : 
+                          `${(productsUsed / subscription.plan.productLimit) * 100}%` : 
                           '0%' 
                       }}
                     ></div>
@@ -569,7 +571,7 @@ export default function Index() {
                 </div>
                 <div className="usage-label-bottom">
                   {subscription ? 
-                    `${subscription.productsUsed} / ${subscription.plan.productLimit} Used` : 
+                    `${productsUsed} / ${subscription.plan.productLimit} Used` : 
                     '0 / 2 Used'
                   }
                 </div>

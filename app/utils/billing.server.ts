@@ -1,4 +1,55 @@
 import prisma from "../db.server";
+import type { ShopSubscription, SubscriptionPlan } from "@prisma/client";
+
+/**
+ * Calculate the current products used based on subscription status
+ * @param subscription - Subscription object with plan included (can be from loader JSON)
+ * @returns The correct products used count (trial or active)
+ */
+export function getProductsUsed(subscription: any): number {
+  if (!subscription) return 0;
+  
+  return subscription.status === "trial" 
+    ? subscription.trialProductsUsed 
+    : subscription.productsUsed;
+}
+
+/**
+ * Get or create subscription with free trial (auto-initializes on first access)
+ */
+export async function getOrCreateSubscription(shop: string) {
+  let subscription = await prisma.shopSubscription.findUnique({
+    where: { shop },
+    include: { plan: true },
+  });
+
+  if (!subscription) {
+    // Get the Free Trial plan
+    const freeTrialPlan = await prisma.subscriptionPlan.findFirst({
+      where: { name: "Free Trial" },
+    });
+
+    if (!freeTrialPlan) {
+      throw new Error("Free Trial plan not found. Please run seed script.");
+    }
+
+    // Create subscription with free trial
+    subscription = await prisma.shopSubscription.create({
+      data: {
+        shop,
+        planId: freeTrialPlan.id,
+        status: "trial",
+        productsUsed: 0,
+        trialProductsUsed: 0,
+        triedPlanIds: freeTrialPlan.id,
+        billingCycleStart: new Date(),
+      },
+      include: { plan: true },
+    });
+  }
+
+  return subscription;
+}
 
 /**
  * Check if shop has tried a specific plan

@@ -4,6 +4,7 @@ import { json, LoaderFunction } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { getProductCategories } from "../utils/categories.server";
+import { getOrCreateSubscription, incrementProductUsage, getProductsUsed } from "../utils/billing.server";
 import {
   Page,
   Layout,
@@ -37,20 +38,18 @@ export const loader: LoaderFunction = async ({ request }) => {
   const { session } = await authenticate.admin(request);
   const categories = getProductCategories();
   
-  const subscription = await prisma.shopSubscription.findUnique({
-    where: { shop: session.shop },
-    include: { plan: true },
-  });
+  // Get or create subscription (auto-initializes with free trial if new shop)
+  const subscription = await getOrCreateSubscription(session.shop);
   
-  const remainingQuota = subscription
-    ? subscription.plan.productLimit - subscription.productsUsed
-    : 0;
+  // Calculate products used on server side
+  const productsUsed = getProductsUsed(subscription);
+  const productLimit = subscription.plan.productLimit;
   
-  return json({ categories, remainingQuota, subscription });
+  return json({ categories, productsUsed, productLimit, subscription });
 };
 
 export default function AddProductReplica() {
-  const { categories, remainingQuota, subscription } = useLoaderData<typeof loader>();
+  const { categories, productsUsed, productLimit, subscription } = useLoaderData<typeof loader>();
   const [productUrl, setProductUrl] = useState("");
   const [productName, setProductName] = useState("");
   const [description, setDescription] = useState("");
@@ -91,7 +90,7 @@ export default function AddProductReplica() {
   const [hasVariants, setHasVariants] = useState(false);
   const [options, setOptions] = useState([{ name: "", values: "" }]);
   const [variants, setVariants] = useState<any[]>([]);
-  const [currentRemainingQuota, setCurrentRemainingQuota] = useState(remainingQuota);
+  const [currentProductsUsed, setCurrentProductsUsed] = useState(productsUsed);
   const fetcher = useFetcher();
   const saveFetcher = useFetcher();
   const processAllFetcher = useFetcher();
@@ -217,8 +216,8 @@ export default function AddProductReplica() {
       (async () => {
         try {
           await fetch("/api/increment-usage", { method: "POST" });
-          // Update local quota immediately after successful increment
-          setCurrentRemainingQuota((prev: number) => Math.max(0, prev - 1));
+          // Update local usage count immediately after successful increment
+          setCurrentProductsUsed((prev: number) => prev + 1);
         } catch (error) {
           console.error("Failed to increment usage:", error);
         }
@@ -414,6 +413,14 @@ export default function AddProductReplica() {
   ) : null;
 
   const handleFetchProduct = () => {
+    // Check if user has reached their usage limit
+    if (currentProductsUsed >= productLimit) {
+      setToastMessage(`Limit Exceeded with current plan (${subscription.plan.name}). Please upgrade to continue using.`);
+      setToastError(true);
+      setToastActive(true);
+      return;
+    }
+
     const formData = new FormData();
     formData.append("url", productUrl);
     fetcher.submit(formData, {
@@ -425,7 +432,7 @@ export default function AddProductReplica() {
   return (
     <Frame>
       <Page
-        title={`Add product (${currentRemainingQuota}/${subscription?.plan.productLimit || 0} used)`}
+        title={`Add product (${currentProductsUsed}/${productLimit} used)`}
         backAction={{ content: "Products", url: "/app" }}
         primaryAction={{
           content: "Save product",
