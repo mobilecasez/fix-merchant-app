@@ -38,23 +38,20 @@ async function extractProductDataWithAI(url: string, htmlContent: string) {
     return sources;
   });
 
+  // Clean HTML by removing scripts, styles, and excess whitespace
   const root = parse(htmlContent);
-  // Remove script and style tags to clean up the text
-  root.querySelectorAll("script, style").forEach((el) => el.remove());
-  const bodyText = root.querySelector("body")?.text || root.text;
-
-  // Basic text cleaning
-  const cleanedText = bodyText
-    .replace(/\s\s+/g, " ") // Replace multiple spaces with a single space
-    .replace(/\n\s*\n/g, "\n") // Replace multiple newlines with a single newline
+  root.querySelectorAll("script, style, noscript").forEach((el) => el.remove());
+  const cleanedHtml = root.toString()
+    .replace(/\s\s+/g, " ") // Replace multiple spaces with single space
+    .replace(/>\s+</g, "><") // Remove whitespace between tags
     .trim();
 
   const prompt = `
-    From the text content of "${url}", extract the product information into a JSON object.
+    From the HTML content of "${url}", extract the product information into a JSON object.
 
-    Cleaned Text Content:
-    \`\`\`
-    ${cleanedText}
+    HTML:
+    \`\`\`html
+    ${cleanedHtml}
     \`\`\`
 
     Image URLs:
