@@ -158,19 +158,27 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   }
 
   try {
-    const response = await fetch(url, {
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/104.0.0.0 Safari/537.36",
-      },
-    });
-    if (!response.ok) {
-      return json(
-        { error: `Failed to fetch URL: ${response.statusText}` },
-        { status: response.status },
-      );
+    let html = "";
+    let fetchSuccess = false;
+    
+    // Try to fetch HTML with regular HTTP request first
+    try {
+      const response = await fetch(url, {
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/104.0.0.0 Safari/537.36",
+        },
+      });
+      
+      if (response.ok) {
+        html = await response.text();
+        fetchSuccess = true;
+      } else {
+        console.log(`Initial fetch failed with status ${response.status}, will try with scraper`);
+      }
+    } catch (fetchError) {
+      console.log("Initial fetch failed, will try with scraper:", fetchError);
     }
-    const html = await response.text();
 
     const scraper = getScraper(url);
 
@@ -185,16 +193,26 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           console.log(
             "Scraper returned empty product name, falling back to AI scraper",
           );
-          // Fall back to AI extraction
+          // Fall back to AI extraction - need HTML for AI
+          if (!fetchSuccess) {
+            throw new Error("Cannot use AI scraper without HTML");
+          }
           productData = await extractProductDataWithAI(url, html);
         }
       } catch (scraperError) {
         console.error("Local scraper failed, falling back to AI:", scraperError);
         // Fall back to AI extraction on scraper error
-        productData = await extractProductDataWithAI(url, html);
+        if (fetchSuccess) {
+          productData = await extractProductDataWithAI(url, html);
+        } else {
+          throw scraperError;
+        }
       }
     } else {
       console.log("Using AI scraper.");
+      if (!fetchSuccess) {
+        throw new Error("Cannot fetch URL - website may be blocking requests");
+      }
       productData = await extractProductDataWithAI(url, html);
     }
 
