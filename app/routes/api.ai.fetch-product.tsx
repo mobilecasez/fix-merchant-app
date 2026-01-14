@@ -2,6 +2,7 @@ import { json, ActionFunctionArgs } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
 import { JSDOM } from "jsdom";
 import { getScraper } from "../utils/scrapers.server";
+import { ensureCompareAtPrice } from "../utils/scrapers/helpers";
 import fs from "fs";
 import path from "path";
 import { parse } from "node-html-parser";
@@ -131,7 +132,15 @@ async function extractProductDataWithAI(url: string, htmlContent: string) {
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (jsonMatch && jsonMatch[0]) {
       try {
-        return JSON.parse(jsonMatch[0]);
+        const parsedData = JSON.parse(jsonMatch[0]);
+        
+        // Apply 20% markup if compareAtPrice is missing or null
+        if (parsedData.price && (!parsedData.compareAtPrice || parsedData.compareAtPrice === null)) {
+          parsedData.compareAtPrice = ensureCompareAtPrice(parsedData.price, "");
+          console.log("[AI-Scraper] Applied 20% markup to compareAtPrice:", parsedData.compareAtPrice);
+        }
+        
+        return parsedData;
       } catch (e) {
         console.error("Failed to parse JSON from AI response:", e);
         throw new Error("Invalid JSON format in AI response.");
