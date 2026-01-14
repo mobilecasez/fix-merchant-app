@@ -98,9 +98,6 @@ async function extractProductDataWithAI(url: string, htmlContent: string) {
     - Extract all high-resolution product image URLs.
     - Identify all product options (e.g., "Size", "Color") and their values.
     - List all variant combinations with their price, SKU, and barcode.
-    - IMPORTANT: For variants, extract the actual price for each variant. If different sizes/colors have different prices, capture those specific prices. Do NOT use 0 as a default price.
-    - If the product has no variants, leave the variants array empty [].
-    - The main "price" field should be the base/default price of the product.
     - If a value is absolutely not present, return null for that field.
     - Do not return an empty object. Make your best effort to fill the fields.
   `;
