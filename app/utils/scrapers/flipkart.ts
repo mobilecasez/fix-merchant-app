@@ -10,7 +10,12 @@ export async function scrapeFlipkart(html: string, url: string): Promise<Scraped
     await page.setUserAgent(
       "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/104.0.0.0 Safari/537.36",
     );
-    await page.goto(url, { waitUntil: "networkidle2" });
+    
+    // Use domcontentloaded instead of networkidle2 for faster loading
+    await page.goto(url, { 
+      waitUntil: "domcontentloaded",
+      timeout: 30000 
+    });
 
     // Wait for content to load
     await new Promise(resolve => setTimeout(resolve, 3000));
