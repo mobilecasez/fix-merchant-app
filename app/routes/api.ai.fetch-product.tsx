@@ -39,16 +39,63 @@ async function extractProductDataWithAI(url: string, htmlContent: string) {
     .replace(/\n\s*\n/g, "\n") // Replace multiple newlines with a single newline
     .trim();
 
-  const images: string[] = [];
+  // Extract images with proper URL handling
+  const imageSet = new Set<string>();
+  const urlObj = new URL(url);
+  const baseUrl = `${urlObj.protocol}//${urlObj.host}`;
+  
   root.querySelectorAll("img").forEach((img) => {
     const src = img.getAttribute("src");
-    if (src) images.push(src);
+    if (src && src.trim()) {
+      let fullUrl = src.trim();
+      // Convert relative URLs to absolute
+      if (fullUrl.startsWith("//")) {
+        fullUrl = urlObj.protocol + fullUrl;
+      } else if (fullUrl.startsWith("/")) {
+        fullUrl = baseUrl + fullUrl;
+      } else if (!fullUrl.startsWith("http")) {
+        fullUrl = baseUrl + "/" + fullUrl;
+      }
+      // Filter out placeholder and invalid images
+      if (
+        fullUrl.startsWith("http") &&
+        !fullUrl.includes("data:image") &&
+        !fullUrl.includes("placeholder") &&
+        !fullUrl.includes("1x1") &&
+        fullUrl.length > 20
+      ) {
+        imageSet.add(fullUrl);
+      }
+    }
+    
     const srcset = img.getAttribute("srcset");
     if (srcset) {
       const srcsetSources = srcset.split(",").map((s) => s.trim().split(" ")[0]);
-      images.push(...srcsetSources);
+      srcsetSources.forEach((src) => {
+        if (src && src.trim()) {
+          let fullUrl = src.trim();
+          if (fullUrl.startsWith("//")) {
+            fullUrl = urlObj.protocol + fullUrl;
+          } else if (fullUrl.startsWith("/")) {
+            fullUrl = baseUrl + fullUrl;
+          } else if (!fullUrl.startsWith("http")) {
+            fullUrl = baseUrl + "/" + fullUrl;
+          }
+          if (
+            fullUrl.startsWith("http") &&
+            !fullUrl.includes("data:image") &&
+            !fullUrl.includes("placeholder") &&
+            !fullUrl.includes("1x1") &&
+            fullUrl.length > 20
+          ) {
+            imageSet.add(fullUrl);
+          }
+        }
+      });
     }
   });
+  
+  const images = Array.from(imageSet);
 
   const prompt = `
     From the text content of "${url}", extract the product information into a JSON object.
