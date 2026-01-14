@@ -104,9 +104,9 @@ export function getScraper(url: string): ScraperFunction | null {
     return scrapeAliExpress;
   }
   
-  // Flipkart
+  // Flipkart - with 60s timeout
   if (urlLower.includes("flipkart.com")) {
-    return scrapeFlipkart;
+    return createTimeoutScraper(scrapeFlipkart, 60000);
   }
   
   // No matching scraper found
