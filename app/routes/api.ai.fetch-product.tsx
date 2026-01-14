@@ -4,7 +4,7 @@ import { JSDOM } from "jsdom";
 import { getScraper } from "../utils/scrapers.server";
 import fs from "fs";
 import path from "path";
-import * as cheerio from "cheerio";
+import { parse } from "node-html-parser";
 
 async function extractProductDataWithAI(url: string, htmlContent: string) {
   const apiKey = process.env.GOOGLE_GEMINI_API_KEY;
@@ -28,10 +28,10 @@ async function extractProductDataWithAI(url: string, htmlContent: string) {
     .filter((line) => line.trim() !== "" && !line.startsWith("#"))
     .map((line) => line.split(" : ")[1].trim());
 
-  const $ = cheerio.load(htmlContent);
+  const root = parse(htmlContent);
   // Remove script and style tags to clean up the text
-  $("script, style").remove();
-  const bodyText = $("body").text();
+  root.querySelectorAll("script, style").forEach((el) => el.remove());
+  const bodyText = root.querySelector("body")?.text || root.text;
 
   // Basic text cleaning
   const cleanedText = bodyText
@@ -39,19 +39,16 @@ async function extractProductDataWithAI(url: string, htmlContent: string) {
     .replace(/\n\s*\n/g, "\n") // Replace multiple newlines with a single newline
     .trim();
 
-  const images = $("img")
-    .map((i, el) => {
-      const sources = [$(el).attr("src")];
-      const srcset = $(el).attr("srcset");
-      if (srcset) {
-        const srcsetSources = srcset.split(",").map((s) => s.trim().split(" ")[0]);
-        sources.push(...srcsetSources);
-      }
-      return sources;
-    })
-    .get()
-    .flat()
-    .filter(Boolean); // Filter out any undefined/null sources
+  const images: string[] = [];
+  root.querySelectorAll("img").forEach((img) => {
+    const src = img.getAttribute("src");
+    if (src) images.push(src);
+    const srcset = img.getAttribute("srcset");
+    if (srcset) {
+      const srcsetSources = srcset.split(",").map((s) => s.trim().split(" ")[0]);
+      images.push(...srcsetSources);
+    }
+  });
 
   const prompt = `
     From the text content of "${url}", extract the product information into a JSON object.

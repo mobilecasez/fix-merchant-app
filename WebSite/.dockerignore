@@ -1,0 +1,16 @@
+# Ignore node_modules if any
+node_modules/
+
+# Ignore git files
+.git/
+.gitignore
+
+# Ignore macOS files
+.DS_Store
+
+# Ignore editor files
+.vscode/
+.idea/
+
+# Ignore backup files
+*.backup
