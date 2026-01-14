@@ -4,45 +4,69 @@ import { JSDOM } from "jsdom";
 import { getScraper } from "../utils/scrapers.server";
 import fs from "fs";
 import path from "path";
+import * as cheerio from "cheerio";
 
 async function extractProductDataWithAI(url: string, htmlContent: string) {
   const apiKey = process.env.GOOGLE_GEMINI_API_KEY;
-  console.log("[AI-Scraper] Using Gemini API, key present:", !!apiKey, "key length:", apiKey?.length || 0);
-  
+  console.log(
+    "[AI-Scraper] Using Gemini API, key present:",
+    !!apiKey,
+    "key length:",
+    apiKey?.length || 0,
+  );
+
   if (!apiKey) {
     throw new Error("GOOGLE_GEMINI_API_KEY environment variable is not set");
   }
-  
+
   const apiUrl = `https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
 
   const categoriesPath = path.resolve(process.cwd(), "categories.txt");
   const categoriesContent = fs.readFileSync(categoriesPath, "utf-8");
-  const categoriesList = categoriesContent.split("\n").filter(line => line.trim() !== "" && !line.startsWith("#")).map(line => line.split(" : ")[1].trim());
+  const categoriesList = categoriesContent
+    .split("\n")
+    .filter((line) => line.trim() !== "" && !line.startsWith("#"))
+    .map((line) => line.split(" : ")[1].trim());
 
-  const dom = new JSDOM(htmlContent);
-  const images = Array.from(dom.window.document.querySelectorAll('img')).flatMap(img => {
-    const sources = [img.src];
-    if (img.srcset) {
-      const srcsetSources = img.srcset.split(',').map(s => s.trim().split(' ')[0]);
-      sources.push(...srcsetSources);
-    }
-    return sources;
-  });
+  const $ = cheerio.load(htmlContent);
+  // Remove script and style tags to clean up the text
+  $("script, style").remove();
+  const bodyText = $("body").text();
+
+  // Basic text cleaning
+  const cleanedText = bodyText
+    .replace(/\s\s+/g, " ") // Replace multiple spaces with a single space
+    .replace(/\n\s*\n/g, "\n") // Replace multiple newlines with a single newline
+    .trim();
+
+  const images = $("img")
+    .map((i, el) => {
+      const sources = [$(el).attr("src")];
+      const srcset = $(el).attr("srcset");
+      if (srcset) {
+        const srcsetSources = srcset.split(",").map((s) => s.trim().split(" ")[0]);
+        sources.push(...srcsetSources);
+      }
+      return sources;
+    })
+    .get()
+    .flat()
+    .filter(Boolean); // Filter out any undefined/null sources
 
   const prompt = `
-    From the HTML content of "${url}", extract the product information into a JSON object.
+    From the text content of "${url}", extract the product information into a JSON object.
 
-    HTML:
-    \`\`\`html
-    ${htmlContent}
+    Cleaned Text Content:
+    \`\`\`
+    ${cleanedText}
     \`\`\`
 
     Image URLs:
-    ${images.join('\n')}
+    ${images.join("\n")}
 
     Here is the full list of valid Google Product Categories:
     \`\`\`
-    ${categoriesList.join('\n')}
+    ${categoriesList.join("\n")}
     \`\`\`
 
     JSON output should follow this structure. Do not include any text or markdown formatting before or after the JSON object.
@@ -101,7 +125,9 @@ async function extractProductDataWithAI(url: string, htmlContent: string) {
     if (!response.ok) {
       const errorBody = await response.text();
       console.error("AI API Error:", errorBody);
-      throw new Error(`AI API request failed with status ${response.status}: ${errorBody}`);
+      throw new Error(
+        `AI API request failed with status ${response.status}: ${errorBody}`,
+      );
     }
 
     const data = await response.json();
@@ -122,7 +148,8 @@ async function extractProductDataWithAI(url: string, htmlContent: string) {
     throw new Error("No valid JSON object found in AI response.");
   } catch (error) {
     console.error("AI extraction failed:", error);
-    const errorMessage = error instanceof Error ? error.message : "An unknown error occurred";
+    const errorMessage =
+      error instanceof Error ? error.message : "An unknown error occurred";
     throw new Error(errorMessage);
   }
 }
@@ -140,14 +167,18 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   try {
     const response = await fetch(url, {
       headers: {
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/104.0.0.0 Safari/537.36",
+        "User-Agent":
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/104.0.0.0 Safari/537.36",
       },
     });
     if (!response.ok) {
-      return json({ error: `Failed to fetch URL: ${response.statusText}` }, { status: response.status });
+      return json(
+        { error: `Failed to fetch URL: ${response.statusText}` },
+        { status: response.status },
+      );
     }
     const html = await response.text();
-    
+
     const scraper = getScraper(url);
 
     let productData;
@@ -155,40 +186,45 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       console.log("Using local scraper.");
       try {
         productData = await scraper(html, url);
-        
+
         // Validate that scraper returned valid data
         if (!productData.productName || productData.productName.trim() === "") {
-          console.log("Scraper returned empty product name, falling back to AI scraper");
+          console.log(
+            "Scraper returned empty product name, falling back to AI scraper",
+          );
           // Fall back to AI extraction
-          const dom = new JSDOM(html);
-          const body = dom.window.document.body.innerHTML;
-          productData = await extractProductDataWithAI(url, body);
+          productData = await extractProductDataWithAI(url, html);
         }
       } catch (scraperError) {
         console.error("Local scraper failed, falling back to AI:", scraperError);
         // Fall back to AI extraction on scraper error
-        const dom = new JSDOM(html);
-        const body = dom.window.document.body.innerHTML;
-        productData = await extractProductDataWithAI(url, body);
+        productData = await extractProductDataWithAI(url, html);
       }
     } else {
       console.log("Using AI scraper.");
-      const dom = new JSDOM(html);
-      const body = dom.window.document.body.innerHTML;
-      productData = await extractProductDataWithAI(url, body);
+      productData = await extractProductDataWithAI(url, html);
     }
 
     // Final validation
-    if (!productData || !productData.productName || productData.productName.trim() === "") {
-      return json({ 
-        error: "Unable to fetch product data. The website may be blocking automated access. Please add product manually." 
-      }, { status: 400 });
+    if (
+      !productData ||
+      !productData.productName ||
+      productData.productName.trim() === ""
+    ) {
+      return json(
+        {
+          error:
+            "Unable to fetch product data. The website may be blocking automated access. Please add product manually.",
+        },
+        { status: 400 },
+      );
     }
 
     return json(productData);
   } catch (error) {
     console.error("Error fetching product data:", error);
-    const errorMessage = error instanceof Error ? error.message : "An unknown error occurred";
+    const errorMessage =
+      error instanceof Error ? error.message : "An unknown error occurred";
     return json({ error: errorMessage }, { status: 500 });
   }
 };
