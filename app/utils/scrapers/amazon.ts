@@ -2,6 +2,9 @@ import { launchBrowser } from "./browser";
 import { ScrapedProductData } from "./types";
 import { cleanProductName, ensureCompareAtPrice, parseWeight, estimateWeight } from "./helpers";
 
+// Helper function for delays
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
 export async function scrapeAmazon(html: string, url: string): Promise<ScrapedProductData> {
   let browser;
   try {
@@ -117,7 +120,7 @@ export async function scrapeAmazon(html: string, url: string): Promise<ScrapedPr
           for (let i = 0; i < Math.min(thumbnails.length, 7); i++) {
             try {
               await thumbnails[i].click();
-              await page.waitForTimeout(200); // Wait for image to load
+              await delay(200); // Wait for image to load
             } catch (e) {
               console.log(`Amazon: Failed to click thumbnail ${i + 1}`);
             }
