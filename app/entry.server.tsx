@@ -8,6 +8,16 @@ import {
 import { isbot } from "isbot";
 import { addDocumentResponseHeaders } from "./shopify.server";
 
+if (typeof global.File === "undefined") {
+  global.File = class File extends Blob {
+    constructor(fileBits, fileName, options) {
+      super(fileBits, options);
+      this.name = fileName;
+      this.lastModified = options?.lastModified || Date.now();
+    }
+  } as any;
+}
+
 export const streamTimeout = 5000;
 
 export default async function handleRequest(
