@@ -5,6 +5,7 @@ import { cleanProductName, ensureCompareAtPrice, parseWeight, estimateWeight } f
 export async function scrapeAmazon(html: string, url: string): Promise<ScrapedProductData> {
   let browser;
   try {
+    console.log('[Amazon Scraper] Starting scrape for:', url);
     browser = await launchBrowser();
     const page = await browser.newPage();
     
@@ -22,15 +23,17 @@ export async function scrapeAmazon(html: string, url: string): Promise<ScrapedPr
     // Set viewport
     await page.setViewport({ width: 1920, height: 1080 });
 
+    console.log('[Amazon Scraper] Navigating to URL...');
     // Navigate with longer timeout and domcontentloaded instead of networkidle2
     await page.goto(url, { 
       waitUntil: "domcontentloaded",
-      timeout: 30000 
+      timeout: 45000 
     });
     
+    console.log('[Amazon Scraper] Page loaded, waiting for product title...');
     // Wait a bit for dynamic content
-    await page.waitForSelector('#productTitle', { timeout: 10000 }).catch(() => {
-      console.log('Amazon: productTitle not found, continuing anyway');
+    await page.waitForSelector('#productTitle', { timeout: 15000 }).catch(() => {
+      console.log('[Amazon Scraper] productTitle not found, continuing anyway');
     });
 
     const pageData = await page.evaluate(() => {
@@ -134,7 +137,11 @@ export async function scrapeAmazon(html: string, url: string): Promise<ScrapedPr
       variants: [],
     };
   } catch (error) {
-    console.error("Error during Amazon scraping:", error);
+    console.error("[Amazon Scraper] Error during Amazon scraping:", error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error("[Amazon Scraper] Error details:", errorMessage);
+    
+    // Return empty data to trigger AI fallback
     return {
       productName: "",
       description: "",
@@ -154,7 +161,10 @@ export async function scrapeAmazon(html: string, url: string): Promise<ScrapedPr
     };
   } finally {
     if (browser) {
-      await browser.close();
+      console.log('[Amazon Scraper] Closing browser...');
+      await browser.close().catch((err) => {
+        console.error('[Amazon Scraper] Error closing browser:', err);
+      });
     }
   }
 }

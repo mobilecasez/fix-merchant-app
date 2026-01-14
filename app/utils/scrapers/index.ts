@@ -1,4 +1,4 @@
-import { ScraperFunction } from "./types";
+import { ScraperFunction, ScrapedProductData } from "./types";
 import { scrapeAmazon } from "./amazon";
 import { scrapeWalmart } from "./walmart";
 import { scrapeEbay } from "./ebay";
@@ -11,13 +11,52 @@ import { scrapeJD } from "./jd";
 import { scrapeTaobao } from "./taobao";
 import { scrapeFlipkart } from "./flipkart";
 
+// Timeout wrapper to prevent hanging scrapers
+async function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  timeoutError: string
+): Promise<T> {
+  let timeoutId: NodeJS.Timeout;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(new Error(timeoutError));
+    }, timeoutMs);
+  });
+
+  try {
+    const result = await Promise.race([promise, timeoutPromise]);
+    clearTimeout(timeoutId!);
+    return result;
+  } catch (error) {
+    clearTimeout(timeoutId!);
+    throw error;
+  }
+}
+
+// Wrapper for scrapers with timeout
+function createTimeoutScraper(scraper: ScraperFunction, timeoutMs: number = 60000): ScraperFunction {
+  return async (html: string, url: string): Promise<ScrapedProductData> => {
+    try {
+      return await withTimeout(
+        scraper(html, url),
+        timeoutMs,
+        `Scraper timeout after ${timeoutMs}ms`
+      );
+    } catch (error) {
+      console.error(`[Scraper Timeout] Error: ${error}`);
+      throw error;
+    }
+  };
+}
+
 // Platform detection and scraper mapping
 export function getScraper(url: string): ScraperFunction | null {
   const urlLower = url.toLowerCase();
   
-  // Amazon (all domains)
+  // Amazon (all domains) - with 60s timeout
   if (urlLower.includes("amazon.")) {
-    return scrapeAmazon;
+    return createTimeoutScraper(scrapeAmazon, 60000);
   }
   
   // Taobao
