@@ -179,7 +179,10 @@ export async function scrapeEbay(html: string, url: string): Promise<ScrapedProd
     }
 
     // Ensure compare at price (add 20% if missing)
+    console.log('eBay: Price before ensureCompareAtPrice:', price);
+    console.log('eBay: CompareAtPrice before ensureCompareAtPrice:', compareAtPrice);
     const finalCompareAtPrice = ensureCompareAtPrice(price, compareAtPrice);
+    console.log('eBay: Final compareAtPrice after ensureCompareAtPrice:', finalCompareAtPrice);
 
     return {
       productName: cleanProductName(productName),
