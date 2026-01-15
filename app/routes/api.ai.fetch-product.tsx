@@ -29,16 +29,6 @@ async function extractProductDataWithAI(url: string, htmlContent: string) {
     .filter((line) => line.trim() !== "" && !line.startsWith("#"))
     .map((line) => line.split(" : ")[1].trim());
 
-  const dom = new JSDOM(htmlContent);
-  const images = Array.from(dom.window.document.querySelectorAll('img')).flatMap(img => {
-    const sources = [img.src];
-    if (img.srcset) {
-      const srcsetSources = img.srcset.split(',').map(s => s.trim().split(' ')[0]);
-      sources.push(...srcsetSources);
-    }
-    return sources;
-  });
-
   // Clean HTML by removing scripts, styles, and excess whitespace
   const root = parse(htmlContent);
   root.querySelectorAll("script, style, noscript").forEach((el) => el.remove());
@@ -54,9 +44,6 @@ async function extractProductDataWithAI(url: string, htmlContent: string) {
     \`\`\`html
     ${cleanedHtml}
     \`\`\`
-
-    Image URLs:
-    ${images.join("\n")}
 
     Here is the full list of valid Google Product Categories:
     \`\`\`
@@ -96,7 +83,7 @@ async function extractProductDataWithAI(url: string, htmlContent: string) {
     Instructions:
     - Return an empty string "" or an empty array [] if a field is not found.
     - Description should be in HTML format.
-    - Extract all high-resolution product image URLs.
+    - DO NOT extract image URLs - leave the images array empty [].
     - Identify all product options (e.g., "Size", "Color") and their values.
     - List all variant combinations with their price, SKU, and barcode.
     - If a value is absolutely not present, return null for that field.
@@ -207,11 +194,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
             throw new Error("Cannot use AI scraper without HTML");
           }
           const aiData = await extractProductDataWithAI(url, html);
-          // Always prefer scraper images over AI images (scrapers extract hiRes, AI extracts generic)
-          if (productData.images && productData.images.length > 0) {
-            aiData.images = productData.images;
-            console.log("Using scraper images (high-res):", productData.images.length);
-          }
+          // Always use scraper images (hiRes from ImageBlockATF)
+          aiData.images = productData.images || [];
+          console.log("Using scraper images (high-res):", aiData.images.length);
           productData = aiData;
         }
       } catch (scraperError) {
