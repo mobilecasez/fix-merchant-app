@@ -116,10 +116,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     productInput.handle = seoUrl;
   }
 
-  if (variants && variants.length > 0) {
-    productInput.options = options.map((opt: any) => opt.name);
-  }
-
+  // Note: Options and variants are handled after product creation
+  // as ProductCreateInput doesn't support options directly
+  
   // Note: Category will be set after product creation using productSet mutation
   // as it's not supported in ProductCreateInput
 
