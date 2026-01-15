@@ -40,40 +40,50 @@ export async function scrapeAmazonNew(html: string, url: string): Promise<any> {
       extractedData.title = null;
     }
     
-    // 2. Description - try multiple selectors for "About this item"
+    // 2. Description - only extract "About this item" and "Additional Information"
     try {
       let description = null;
       
-      // Try #feature-bullets ul li (most common)
-      let bulletList = root.querySelectorAll('#feature-bullets ul li');
+      // Try #feature-bullets ul li (most common) - filter to only feature bullets
+      let bulletList = root.querySelectorAll('#feature-bullets ul li span.a-list-item');
       if (bulletList.length > 0) {
-        const bullets = bulletList.map(li => li.text?.trim()).filter(text => text && text.length > 0);
+        const bullets = bulletList.map(li => li.text?.trim()).filter(text => text && text.length > 5);
         description = bullets.join('\n');
       }
       
-      // Try #featurebullets_feature_div ul li
+      // Try #featurebullets_feature_div ul li span
       if (!description) {
-        bulletList = root.querySelectorAll('#featurebullets_feature_div ul li');
+        bulletList = root.querySelectorAll('#featurebullets_feature_div ul li span.a-list-item');
         if (bulletList.length > 0) {
-          const bullets = bulletList.map(li => li.text?.trim()).filter(text => text && text.length > 0);
+          const bullets = bulletList.map(li => li.text?.trim()).filter(text => text && text.length > 5);
           description = bullets.join('\n');
         }
       }
       
-      // Try .a-unordered-list.a-vertical li
+      // Try div[data-feature-name="featurebullets"] - more specific
       if (!description) {
-        bulletList = root.querySelectorAll('.a-unordered-list.a-vertical li');
-        if (bulletList.length > 0) {
-          const bullets = bulletList.map(li => li.text?.trim()).filter(text => text && text.length > 0);
-          description = bullets.join('\n');
+        const featureBulletsDiv = root.querySelector('div[data-feature-name="featurebullets"]');
+        if (featureBulletsDiv) {
+          bulletList = featureBulletsDiv.querySelectorAll('ul li span.a-list-item');
+          if (bulletList.length > 0) {
+            const bullets = bulletList.map(li => li.text?.trim()).filter(text => text && text.length > 5);
+            description = bullets.join('\n');
+          }
         }
       }
       
-      // Try div[data-feature-name="featurebullets"] ul li
+      // Fallback: try without span filter but be more selective
       if (!description) {
-        bulletList = root.querySelectorAll('div[data-feature-name="featurebullets"] ul li');
+        bulletList = root.querySelectorAll('#feature-bullets ul li');
         if (bulletList.length > 0) {
-          const bullets = bulletList.map(li => li.text?.trim()).filter(text => text && text.length > 0);
+          const bullets = bulletList
+            .map(li => li.text?.trim())
+            .filter(text => 
+              text && 
+              text.length > 5 && 
+              !text.includes('See more product details') &&
+              !text.toLowerCase().includes('learn more')
+            );
           description = bullets.join('\n');
         }
       }
