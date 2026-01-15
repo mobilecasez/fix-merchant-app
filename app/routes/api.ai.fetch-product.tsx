@@ -23,19 +23,8 @@ async function extractProductDataWithAI(url: string, htmlContent: string) {
 
   const genAI = new GoogleGenerativeAI(apiKey);
 
-  let retries = 3;
-  let delay = 1000;
-
-  // Log available models
-  try {
-    const modelList = await genAI.getGenerativeModel({ model: "gemini-pro" }).listModels();
-    console.log("Available models:", JSON.stringify(modelList, null, 2));
-  } catch (e) {
-    console.error("Error listing models:", e);
-  }
-
   const model = genAI.getGenerativeModel({ 
-    model: "gemini-1.5-flash",
+    model: "gemini-pro",
     generationConfig: {
       responseMimeType: "application/json",
     },
