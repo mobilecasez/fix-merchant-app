@@ -183,6 +183,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       console.log("Using local scraper.");
       try {
         productData = await scraper(html, url);
+        console.log("[SCRAPER] Extracted images:", JSON.stringify(productData.images, null, 2));
+        console.log("[SCRAPER] Total images:", productData.images?.length || 0);
 
         // Validate that scraper returned valid data
         if (!productData.productName || productData.productName.trim() === "") {
@@ -194,9 +196,11 @@ export const action = async ({ request }: ActionFunctionArgs) => {
             throw new Error("Cannot use AI scraper without HTML");
           }
           const aiData = await extractProductDataWithAI(url, html);
+          console.log("[AI] AI extracted data (before adding images):", JSON.stringify({...aiData, images: aiData.images}, null, 2));
           // Always use scraper images (hiRes from ImageBlockATF)
           aiData.images = productData.images || [];
-          console.log("Using scraper images (high-res):", aiData.images.length);
+          console.log("[FINAL] Adding scraper images to AI data:", JSON.stringify(aiData.images, null, 2));
+          console.log("[FINAL] Total images in final result:", aiData.images.length);
           productData = aiData;
         }
       } catch (scraperError) {
@@ -215,6 +219,12 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       }
       productData = await extractProductDataWithAI(url, html);
     }
+
+    // Log final result before sending to client
+    console.log("[FINAL RESULT] Sending to client:");
+    console.log("[FINAL RESULT] Product name:", productData?.productName);
+    console.log("[FINAL RESULT] Images:", JSON.stringify(productData?.images, null, 2));
+    console.log("[FINAL RESULT] Total images:", productData?.images?.length || 0);
 
     // Final validation
     if (
