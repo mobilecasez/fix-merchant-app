@@ -98,22 +98,46 @@ export async function scrapeAmazon(html: string, url: string): Promise<ScrapedPr
       return { productName, description, price, compareAtPrice, weight, dimensions, warranty };
     });
 
-    // Extract high-res images using regex (as per Scrapingdog article)
-    // Amazon stores high-res images with "hiRes" key in their JavaScript data
-    // Pattern: "hiRes":"image_url"
-    console.log('[Amazon Scraper] Extracting hiRes images from HTML...');
+    // Extract high-res images ONLY from ImageBlockATF (not ImageBlockBTF)
+    // ImageBlockATF contains the correct hiRes URLs with _SL1500_ or _SL1440_
+    console.log('[Amazon Scraper] Extracting hiRes images from ImageBlockATF only...');
     
     const foundImages = new Set<string>();
-    const hiResRegex = /"hiRes":"(.+?)"/g;
-    let match;
     
-    while ((match = hiResRegex.exec(htmlContent)) !== null) {
-      const imageUrl = match[1];
+    // Find the ImageBlockATF block specifically
+    const imageBlockATFMatch = htmlContent.match(/P\.when\(['"]A['"]\)\.register\(["']ImageBlockATF["'][^]+?return data;\s*\}\);/);
+    
+    if (imageBlockATFMatch && imageBlockATFMatch[0]) {
+      console.log('[Amazon Scraper] Found ImageBlockATF block');
+      const imageBlockATFContent = imageBlockATFMatch[0];
       
-      // Only add valid URLs (not null, starts with http)
-      if (imageUrl && imageUrl !== 'null' && imageUrl.startsWith('http')) {
-        foundImages.add(imageUrl);
-        console.log(`[Amazon Scraper] hiRes image ${foundImages.size}: ${imageUrl}`);
+      // Extract all "hiRes":"url" patterns from ImageBlockATF only
+      const hiResRegex = /"hiRes":"(.+?)"/g;
+      let match;
+      
+      while ((match = hiResRegex.exec(imageBlockATFContent)) !== null) {
+        const imageUrl = match[1];
+        
+        // Only add valid high-res URLs (must contain _SL for "super large", not _SS for "super small")
+        if (imageUrl && imageUrl !== 'null' && imageUrl.startsWith('http') && !imageUrl.includes('_SS')) {
+          foundImages.add(imageUrl);
+          console.log(`[Amazon Scraper] hiRes image ${foundImages.size}: ${imageUrl}`);
+        }
+      }
+    } else {
+      console.log('[Amazon Scraper] ImageBlockATF not found, trying simple hiRes search with size filter...');
+      
+      // Fallback: Extract hiRes but filter out thumbnails
+      const hiResRegex = /"hiRes":"(.+?)"/g;
+      let match;
+      
+      while ((match = hiResRegex.exec(htmlContent)) !== null) {
+        const imageUrl = match[1];
+        
+        // Only add high-res images (must have _SL, not _SS which are thumbnails)
+        if (imageUrl && imageUrl !== 'null' && imageUrl.startsWith('http') && imageUrl.includes('_SL') && !imageUrl.includes('_SS')) {
+          foundImages.add(imageUrl);
+        }
       }
     }
     
