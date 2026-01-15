@@ -4,6 +4,7 @@ import type { ActionFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { useActionData, useSubmit, useNavigation } from "@remix-run/react";
 import { authenticate } from "../shopify.server";
+import { scrapeAmazonNew } from "../utils/scrapers/amazonNew";
 
 export const loader = async ({ request }: ActionFunctionArgs) => {
   await authenticate.admin(request);
@@ -21,22 +22,18 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   }
 
   try {
-    // Call the test Amazon New scraper endpoint
-    const response = await fetch(`${process.env.SHOPIFY_APP_URL}/api/test/amazon-new`, {
-      method: "POST",
-      body: new URLSearchParams({ url }),
-    });
+    console.log('[Test URL] Starting scrape for:', url);
+    
+    // Call the scraper directly
+    const extractedData = await scrapeAmazonNew('', url);
+    
+    console.log('[Test URL] Scrape completed successfully');
 
-    const data = await response.json();
-
-    if (!response.ok) {
-      return json({ error: data.error || "Failed to scrape product" }, { status: response.status });
-    }
-
-    return json({ success: true, data: data.data });
+    return json({ success: true, data: extractedData });
   } catch (error) {
-    console.error("Error in test-url action:", error);
-    return json({ error: "Failed to fetch product data" }, { status: 500 });
+    console.error('[Test URL] Error:', error);
+    const errorMessage = error instanceof Error ? error.message : "Failed to fetch product data";
+    return json({ error: errorMessage }, { status: 500 });
   }
 };
 
