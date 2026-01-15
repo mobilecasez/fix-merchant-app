@@ -2,9 +2,6 @@ import { launchBrowser } from "./browser";
 import { ScrapedProductData } from "./types";
 import { cleanProductName, ensureCompareAtPrice, parseWeight, estimateWeight } from "./helpers";
 
-// Helper function for delays
-const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-
 export async function scrapeAmazon(html: string, url: string): Promise<ScrapedProductData> {
   let browser;
   try {
@@ -80,92 +77,27 @@ export async function scrapeAmazon(html: string, url: string): Promise<ScrapedPr
       dimensions = findDetail('product dimensions') || '';
       const warranty = findDetail('warranty') || findDetail('manufacturer warranty') || '';
 
-      const scripts = Array.from(document.querySelectorAll("script"));
-      const colorImagesScript = scripts.find((script) =>
-        script.textContent?.includes("colorImages"),
-      );
-
-      let images: string[] = [];
-      if (colorImagesScript) {
-        const scriptContent = colorImagesScript.textContent || "";
-        const hiResRegex = /"hiRes":"(.*?)"/g;
-        let match;
-        const foundImages = new Set<string>();
-        while ((match = hiResRegex.exec(scriptContent)) !== null) {
-          if (match[1]) {
-            foundImages.add(match[1]);
-          }
+      // Extract high-res images using regex (as per Scrapingdog article)
+      // Images are stored in script tags with pattern: "hiRes":"image_url"
+      const pageHTML = document.documentElement.outerHTML;
+      const hiResRegex = /"hiRes":"(.+?)"/g;
+      const foundImages = new Set<string>();
+      
+      let match;
+      while ((match = hiResRegex.exec(pageHTML)) !== null) {
+        if (match[1] && match[1] !== 'null') {
+          foundImages.add(match[1]);
         }
-        images = Array.from(foundImages);
       }
+      
+      const images = Array.from(foundImages);
 
-      return { productName, description, price, compareAtPrice, images, weight, dimensions, warranty, hasColorImages: images.length > 0 };
+      return { productName, description, price, compareAtPrice, images, weight, dimensions, warranty };
     });
 
-    const { productName, description, price, compareAtPrice, images, weight, dimensions, warranty, hasColorImages } = pageData;
+    const { productName, description, price, compareAtPrice, images, weight, dimensions, warranty } = pageData;
 
-    // If colorImages didn't work, extract high-res images from thumbnail URLs
-    if (!hasColorImages || images.length === 0) {
-      console.log('Amazon: colorImages not found, extracting from thumbnails...');
-      
-      try {
-        // Extract high-res images directly from thumbnail elements
-        const galleryImages = await page.evaluate(() => {
-          const foundImages = new Set<string>();
-          
-          // Method 1: Extract from data-csa-c-posy thumbnails and convert to high-res
-          for (let pos = 1; pos <= 7; pos++) {
-            const imgWithPos = document.querySelector(`li[data-csa-c-posy="${pos}"] img`);
-            if (imgWithPos) {
-              const src = imgWithPos.getAttribute('src');
-              if (src) {
-                // Convert thumbnail URL to high-res by replacing size markers
-                const hiResSrc = src
-                  .replace(/_SS\d+_/, '_SL1500_')
-                  .replace(/_AC_US\d+_/, '_AC_SL1500_')
-                  .replace(/_AC_SR\d+,\d+_/, '_AC_SL1500_');
-                foundImages.add(hiResSrc);
-              }
-            }
-          }
-          
-          // Method 2: Extract from imageThumbnail class
-          const thumbnails = document.querySelectorAll('li.imageThumbnail img');
-          thumbnails.forEach((img) => {
-            const src = img.getAttribute('src');
-            if (src) {
-              const hiResSrc = src
-                .replace(/_SS\d+_/, '_SL1500_')
-                .replace(/_AC_US\d+_/, '_AC_SL1500_')
-                .replace(/_AC_SR\d+,\d+_/, '_AC_SL1500_');
-              foundImages.add(hiResSrc);
-            }
-          });
-          
-          // Method 3: Main image
-          const mainImg = document.querySelector('#landingImage, #imgTagWrapperId img, .imgTagWrapper img');
-          if (mainImg) {
-            const src = mainImg.getAttribute('src') || mainImg.getAttribute('data-old-hires');
-            if (src) {
-              const hiResSrc = src
-                .replace(/_SS\d+_/, '_SL1500_')
-                .replace(/_AC_US\d+_/, '_AC_SL1500_')
-                .replace(/_AC_SR\d+,\d+_/, '_AC_SL1500_');
-              foundImages.add(hiResSrc);
-            }
-          }
-          
-          return Array.from(foundImages);
-        });
-        
-        if (galleryImages.length > 0) {
-          console.log(`Amazon: Extracted ${galleryImages.length} high-res images from thumbnails`);
-          images.splice(0, images.length, ...galleryImages);
-        }
-      } catch (error) {
-        console.log('Amazon: Thumbnail extraction failed:', error);
-      }
-    }
+    console.log(`[Amazon Scraper] Extracted: title=${!!productName}, images=${images.length}, price=${!!price}`);
 
     let finalDescription = description;
     if (dimensions) {
