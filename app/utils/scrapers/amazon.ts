@@ -98,42 +98,51 @@ export async function scrapeAmazon(html: string, url: string): Promise<ScrapedPr
       return { productName, description, price, compareAtPrice, weight, dimensions, warranty };
     });
 
-    // Extract high-res images using regex on full HTML (as per Scrapingdog article)
-    // Amazon stores images in colorImages JavaScript variable with hiRes URLs
-    console.log('[Amazon Scraper] Extracting images from colorImages data...');
+    // Extract high-res images from ImageBlockATF colorImages structure
+    // Example from Amazon HTML: P.when('A').register("ImageBlockATF", function(A){ var data = { 'colorImages': { 'initial': [{"hiRes":"url",...}] }
+    console.log('[Amazon Scraper] Extracting images from ImageBlockATF colorImages...');
     
-    // Find the colorImages data structure in the page
-    const colorImagesMatch = htmlContent.match(/'colorImages':\s*{\s*'initial':\s*(\[[\s\S]*?\])/);
     const foundImages = new Set<string>();
     
-    if (colorImagesMatch && colorImagesMatch[1]) {
-      console.log('[Amazon Scraper] Found colorImages data structure');
-      const colorImagesJson = colorImagesMatch[1];
+    // Find the ImageBlockATF register block which contains colorImages
+    const imageBlockMatch = htmlContent.match(/P\.when\(['"]A['"]\)\.register\(["']ImageBlockATF["'],[\s\S]*?var data = \{[\s\S]*?\};/);
+    
+    if (imageBlockMatch && imageBlockMatch[0]) {
+      console.log('[Amazon Scraper] Found ImageBlockATF data block');
+      const imageBlockContent = imageBlockMatch[0];
       
-      // Extract all hiRes URLs from this specific colorImages array
-      const hiResRegex = /"hiRes":"([^"]+)"/g;
+      // Extract all "hiRes":"url" patterns from this block only
+      const hiResRegex = /"hiRes"\s*:\s*"([^"]+)"/g;
       let match;
       
-      while ((match = hiResRegex.exec(colorImagesJson)) !== null) {
+      while ((match = hiResRegex.exec(imageBlockContent)) !== null) {
         const imageUrl = match[1];
         
-        // Only add valid, non-null URLs
+        // Only add valid high-res URLs (contain _SL for "super large")
         if (imageUrl && imageUrl !== 'null' && imageUrl.startsWith('http')) {
           foundImages.add(imageUrl);
-          console.log(`[Amazon Scraper] Found hiRes image ${foundImages.size}: ${imageUrl.substring(0, 100)}...`);
+          console.log(`[Amazon Scraper] Found hiRes image ${foundImages.size}: ${imageUrl}`);
         }
       }
     } else {
-      console.log('[Amazon Scraper] colorImages structure not found, trying global hiRes search...');
-      // Fallback: search entire HTML
-      const hiResRegex = /"hiRes":"([^"]+)"/g;
-      let match;
+      console.log('[Amazon Scraper] ImageBlockATF not found, trying direct colorImages search...');
       
-      while ((match = hiResRegex.exec(htmlContent)) !== null) {
-        const imageUrl = match[1];
+      // Fallback: Look for 'colorImages' and extract hiRes from surrounding context
+      const colorImagesIndex = htmlContent.indexOf("'colorImages'");
+      if (colorImagesIndex !== -1) {
+        // Extract a large chunk around colorImages (next 10000 characters should contain all images)
+        const colorImagesSection = htmlContent.substring(colorImagesIndex, colorImagesIndex + 10000);
         
-        if (imageUrl && imageUrl !== 'null' && imageUrl.startsWith('http')) {
-          foundImages.add(imageUrl);
+        const hiResRegex = /"hiRes"\s*:\s*"([^"]+)"/g;
+        let match;
+        
+        while ((match = hiResRegex.exec(colorImagesSection)) !== null) {
+          const imageUrl = match[1];
+          
+          if (imageUrl && imageUrl !== 'null' && imageUrl.startsWith('http')) {
+            foundImages.add(imageUrl);
+            console.log(`[Amazon Scraper] Found hiRes image ${foundImages.size}: ${imageUrl}`);
+          }
         }
       }
     }
