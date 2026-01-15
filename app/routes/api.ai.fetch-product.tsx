@@ -10,6 +10,19 @@ import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/ge
 
 async function extractProductDataWithAI(url: string, htmlContent: string) {
   const apiKey = process.env.GOOGLE_GEMINI_API_KEY;
+  if (!apiKey) {
+    throw new Error("GOOGLE_GEMINI_API_KEY environment variable is not set");
+  }
+  const genAI = new GoogleGenerativeAI(apiKey);
+
+  try {
+    console.log("Fetching available models...");
+    const modelList = await genAI.getGenerativeModel({ model: "gemini-pro" }).listModels();
+    console.log("Available models:", JSON.stringify(modelList, null, 2));
+  } catch (e) {
+    console.error("Error listing models:", e);
+  }
+
   console.log(
     "[AI-Scraper] Using Gemini API, key present:",
     !!apiKey,
@@ -20,8 +33,6 @@ async function extractProductDataWithAI(url: string, htmlContent: string) {
   if (!apiKey) {
     throw new Error("GOOGLE_GEMINI_API_KEY environment variable is not set");
   }
-
-  const genAI = new GoogleGenerativeAI(apiKey);
 
   const model = genAI.getGenerativeModel({ 
     model: "gemini-pro",
