@@ -77,27 +77,29 @@ export async function scrapeAmazon(html: string, url: string): Promise<ScrapedPr
       dimensions = findDetail('product dimensions') || '';
       const warranty = findDetail('warranty') || findDetail('manufacturer warranty') || '';
 
-      // Extract high-res images using regex (as per Scrapingdog article)
-      // Images are stored in script tags with pattern: "hiRes":"image_url"
-      const pageHTML = document.documentElement.outerHTML;
-      const hiResRegex = /"hiRes":"(.+?)"/g;
-      const foundImages = new Set<string>();
-      
-      let match;
-      while ((match = hiResRegex.exec(pageHTML)) !== null) {
-        if (match[1] && match[1] !== 'null') {
-          foundImages.add(match[1]);
+      const scripts = Array.from(document.querySelectorAll("script"));
+      const colorImagesScript = scripts.find((script) =>
+        script.textContent?.includes("colorImages"),
+      );
+
+      let images: string[] = [];
+      if (colorImagesScript) {
+        const scriptContent = colorImagesScript.textContent || "";
+        const hiResRegex = /"hiRes":"(.*?)"/g;
+        let match;
+        const foundImages = new Set<string>();
+        while ((match = hiResRegex.exec(scriptContent)) !== null) {
+          if (match[1]) {
+            foundImages.add(match[1]);
+          }
         }
+        images = Array.from(foundImages);
       }
-      
-      const images = Array.from(foundImages);
 
       return { productName, description, price, compareAtPrice, images, weight, dimensions, warranty };
     });
 
     const { productName, description, price, compareAtPrice, images, weight, dimensions, warranty } = pageData;
-
-    console.log(`[Amazon Scraper] Extracted: title=${!!productName}, images=${images.length}, price=${!!price}`);
 
     let finalDescription = description;
     if (dimensions) {
