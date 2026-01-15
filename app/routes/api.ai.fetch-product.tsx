@@ -6,6 +6,7 @@ import { ensureCompareAtPrice } from "../utils/scrapers/helpers";
 import fs from "fs";
 import path from "path";
 import { parse } from "node-html-parser";
+import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
 
 async function extractProductDataWithAI(url: string, htmlContent: string) {
   const apiKey = process.env.GOOGLE_GEMINI_API_KEY;
@@ -20,7 +21,31 @@ async function extractProductDataWithAI(url: string, htmlContent: string) {
     throw new Error("GOOGLE_GEMINI_API_KEY environment variable is not set");
   }
 
-  const apiUrl = `https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+  const genAI = new GoogleGenerativeAI(apiKey);
+  const model = genAI.getGenerativeModel({ 
+    model: "gemini-1.5-flash",
+    generationConfig: {
+      responseMimeType: "application/json",
+    },
+    safetySettings: [
+        {
+            category: HarmCategory.HARM_CATEGORY_HARASSMENT,
+            threshold: HarmBlockThreshold.BLOCK_NONE,
+        },
+        {
+            category: HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+            threshold: HarmBlockThreshold.BLOCK_NONE,
+        },
+        {
+            category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+            threshold: HarmBlockThreshold.BLOCK_NONE,
+        },
+        {
+            category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+            threshold: HarmBlockThreshold.BLOCK_NONE,
+        },
+    ]
+  });
 
   const categoriesPath = path.resolve(process.cwd(), "categories.txt");
   const categoriesContent = fs.readFileSync(categoriesPath, "utf-8");
@@ -90,36 +115,19 @@ async function extractProductDataWithAI(url: string, htmlContent: string) {
     - Do not return an empty object. Make your best effort to fill the fields.
   `;
 
-  const requestBody = {
-    contents: [{ parts: [{ text: prompt }] }],
-  };
+  let retries = 3;
+  let delay = 1000;
 
-  try {
-    const response = await fetch(apiUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(requestBody),
-    });
+  while (retries > 0) {
+    try {
+      const result = await model.generateContent(prompt);
+      const response = await result.response;
+      const text = response.text();
+      
+      console.log("Raw AI Response:", text);
 
-    if (!response.ok) {
-      const errorBody = await response.text();
-      console.error("AI API Error:", errorBody);
-      throw new Error(
-        `AI API request failed with status ${response.status}: ${errorBody}`,
-      );
-    }
-
-    const data = await response.json();
-    const text = data.candidates[0].content.parts[0].text;
-
-    console.log("Raw AI Response:", text);
-
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (jsonMatch && jsonMatch[0]) {
       try {
-        const parsedData = JSON.parse(jsonMatch[0]);
+        const parsedData = JSON.parse(text);
         
         // Apply 20% markup if compareAtPrice is missing or null
         if (parsedData.price && (!parsedData.compareAtPrice || parsedData.compareAtPrice === null)) {
@@ -132,15 +140,27 @@ async function extractProductDataWithAI(url: string, htmlContent: string) {
         console.error("Failed to parse JSON from AI response:", e);
         throw new Error("Invalid JSON format in AI response.");
       }
+    } catch (error: any) {
+      // Check for rate limit error (specific error message may vary)
+      if (error.message.includes("429") || error.message.includes("Resource has been exhausted")) {
+        retries--;
+        if (retries === 0) {
+          console.error("AI extraction failed after multiple retries:", error);
+          throw new Error("AI service is currently unavailable. Please try again later.");
+        }
+        console.warn(`Rate limit hit. Retrying in ${delay / 1000}s... (${retries} retries left)`);
+        await new Promise(res => setTimeout(res, delay));
+        delay *= 2; // Exponential backoff
+      } else {
+        // For other errors, fail immediately
+        console.error("AI extraction failed:", error);
+        const errorMessage =
+          error instanceof Error ? error.message : "An unknown error occurred";
+        throw new Error(errorMessage);
+      }
     }
-
-    throw new Error("No valid JSON object found in AI response.");
-  } catch (error) {
-    console.error("AI extraction failed:", error);
-    const errorMessage =
-      error instanceof Error ? error.message : "An unknown error occurred";
-    throw new Error(errorMessage);
   }
+  throw new Error("AI extraction failed after multiple retries.");
 }
 
 export const action = async ({ request }: ActionFunctionArgs) => {
