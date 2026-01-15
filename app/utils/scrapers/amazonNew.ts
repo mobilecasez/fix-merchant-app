@@ -1,38 +1,26 @@
 import { parse } from 'node-html-parser';
-import { launchBrowser } from "./browser";
-import { ScrapedProductData } from "./types";
 import { cleanProductName, ensureCompareAtPrice } from "./helpers";
 
 export async function scrapeAmazonNew(html: string, url: string): Promise<any> {
-  let browser;
   try {
     console.log('[Amazon New Scraper] Starting scrape for:', url);
-    browser = await launchBrowser();
-    const page = await browser.newPage();
     
-    // Set headers like in the article
-    await page.setUserAgent(
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36",
-    );
-    
-    await page.setExtraHTTPHeaders({
-      'accept-language': 'en-US,en;q=0.9',
-      'accept-encoding': 'gzip, deflate, br',
-      'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+    // Fetch HTML directly with proper headers (fast!)
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36',
+        'accept-language': 'en-US,en;q=0.9',
+        'accept-encoding': 'gzip, deflate, br',
+        'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+      },
     });
 
-    await page.setViewport({ width: 1920, height: 1080 });
+    if (!response.ok) {
+      throw new Error(`Failed to fetch page: ${response.status}`);
+    }
 
-    console.log('[Amazon New Scraper] Navigating to URL...');
-    await page.goto(url, { 
-      waitUntil: "networkidle2",
-      timeout: 60000 
-    });
-    
-    console.log('[Amazon New Scraper] Page loaded successfully');
-
-    // Get the HTML content
-    const htmlContent = await page.content();
+    const htmlContent = await response.text();
+    console.log('[Amazon New Scraper] HTML fetched, parsing...');
     
     // Parse with node-html-parser
     const root = parse(htmlContent);
@@ -169,12 +157,5 @@ export async function scrapeAmazonNew(html: string, url: string): Promise<any> {
   } catch (error) {
     console.error("[Amazon New Scraper] Error during scraping:", error);
     throw error;
-  } finally {
-    if (browser) {
-      console.log('[Amazon New Scraper] Closing browser...');
-      await browser.close().catch((err) => {
-        console.error('[Amazon New Scraper] Error closing browser:', err);
-      });
-    }
   }
 }
