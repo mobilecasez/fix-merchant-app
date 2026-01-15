@@ -28,9 +28,11 @@ export async function scrapeAmazonNew(html: string, url: string): Promise<any> {
     // Extract data according to article
     const extractedData: any = {};
     
-    // 1. Title - from h1#title
+    // 1. Title - try multiple selectors
     try {
-      const titleElement = root.querySelector('#title');
+      const titleElement = root.querySelector('#title') || 
+                          root.querySelector('#productTitle') ||
+                          root.querySelector('h1.a-size-large');
       extractedData.title = titleElement?.text?.trim() || null;
       console.log('[Amazon New Scraper] Title:', extractedData.title?.substring(0, 50) + '...');
     } catch (error) {
@@ -38,9 +40,11 @@ export async function scrapeAmazonNew(html: string, url: string): Promise<any> {
       extractedData.title = null;
     }
     
-    // 2. Description - from #feature-bullets
+    // 2. Description - try multiple selectors
     try {
-      const descElement = root.querySelector('#feature-bullets');
+      const descElement = root.querySelector('#feature-bullets') ||
+                         root.querySelector('#featurebullets_feature_div') ||
+                         root.querySelector('.a-unordered-list.a-vertical.a-spacing-mini');
       extractedData.description = descElement?.innerHTML || null;
       console.log('[Amazon New Scraper] Description extracted:', !!extractedData.description);
     } catch (error) {
@@ -48,32 +52,65 @@ export async function scrapeAmazonNew(html: string, url: string): Promise<any> {
       extractedData.description = null;
     }
     
-    // 3. Price - from span.a-price
+    // 3. Price - try multiple selectors
     try {
-      const priceElement = root.querySelector('span.a-price');
-      const priceSpan = priceElement?.querySelector('span');
-      extractedData.price = priceSpan?.text?.trim() || null;
+      let price = null;
+      
+      // Try span.a-price first
+      let priceElement = root.querySelector('span.a-price');
+      if (priceElement) {
+        const priceSpan = priceElement.querySelector('span.a-offscreen');
+        price = priceSpan?.text?.trim();
+      }
+      
+      // Try priceblock_ourprice
+      if (!price) {
+        priceElement = root.querySelector('#priceblock_ourprice');
+        price = priceElement?.text?.trim();
+      }
+      
+      // Try priceblock_dealprice
+      if (!price) {
+        priceElement = root.querySelector('#priceblock_dealprice');
+        price = priceElement?.text?.trim();
+      }
+      
+      // Try corePriceDisplay_desktop_feature_div
+      if (!price) {
+        priceElement = root.querySelector('.a-price.aok-align-center span.a-offscreen');
+        price = priceElement?.text?.trim();
+      }
+      
+      extractedData.price = price;
       console.log('[Amazon New Scraper] Price:', extractedData.price);
     } catch (error) {
       console.log('[Amazon New Scraper] Could not extract price');
       extractedData.price = null;
     }
     
-    // 4. Compare at price (strikethrough price)
+    // 4. Compare at price (strikethrough price) - try multiple selectors
     try {
       let comparePrice = null;
       
-      // Try first selector
-      const strikeElement = root.querySelector('span[data-a-strike="true"] span.a-offscreen');
+      // Try span[data-a-strike="true"]
+      let strikeElement = root.querySelector('span[data-a-strike="true"] span.a-offscreen');
       if (strikeElement) {
         comparePrice = strikeElement.text?.trim();
       }
       
-      // Try second selector if first fails
+      // Try .a-text-price
       if (!comparePrice) {
         const textPriceElement = root.querySelector('.a-text-price .a-offscreen');
         if (textPriceElement) {
           comparePrice = textPriceElement.text?.trim();
+        }
+      }
+      
+      // Try basis-price
+      if (!comparePrice) {
+        const basisPriceElement = root.querySelector('.basisPrice span.a-offscreen');
+        if (basisPriceElement) {
+          comparePrice = basisPriceElement.text?.trim();
         }
       }
       
@@ -90,18 +127,58 @@ export async function scrapeAmazonNew(html: string, url: string): Promise<any> {
       extractedData.compareAtPrice = null;
     }
     
-    // 5. Extract product specs/details (for SKU, Barcode, etc.)
+    // 5. Extract product specs/details (for SKU, Barcode, etc.) - try multiple selectors
     try {
       const specs: any = {};
-      const specRows = root.querySelectorAll('tr.a-spacing-small');
       
-      for (const row of specRows) {
-        const spanTags = row.querySelectorAll('span');
-        if (spanTags.length >= 2) {
-          const key = spanTags[0].text?.trim() || '';
-          const value = spanTags[1].text?.trim() || '';
-          if (key && value) {
-            specs[key] = value;
+      // Try tr.a-spacing-small
+      let specRows = root.querySelectorAll('tr.a-spacing-small');
+      
+      // Try .prodDetTable tr if first fails
+      if (specRows.length === 0) {
+        specRows = root.querySelectorAll('.prodDetTable tr');
+      }
+      
+      // Try #productDetails_detailBullets_sections1 tr
+      if (specRows.length === 0) {
+        specRows = root.querySelectorAll('#productDetails_detailBullets_sections1 tr');
+      }
+      
+      // Try #detailBullets_feature_div li
+      if (specRows.length === 0) {
+        const listItems = root.querySelectorAll('#detailBullets_feature_div .a-list-item');
+        for (const item of listItems) {
+          const text = item.text?.trim();
+          if (text && text.includes(':')) {
+            const parts = text.split(':');
+            if (parts.length >= 2) {
+              const key = parts[0].trim();
+              const value = parts.slice(1).join(':').trim();
+              specs[key] = value;
+            }
+          }
+        }
+      } else {
+        // Parse rows
+        for (const row of specRows) {
+          const spanTags = row.querySelectorAll('span');
+          if (spanTags.length >= 2) {
+            const key = spanTags[0].text?.trim() || '';
+            const value = spanTags[1].text?.trim() || '';
+            if (key && value) {
+              specs[key] = value;
+            }
+          } else {
+            // Try th/td structure
+            const th = row.querySelector('th');
+            const td = row.querySelector('td');
+            if (th && td) {
+              const key = th.text?.trim() || '';
+              const value = td.text?.trim() || '';
+              if (key && value) {
+                specs[key] = value;
+              }
+            }
           }
         }
       }
@@ -110,8 +187,16 @@ export async function scrapeAmazonNew(html: string, url: string): Promise<any> {
       console.log('[Amazon New Scraper] Specs extracted:', Object.keys(specs).length, 'items');
       
       // Try to find SKU and Barcode from specs
-      extractedData.sku = specs['Item model number'] || specs['Model Number'] || null;
-      extractedData.barcode = specs['UPC'] || specs['EAN'] || specs['ASIN'] || null;
+      extractedData.sku = specs['Item model number'] || 
+                         specs['Model Number'] || 
+                         specs['Item Model Number'] ||
+                         specs['Model'] ||
+                         null;
+      extractedData.barcode = specs['UPC'] || 
+                             specs['EAN'] || 
+                             specs['ASIN'] ||
+                             specs['Item Part Number'] ||
+                             null;
       
     } catch (error) {
       console.log('[Amazon New Scraper] Could not extract specs');
