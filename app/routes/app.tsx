@@ -85,7 +85,7 @@ export default function App() {
           <>
             <Link to="/app/subscription-plans">Manage Plans</Link>
             <Link to="/app/settings">Settings</Link>
-            <Link to="/test-url">Test URL</Link>
+            <Link to="/app/test-url">Test URL</Link>
           </>
         )}
       </NavMenu>
