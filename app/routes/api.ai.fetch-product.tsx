@@ -207,10 +207,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
             throw new Error("Cannot use AI scraper without HTML");
           }
           const aiData = await extractProductDataWithAI(url, html);
-          // Preserve images from scraper if AI didn't find any or scraper found better ones
-          if (productData.images && productData.images.length > 0 && (!aiData.images || aiData.images.length === 0)) {
+          // Always prefer scraper images over AI images (scrapers extract hiRes, AI extracts generic)
+          if (productData.images && productData.images.length > 0) {
             aiData.images = productData.images;
-            console.log("Preserved images from scraper:", productData.images.length);
+            console.log("Using scraper images (high-res):", productData.images.length);
           }
           productData = aiData;
         }
