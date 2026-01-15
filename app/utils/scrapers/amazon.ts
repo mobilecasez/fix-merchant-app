@@ -99,14 +99,36 @@ export async function scrapeAmazon(html: string, url: string): Promise<ScrapedPr
     });
 
     // Extract high-res images using regex on full HTML (as per Scrapingdog article)
-    // Pattern: "hiRes":"image_url"
-    const hiResRegex = /"hiRes":"(.+?)"/g;
+    // Pattern: "hiRes":"image_url" - this contains the actual high-resolution images
+    const hiResRegex = /"hiRes":"([^"]+)"/g;
     const foundImages = new Set<string>();
     
     let match;
+    let matchCount = 0;
     while ((match = hiResRegex.exec(htmlContent)) !== null) {
-      if (match[1] && match[1] !== 'null') {
-        foundImages.add(match[1]);
+      matchCount++;
+      const imageUrl = match[1];
+      
+      // Only add valid image URLs (not null, not empty)
+      if (imageUrl && imageUrl !== 'null' && imageUrl.startsWith('http')) {
+        foundImages.add(imageUrl);
+        console.log(`[Amazon Scraper] Found hiRes image ${foundImages.size}: ${imageUrl.substring(0, 80)}...`);
+      }
+    }
+    
+    console.log(`[Amazon Scraper] Total hiRes matches: ${matchCount}, Valid images: ${foundImages.size}`);
+    
+    // If no hiRes images found, try "large" as fallback
+    if (foundImages.size === 0) {
+      console.log('[Amazon Scraper] No hiRes images found, trying "large" images as fallback...');
+      const largeRegex = /"large":"([^"]+)"/g;
+      let largeMatch;
+      while ((largeMatch = largeRegex.exec(htmlContent)) !== null) {
+        const imageUrl = largeMatch[1];
+        if (imageUrl && imageUrl !== 'null' && imageUrl.startsWith('http')) {
+          foundImages.add(imageUrl);
+          console.log(`[Amazon Scraper] Found large image: ${imageUrl.substring(0, 80)}...`);
+        }
       }
     }
     
