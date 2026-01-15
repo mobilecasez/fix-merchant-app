@@ -103,11 +103,11 @@ export async function scrapeAmazon(html: string, url: string): Promise<ScrapedPr
     
     const foundImages: string[] = [];
     
-    // Find ImageBlockATF function and extract colorImages array
-    const imageBlockMatch = htmlContent.match(/P\.when\(['"]A['"]\)\.register\(['"]ImageBlockATF['"][^]*?'colorImages':\s*{\s*'initial':\s*(\[[^\]]*?\}]\])/);
+    // Find ImageBlockATF function
+    const imageBlockMatch = htmlContent.match(/P\.when\(['"]A['"]\)\.register\(['"]ImageBlockATF['"]\s*,\s*function[^]*?'colorImages':\s*{\s*'initial':\s*(\[[\s\S]*?\])\s*\}/m);
     
     if (imageBlockMatch && imageBlockMatch[1]) {
-      console.log('[Amazon Scraper] Found colorImages array in ImageBlockATF');
+      console.log('[Amazon Scraper] Found colorImages.initial array in ImageBlockATF');
       const colorImagesArray = imageBlockMatch[1];
       
       // Extract all hiRes URLs from this array
