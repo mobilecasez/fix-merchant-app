@@ -40,13 +40,46 @@ export async function scrapeAmazonNew(html: string, url: string): Promise<any> {
       extractedData.title = null;
     }
     
-    // 2. Description - try multiple selectors
+    // 2. Description - try multiple selectors for "About this item"
     try {
-      const descElement = root.querySelector('#feature-bullets') ||
-                         root.querySelector('#featurebullets_feature_div') ||
-                         root.querySelector('.a-unordered-list.a-vertical.a-spacing-mini');
-      extractedData.description = descElement?.innerHTML || null;
-      console.log('[Amazon New Scraper] Description extracted:', !!extractedData.description);
+      let description = null;
+      
+      // Try #feature-bullets ul li (most common)
+      let bulletList = root.querySelectorAll('#feature-bullets ul li');
+      if (bulletList.length > 0) {
+        const bullets = bulletList.map(li => li.text?.trim()).filter(text => text && text.length > 0);
+        description = bullets.join('\n');
+      }
+      
+      // Try #featurebullets_feature_div ul li
+      if (!description) {
+        bulletList = root.querySelectorAll('#featurebullets_feature_div ul li');
+        if (bulletList.length > 0) {
+          const bullets = bulletList.map(li => li.text?.trim()).filter(text => text && text.length > 0);
+          description = bullets.join('\n');
+        }
+      }
+      
+      // Try .a-unordered-list.a-vertical li
+      if (!description) {
+        bulletList = root.querySelectorAll('.a-unordered-list.a-vertical li');
+        if (bulletList.length > 0) {
+          const bullets = bulletList.map(li => li.text?.trim()).filter(text => text && text.length > 0);
+          description = bullets.join('\n');
+        }
+      }
+      
+      // Try div[data-feature-name="featurebullets"] ul li
+      if (!description) {
+        bulletList = root.querySelectorAll('div[data-feature-name="featurebullets"] ul li');
+        if (bulletList.length > 0) {
+          const bullets = bulletList.map(li => li.text?.trim()).filter(text => text && text.length > 0);
+          description = bullets.join('\n');
+        }
+      }
+      
+      extractedData.description = description;
+      console.log('[Amazon New Scraper] Description extracted:', !!extractedData.description, description?.substring(0, 100));
     } catch (error) {
       console.log('[Amazon New Scraper] Could not extract description');
       extractedData.description = null;
@@ -56,11 +89,20 @@ export async function scrapeAmazonNew(html: string, url: string): Promise<any> {
     try {
       let price = null;
       
-      // Try span.a-price first
-      let priceElement = root.querySelector('span.a-price');
+      // Try corePriceDisplay_desktop_feature_div (Amazon.in common)
+      let priceElement = root.querySelector('#corePriceDisplay_desktop_feature_div .a-price-whole');
       if (priceElement) {
-        const priceSpan = priceElement.querySelector('span.a-offscreen');
-        price = priceSpan?.text?.trim();
+        const priceText = priceElement.text?.trim();
+        const symbol = root.querySelector('#corePriceDisplay_desktop_feature_div .a-price-symbol')?.text?.trim() || '';
+        price = symbol + priceText;
+      }
+      
+      // Try span.a-price span.a-offscreen
+      if (!price) {
+        priceElement = root.querySelector('.a-price span.a-offscreen');
+        if (priceElement) {
+          price = priceElement.text?.trim();
+        }
       }
       
       // Try priceblock_ourprice
@@ -75,9 +117,15 @@ export async function scrapeAmazonNew(html: string, url: string): Promise<any> {
         price = priceElement?.text?.trim();
       }
       
-      // Try corePriceDisplay_desktop_feature_div
+      // Try apex_desktop price
       if (!price) {
-        priceElement = root.querySelector('.a-price.aok-align-center span.a-offscreen');
+        priceElement = root.querySelector('.a-price.apexPriceToPay span.a-offscreen');
+        price = priceElement?.text?.trim();
+      }
+      
+      // Try buybox price
+      if (!price) {
+        priceElement = root.querySelector('#price_inside_buybox');
         price = priceElement?.text?.trim();
       }
       
