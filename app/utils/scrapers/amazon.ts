@@ -9,42 +9,45 @@ export async function scrapeAmazon(html: string, url: string): Promise<ScrapedPr
     browser = await launchBrowser();
     const page = await browser.newPage();
     
-    // Better anti-detection
+    // Better anti-detection with realistic headers
     await page.setUserAgent(
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36",
     );
     
     // Set extra headers to look more like a real browser
     await page.setExtraHTTPHeaders({
-      'Accept-Language': 'en-US,en;q=0.9',
-      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+      'accept-language': 'en-US,en;q=0.9',
+      'accept-encoding': 'gzip, deflate, br',
+      'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
     });
 
     // Set viewport
     await page.setViewport({ width: 1920, height: 1080 });
 
     console.log('[Amazon Scraper] Navigating to URL...');
-    // Navigate with longer timeout and domcontentloaded instead of networkidle2
+    // Navigate with networkidle2 to ensure all content is loaded
     await page.goto(url, { 
-      waitUntil: "domcontentloaded",
-      timeout: 45000 
+      waitUntil: "networkidle2",
+      timeout: 60000 
     });
     
-    console.log('[Amazon Scraper] Page loaded, waiting for product title...');
-    // Wait a bit for dynamic content
-    await page.waitForSelector('#productTitle', { timeout: 15000 }).catch(() => {
-      console.log('[Amazon Scraper] productTitle not found, continuing anyway');
-    });
+    console.log('[Amazon Scraper] Page loaded successfully');
+
+    // Get the full HTML content for regex extraction
+    const htmlContent = await page.content();
 
     const pageData = await page.evaluate(() => {
-      const productName =
-        document.querySelector("#productTitle")?.textContent?.trim() || "";
-      const description =
-        document.querySelector("#feature-bullets")?.innerHTML || "";
-      const price =
-        document.querySelector('.a-price[data-a-color="price"] .a-offscreen')?.textContent?.trim() ||
-        document.querySelector(".a-price-whole")?.textContent?.trim() ||
-        "";
+      // Extract title from h1#title (as per article)
+      const productName = document.querySelector('#title')?.textContent?.trim() || "";
+      
+      // Extract description
+      const description = document.querySelector("#feature-bullets")?.innerHTML || "";
+      
+      // Extract price from span.a-price (as per article)
+      const priceElement = document.querySelector("span.a-price");
+      const price = priceElement?.querySelector("span")?.textContent?.trim() || "";
+      
+      // Extract compare at price
       const compareAtPrice =
         document.querySelector('span[data-a-strike="true"] span.a-offscreen')?.textContent?.trim() ||
         document.querySelector(".a-text-price .a-offscreen")?.textContent?.trim() ||
@@ -54,12 +57,14 @@ export async function scrapeAmazon(html: string, url: string): Promise<ScrapedPr
       let dimensions = '';
 
       const findDetail = (label: string) => {
+        // Look in product details table
         const ths = Array.from(document.querySelectorAll('th'));
-        const th = ths.find(el => el.textContent.trim().toLowerCase().includes(label));
+        const th = ths.find(el => el.textContent?.trim().toLowerCase().includes(label));
         if (th && th.nextElementSibling) {
-          return th.nextElementSibling.textContent.trim();
+          return th.nextElementSibling.textContent?.trim();
         }
 
+        // Look in detail bullets
         const listItems = Array.from(document.querySelectorAll('#detailBullets_feature_div .a-list-item'));
         for (const item of listItems) {
             const text = item.textContent?.trim().toLowerCase();
@@ -70,6 +75,19 @@ export async function scrapeAmazon(html: string, url: string): Promise<ScrapedPr
                 }
             }
         }
+        
+        // Look in product details specs table (tr.a-spacing-small as per article)
+        const specs = Array.from(document.querySelectorAll("tr.a-spacing-small"));
+        for (const spec of specs) {
+          const spanTags = spec.querySelectorAll("span");
+          if (spanTags.length >= 2) {
+            const labelText = spanTags[0].textContent?.trim().toLowerCase();
+            if (labelText?.includes(label)) {
+              return spanTags[1].textContent?.trim();
+            }
+          }
+        }
+        
         return '';
       };
 
@@ -77,29 +95,28 @@ export async function scrapeAmazon(html: string, url: string): Promise<ScrapedPr
       dimensions = findDetail('product dimensions') || '';
       const warranty = findDetail('warranty') || findDetail('manufacturer warranty') || '';
 
-      const scripts = Array.from(document.querySelectorAll("script"));
-      const colorImagesScript = scripts.find((script) =>
-        script.textContent?.includes("colorImages"),
-      );
-
-      let images: string[] = [];
-      if (colorImagesScript) {
-        const scriptContent = colorImagesScript.textContent || "";
-        const hiResRegex = /"hiRes":"(.*?)"/g;
-        let match;
-        const foundImages = new Set<string>();
-        while ((match = hiResRegex.exec(scriptContent)) !== null) {
-          if (match[1]) {
-            foundImages.add(match[1]);
-          }
-        }
-        images = Array.from(foundImages);
-      }
-
-      return { productName, description, price, compareAtPrice, images, weight, dimensions, warranty };
+      return { productName, description, price, compareAtPrice, weight, dimensions, warranty };
     });
 
-    const { productName, description, price, compareAtPrice, images, weight, dimensions, warranty } = pageData;
+    // Extract high-res images using regex on full HTML (as per Scrapingdog article)
+    // Pattern: "hiRes":"image_url"
+    const hiResRegex = /"hiRes":"(.+?)"/g;
+    const foundImages = new Set<string>();
+    
+    let match;
+    while ((match = hiResRegex.exec(htmlContent)) !== null) {
+      if (match[1] && match[1] !== 'null') {
+        foundImages.add(match[1]);
+      }
+    }
+    
+    const images = Array.from(foundImages);
+    console.log(`[Amazon Scraper] Extracted ${images.length} high-res images`);
+
+    const { productName, description, price, compareAtPrice, weight, dimensions, warranty } = pageData;
+    console.log(`[Amazon Scraper] Title: ${productName?.substring(0, 50)}...`);
+    console.log(`[Amazon Scraper] Price: ${price}`);
+    console.log(`[Amazon Scraper] Images: ${images.length}`);
 
     let finalDescription = description;
     if (dimensions) {
