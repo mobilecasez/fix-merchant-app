@@ -81,11 +81,11 @@ export default function App() {
         {settings.storeErrorReportEnabled && (
           <Link to="/app/store-error-report">Store Error Report</Link>
         )}
+        <Link to="/app/test-url">Test URL</Link>
         {isAccountOwner && (
           <>
             <Link to="/app/subscription-plans">Manage Plans</Link>
             <Link to="/app/settings">Settings</Link>
-            <Link to="/app/test-url">Test URL</Link>
           </>
         )}
       </NavMenu>
