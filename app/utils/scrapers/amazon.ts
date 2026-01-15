@@ -104,78 +104,66 @@ export async function scrapeAmazon(html: string, url: string): Promise<ScrapedPr
 
     const { productName, description, price, compareAtPrice, images, weight, dimensions, warranty, hasColorImages } = pageData;
 
-    // If colorImages didn't work, try clicking thumbnails to load high-res images
+    // If colorImages didn't work, extract high-res images from thumbnail URLs
     if (!hasColorImages || images.length === 0) {
-      console.log('Amazon: colorImages not found, trying thumbnail click method...');
+      console.log('Amazon: colorImages not found, extracting from thumbnails...');
       
       try {
-        // Wait for image thumbnails to be present
-        await page.waitForSelector('li.imageThumbnail', { timeout: 5000 }).catch(() => null);
-        
-        // Get all thumbnail list items
-        const thumbnails = await page.$$('li.imageThumbnail');
-        
-        if (thumbnails.length > 0) {
-          // Click each thumbnail and wait for the main image to update
-          for (let i = 0; i < Math.min(thumbnails.length, 7); i++) {
-            try {
-              await thumbnails[i].click();
-              await delay(200); // Wait for image to load
-            } catch (e) {
-              console.log(`Amazon: Failed to click thumbnail ${i + 1}`);
-            }
-          }
+        // Extract high-res images directly from thumbnail elements
+        const galleryImages = await page.evaluate(() => {
+          const foundImages = new Set<string>();
           
-          // Extract high-res images from the loaded gallery
-          const galleryImages = await page.evaluate(() => {
-            const foundImages = new Set<string>();
-            
-            // Try multiple selectors for high-res images
-            for (let pos = 1; pos <= 7; pos++) {
-              // Method 1: data-csa-c-posy attribute
-              const imgWithPos = document.querySelector(`li[data-csa-c-posy="${pos}"] img`);
-              if (imgWithPos) {
-                const src = imgWithPos.getAttribute('src');
-                if (src && !src.includes('_SS') && !src.includes('_AC_')) {
-                  foundImages.add(src);
-                } else if (src) {
-                  // Replace thumbnail size markers with full size
-                  const hiResSrc = src.replace(/_SS\d+_/, '_SL1500_').replace(/_AC_.*?_/, '_AC_SL1500_');
-                  foundImages.add(hiResSrc);
-                }
-              }
-              
-              // Method 2: nth-of-type selector
-              const imgNth = document.querySelector(`li.imageThumbnail:nth-of-type(${pos}) img`);
-              if (imgNth) {
-                const src = imgNth.getAttribute('src');
-                if (src) {
-                  const hiResSrc = src.replace(/_SS\d+_/, '_SL1500_').replace(/_AC_.*?_/, '_AC_SL1500_');
-                  foundImages.add(hiResSrc);
-                }
-              }
-            }
-            
-            // Method 3: Try main image display
-            const mainImg = document.querySelector('#landingImage, #imgTagWrapperId img, .imgTagWrapper img');
-            if (mainImg) {
-              const src = mainImg.getAttribute('src') || mainImg.getAttribute('data-old-hires');
+          // Method 1: Extract from data-csa-c-posy thumbnails and convert to high-res
+          for (let pos = 1; pos <= 7; pos++) {
+            const imgWithPos = document.querySelector(`li[data-csa-c-posy="${pos}"] img`);
+            if (imgWithPos) {
+              const src = imgWithPos.getAttribute('src');
               if (src) {
-                const hiResSrc = src.replace(/_SS\d+_/, '_SL1500_').replace(/_AC_.*?_/, '_AC_SL1500_');
+                // Convert thumbnail URL to high-res by replacing size markers
+                const hiResSrc = src
+                  .replace(/_SS\d+_/, '_SL1500_')
+                  .replace(/_AC_US\d+_/, '_AC_SL1500_')
+                  .replace(/_AC_SR\d+,\d+_/, '_AC_SL1500_');
                 foundImages.add(hiResSrc);
               }
             }
-            
-            return Array.from(foundImages);
+          }
+          
+          // Method 2: Extract from imageThumbnail class
+          const thumbnails = document.querySelectorAll('li.imageThumbnail img');
+          thumbnails.forEach((img) => {
+            const src = img.getAttribute('src');
+            if (src) {
+              const hiResSrc = src
+                .replace(/_SS\d+_/, '_SL1500_')
+                .replace(/_AC_US\d+_/, '_AC_SL1500_')
+                .replace(/_AC_SR\d+,\d+_/, '_AC_SL1500_');
+              foundImages.add(hiResSrc);
+            }
           });
           
-          if (galleryImages.length > 0) {
-            console.log(`Amazon: Extracted ${galleryImages.length} high-res images using thumbnail method`);
-            images.splice(0, images.length, ...galleryImages);
+          // Method 3: Main image
+          const mainImg = document.querySelector('#landingImage, #imgTagWrapperId img, .imgTagWrapper img');
+          if (mainImg) {
+            const src = mainImg.getAttribute('src') || mainImg.getAttribute('data-old-hires');
+            if (src) {
+              const hiResSrc = src
+                .replace(/_SS\d+_/, '_SL1500_')
+                .replace(/_AC_US\d+_/, '_AC_SL1500_')
+                .replace(/_AC_SR\d+,\d+_/, '_AC_SL1500_');
+              foundImages.add(hiResSrc);
+            }
           }
+          
+          return Array.from(foundImages);
+        });
+        
+        if (galleryImages.length > 0) {
+          console.log(`Amazon: Extracted ${galleryImages.length} high-res images from thumbnails`);
+          images.splice(0, images.length, ...galleryImages);
         }
       } catch (error) {
-        console.log('Amazon: Thumbnail click method failed:', error);
+        console.log('Amazon: Thumbnail extraction failed:', error);
       }
     }
 
