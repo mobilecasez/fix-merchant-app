@@ -4,7 +4,7 @@ import type { ActionFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { useActionData, useSubmit, useNavigation } from "@remix-run/react";
 import { authenticate } from "../shopify.server";
-import { scrapeAmazonNew } from "../utils/scrapers/amazonNew";
+import { scrapeAmazon } from "../utils/scrapers/amazon";
 
 export const loader = async ({ request }: ActionFunctionArgs) => {
   await authenticate.admin(request);
@@ -25,7 +25,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     console.log('[Test URL] Starting scrape for:', url);
     
     // Call the scraper directly
-    const extractedData = await scrapeAmazonNew('', url);
+    const extractedData = await scrapeAmazon('', url);
     
     console.log('[Test URL] Scrape completed successfully');
 
