@@ -23,7 +23,7 @@ async function extractProductDataWithAI(url: string, htmlContent: string) {
 
   const genAI = new GoogleGenerativeAI(apiKey);
   const model = genAI.getGenerativeModel({ 
-    model: "gemini-1.5-flash-latest",
+    model: "gemini-2.0-flash-exp",
     generationConfig: {
       responseMimeType: "application/json",
     },
