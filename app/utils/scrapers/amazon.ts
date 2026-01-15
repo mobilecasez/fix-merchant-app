@@ -98,32 +98,36 @@ export async function scrapeAmazon(html: string, url: string): Promise<ScrapedPr
       return { productName, description, price, compareAtPrice, weight, dimensions, warranty };
     });
 
-    // Extract high-res images using simple approach
-    // Find all "hiRes":"url" patterns and filter for _SL (Super Large) images only
-    console.log('[Amazon Scraper] Extracting hiRes images with _SL filter...');
+    // Extract high-res images from colorImages array inside ImageBlockATF
+    console.log('[Amazon Scraper] Looking for ImageBlockATF colorImages array...');
     
-    const foundImages = new Set<string>();
-    const hiResRegex = /"hiRes"\s*:\s*"([^"]+)"/g;
-    let match;
+    const foundImages: string[] = [];
     
-    while ((match = hiResRegex.exec(htmlContent)) !== null) {
-      const imageUrl = match[1];
+    // Find ImageBlockATF function and extract colorImages array
+    const imageBlockMatch = htmlContent.match(/P\.when\(['"]A['"]\)\.register\(['"]ImageBlockATF['"][^]*?'colorImages':\s*{\s*'initial':\s*(\[[^\]]*?\}]\])/);
+    
+    if (imageBlockMatch && imageBlockMatch[1]) {
+      console.log('[Amazon Scraper] Found colorImages array in ImageBlockATF');
+      const colorImagesArray = imageBlockMatch[1];
       
-      // Only add images with _SL (Super Large like _SL1500_ or _SL1440_)
-      // Reject images with _SS (Super Small like _SS40_ which are thumbnails)
-      if (imageUrl && 
-          imageUrl !== 'null' && 
-          imageUrl.startsWith('http') && 
-          imageUrl.includes('_SL') && 
-          !imageUrl.includes('_SS')) {
-        foundImages.add(imageUrl);
-        console.log(`[Amazon Scraper] Found hiRes _SL image ${foundImages.size}: ${imageUrl}`);
+      // Extract all hiRes URLs from this array
+      const hiResRegex = /"hiRes"\s*:\s*"([^"]+)"/g;
+      let match;
+      
+      while ((match = hiResRegex.exec(colorImagesArray)) !== null) {
+        const imageUrl = match[1];
+        if (imageUrl && imageUrl !== 'null' && imageUrl.startsWith('http')) {
+          foundImages.push(imageUrl);
+          console.log(`[Amazon Scraper] Extracted hiRes ${foundImages.length}: ${imageUrl}`);
+        }
       }
+    } else {
+      console.log('[Amazon Scraper] Could not find colorImages in ImageBlockATF');
     }
     
-    console.log(`[Amazon Scraper] Total unique images extracted: ${foundImages.size}`);
+    console.log(`[Amazon Scraper] Total images extracted: ${foundImages.length}`);
     
-    const images = Array.from(foundImages);
+    const images = foundImages;
     console.log(`[Amazon Scraper] Extracted ${images.length} high-res images`);
 
     const { productName, description, price, compareAtPrice, weight, dimensions, warranty } = pageData;
