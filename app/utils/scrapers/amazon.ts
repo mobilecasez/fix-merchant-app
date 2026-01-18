@@ -75,8 +75,6 @@ export async function scrapeAmazon(html: string, url: string): Promise<ScrapedPr
     // Extract warranty
     const warrantyMatch = htmlContent.match(/(?:Warranty|Manufacturer Warranty)[:\s]*<\/span>.*?<span[^>]*>(.*?)<\/span>/si);
     const warranty = warrantyMatch ? warrantyMatch[1].replace(/<[^>]*>/g, '').trim() : "";
-    
-    const pageData = { productName, description, price, compareAtPrice, weight, dimensions, warranty };
 
     // Extract high-res images from colorImages array inside ImageBlockATF
     console.log('[Amazon Scraper] Looking for ImageBlockATF colorImages array...');
@@ -109,8 +107,6 @@ export async function scrapeAmazon(html: string, url: string): Promise<ScrapedPr
     
     const images = foundImages;
     console.log(`[Amazon Scraper] Extracted ${images.length} high-res images`);
-
-    const { productName, description, price, compareAtPrice, weight, dimensions, warranty } = pageData;
     console.log(`[Amazon Scraper] Title: ${productName?.substring(0, 50)}...`);
     console.log(`[Amazon Scraper] Price: ${price}`);
     console.log(`[Amazon Scraper] Images: ${images.length}`);
