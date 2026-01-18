@@ -1,86 +1,38 @@
-import { launchBrowser } from "./browser";
 import { ScrapedProductData } from "./types";
 import { cleanProductName, ensureCompareAtPrice, parseWeight, estimateWeight } from "./helpers";
 
 export async function scrapeAmazon(html: string, url: string): Promise<ScrapedProductData> {
-  let browser;
   try {
     console.log('[Amazon Scraper] Starting scrape for:', url);
-    browser = await launchBrowser();
-    const page = await browser.newPage();
     
-    // CRITICAL: Remove webdriver property before navigation
-    await page.evaluateOnNewDocument(() => {
-      Object.defineProperty(navigator, 'webdriver', {
-        get: () => false,
-      });
-      
-      // Fake plugins and languages
-      Object.defineProperty(navigator, 'plugins', {
-        get: () => [1, 2, 3, 4, 5],
-      });
-      
-      Object.defineProperty(navigator, 'languages', {
-        get: () => ['en-US', 'en'],
-      });
-      
-      // Mock chrome object
-      (window as any).chrome = {
-        runtime: {},
-      };
-      
-      // Mock permissions
-      const originalQuery = window.navigator.permissions.query;
-      window.navigator.permissions.query = (parameters: any) => (
-        parameters.name === 'notifications' ?
-          Promise.resolve({ state: Notification.permission } as PermissionStatus) :
-          originalQuery(parameters)
-      );
+    // NEW APPROACH: Use simple fetch with browser-like headers (much faster, less detectable)
+    console.log('[Amazon Scraper] Fetching page with HTTP request...');
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Referer': 'https://www.google.com/',
+        'Sec-Ch-Ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+        'Sec-Ch-Ua-Mobile': '?0',
+        'Sec-Ch-Ua-Platform': '"Windows"',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'cross-site',
+        'Sec-Fetch-User': '?1',
+        'Upgrade-Insecure-Requests': '1',
+        'Cache-Control': 'max-age=0',
+      },
     });
     
-    // Enhanced anti-detection with realistic headers and behavior
-    await page.setUserAgent(
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    );
+    if (!response.ok) {
+      console.log(`[Amazon Scraper] HTTP error: ${response.status} ${response.statusText}`);
+      throw new Error(`Failed to fetch Amazon page: ${response.status}`);
+    }
     
-    // Set extra headers to look more like a real browser
-    await page.setExtraHTTPHeaders({
-      'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-      'accept-language': 'en-US,en;q=0.9',
-      'accept-encoding': 'gzip, deflate, br',
-      'sec-ch-ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
-      'sec-ch-ua-mobile': '?0',
-      'sec-ch-ua-platform': '"Windows"',
-      'sec-fetch-dest': 'document',
-      'sec-fetch-mode': 'navigate',
-      'sec-fetch-site': 'none',
-      'sec-fetch-user': '?1',
-      'upgrade-insecure-requests': '1',
-      'referer': 'https://www.google.com/',
-    });
-
-    // Set viewport to common resolution
-    await page.setViewport({ width: 1920, height: 1080 });
-
-    console.log('[Amazon Scraper] Navigating to URL...');
-    // Navigate with longer timeout and domcontentloaded instead of networkidle2
-    await page.goto(url, { 
-      waitUntil: "domcontentloaded",
-      timeout: 60000 
-    });
-    
-    // Simulate human-like behavior: small random delay
-    const randomDelay = Math.floor(Math.random() * 2000) + 3000; // 3-5 seconds
-    await new Promise(resolve => setTimeout(resolve, randomDelay));
-    
-    // Simulate mouse movement to appear more human-like
-    await page.mouse.move(100, 100);
-    await page.mouse.move(200, 200);
-    
-    console.log('[Amazon Scraper] Page loaded successfully');
-
-    // Get the full HTML content for regex extraction
-    const htmlContent = await page.content();
+    const htmlContent = await response.text();
+    console.log('[Amazon Scraper] Page fetched successfully, HTML length:', htmlContent.length);
     
     // Check for CAPTCHA or bot detection
     if (htmlContent.includes('Type the characters you see in this picture') || 
@@ -91,67 +43,40 @@ export async function scrapeAmazon(html: string, url: string): Promise<ScrapedPr
       throw new Error('Amazon is showing CAPTCHA. The scraper was detected as a bot.');
     }
 
-    const pageData = await page.evaluate(() => {
-      // Extract title from h1#title (as per article)
-      const productName = document.querySelector('#title')?.textContent?.trim() || "";
-      
-      // Extract description
-      const description = document.querySelector("#feature-bullets")?.innerHTML || "";
-      
-      // Extract price from span.a-price (as per article)
-      const priceElement = document.querySelector("span.a-price");
-      const price = priceElement?.querySelector("span")?.textContent?.trim() || "";
-      
-      // Extract compare at price
-      const compareAtPrice =
-        document.querySelector('span[data-a-strike="true"] span.a-offscreen')?.textContent?.trim() ||
-        document.querySelector(".a-text-price .a-offscreen")?.textContent?.trim() ||
-        "";
-
-      let weight = '';
-      let dimensions = '';
-
-      const findDetail = (label: string) => {
-        // Look in product details table
-        const ths = Array.from(document.querySelectorAll('th'));
-        const th = ths.find(el => el.textContent?.trim().toLowerCase().includes(label));
-        if (th && th.nextElementSibling) {
-          return th.nextElementSibling.textContent?.trim();
-        }
-
-        // Look in detail bullets
-        const listItems = Array.from(document.querySelectorAll('#detailBullets_feature_div .a-list-item'));
-        for (const item of listItems) {
-            const text = item.textContent?.trim().toLowerCase();
-            if (text?.includes(label)) {
-                const spans = item.querySelectorAll('span');
-                if (spans.length > 1) {
-                    return spans[spans.length - 1].textContent?.trim();
-                }
-            }
-        }
-        
-        // Look in product details specs table (tr.a-spacing-small as per article)
-        const specs = Array.from(document.querySelectorAll("tr.a-spacing-small"));
-        for (const spec of specs) {
-          const spanTags = spec.querySelectorAll("span");
-          if (spanTags.length >= 2) {
-            const labelText = spanTags[0].textContent?.trim().toLowerCase();
-            if (labelText?.includes(label)) {
-              return spanTags[1].textContent?.trim();
-            }
-          }
-        }
-        
-        return '';
-      };
-
-      weight = findDetail('item weight') || '';
-      dimensions = findDetail('product dimensions') || '';
-      const warranty = findDetail('warranty') || findDetail('manufacturer warranty') || '';
-
-      return { productName, description, price, compareAtPrice, weight, dimensions, warranty };
-    });
+    // Extract product data using regex patterns from HTML
+    console.log('[Amazon Scraper] Extracting product data from HTML...');
+    
+    // Extract product name from title span
+    const nameMatch = htmlContent.match(/<span[^>]*id="productTitle"[^>]*>(.*?)<\/span>/s);
+    const productName = nameMatch ? nameMatch[1].replace(/<[^>]*>/g, '').trim() : "";
+    console.log('[Amazon Scraper] Product name:', productName);
+    
+    // Extract description from feature bullets
+    const descMatch = htmlContent.match(/<div[^>]*id="feature-bullets"[^>]*>(.*?)<\/div>/s);
+    const description = descMatch ? descMatch[1] : "";
+    
+    // Extract price - look for a-price span
+    const priceMatch = htmlContent.match(/<span[^>]*class="[^"]*a-price[^"]*"[^>]*>.*?<span[^>]*class="[^"]*a-offscreen[^"]*"[^>]*>(.*?)<\/span>/s);
+    const price = priceMatch ? priceMatch[1].trim() : "";
+    console.log('[Amazon Scraper] Price:', price);
+    
+    // Extract compare at price
+    const compareMatch = htmlContent.match(/<span[^>]*data-a-strike="true"[^>]*>.*?<span[^>]*class="[^"]*a-offscreen[^"]*"[^>]*>(.*?)<\/span>/s);
+    const compareAtPrice = compareMatch ? compareMatch[1].trim() : "";
+    
+    // Extract weight - look for "Item Weight" or "Product Weight"
+    const weightMatch = htmlContent.match(/(?:Item Weight|Product Weight)[:\s]*<\/span>.*?<span[^>]*>(.*?)<\/span>/si);
+    const weight = weightMatch ? weightMatch[1].replace(/<[^>]*>/g, '').trim() : "";
+    
+    // Extract dimensions
+    const dimensionsMatch = htmlContent.match(/Product Dimensions[:\s]*<\/span>.*?<span[^>]*>(.*?)<\/span>/si);
+    const dimensions = dimensionsMatch ? dimensionsMatch[1].replace(/<[^>]*>/g, '').trim() : "";
+    
+    // Extract warranty
+    const warrantyMatch = htmlContent.match(/(?:Warranty|Manufacturer Warranty)[:\s]*<\/span>.*?<span[^>]*>(.*?)<\/span>/si);
+    const warranty = warrantyMatch ? warrantyMatch[1].replace(/<[^>]*>/g, '').trim() : "";
+    
+    const pageData = { productName, description, price, compareAtPrice, weight, dimensions, warranty };
 
     // Extract high-res images from colorImages array inside ImageBlockATF
     console.log('[Amazon Scraper] Looking for ImageBlockATF colorImages array...');
@@ -248,12 +173,8 @@ export async function scrapeAmazon(html: string, url: string): Promise<ScrapedPr
       options: [],
       variants: [],
     };
-  } finally {
-    if (browser) {
-      console.log('[Amazon Scraper] Closing browser...');
-      await browser.close().catch((err) => {
-        console.error('[Amazon Scraper] Error closing browser:', err);
-      });
-    }
+  } catch (error) {
+    console.error('[Amazon Scraper] Error during scraping:', error);
+    throw error;
   }
 }
