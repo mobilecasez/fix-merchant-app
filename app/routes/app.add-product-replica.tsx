@@ -202,7 +202,7 @@ export default function AddProductReplica() {
       if (images && images.length > 0) {
         console.log("🖼️ SCRAPER IMAGES RECEIVED:", images.length, "images");
         console.log("🖼️ Image URLs from scraper:");
-        images.forEach((url, index) => {
+        images.forEach((url: string, index: number) => {
           console.log(`  ${index + 1}. ${url}`);
         });
         setMedia(images);
