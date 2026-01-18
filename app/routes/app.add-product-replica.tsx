@@ -200,7 +200,14 @@ export default function AddProductReplica() {
       if (weight) setWeight(weight);
       if (weightUnit) setWeightUnit(weightUnit);
       if (images && images.length > 0) {
+        console.log("🖼️ SCRAPER IMAGES RECEIVED:", images.length, "images");
+        console.log("🖼️ Image URLs from scraper:");
+        images.forEach((url, index) => {
+          console.log(`  ${index + 1}. ${url}`);
+        });
         setMedia(images);
+      } else {
+        console.log("⚠️ No images received from scraper");
       }
       if (scrapedOptions && scrapedOptions.length > 0) {
         setHasVariants(true);

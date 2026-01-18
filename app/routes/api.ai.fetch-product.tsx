@@ -204,8 +204,16 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       console.log("Using local scraper.");
       try {
         productData = await scraper(html, url);
+        console.log("[SCRAPER] ========================================");
         console.log("[SCRAPER] Extracted images:", JSON.stringify(productData.images, null, 2));
         console.log("[SCRAPER] Total images:", productData.images?.length || 0);
+        console.log("[SCRAPER] First 3 image URLs:");
+        if (productData.images) {
+          productData.images.slice(0, 3).forEach((img, idx) => {
+            console.log(`[SCRAPER]   ${idx + 1}. ${img}`);
+          });
+        }
+        console.log("[SCRAPER] ========================================");
 
         // Validate that scraper returned valid data
         if (!productData.productName || productData.productName.trim() === "") {
