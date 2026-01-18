@@ -169,8 +169,5 @@ export async function scrapeAmazon(html: string, url: string): Promise<ScrapedPr
       options: [],
       variants: [],
     };
-  } catch (error) {
-    console.error('[Amazon Scraper] Error during scraping:', error);
-    throw error;
   }
 }
