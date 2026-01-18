@@ -109,7 +109,7 @@ async function extractProductDataWithAI(url: string, htmlContent: string) {
     Instructions:
     - Return an empty string "" or an empty array [] if a field is not found.
     - Description should be in HTML format.
-    - DO NOT extract image URLs - leave the images array empty [].
+    - Extract all product image URLs from img tags, data attributes, or JavaScript image arrays (e.g., ImageBlockATF, colorImages, imageBlock). Look for high-resolution versions (hiRes, large, zoom) when available.
     - Identify all product options (e.g., "Size", "Color") and their values.
     - List all variant combinations with their price, SKU, and barcode.
     - If a value is absolutely not present, return null for that field.
@@ -216,11 +216,15 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           if (!fetchSuccess) {
             throw new Error("Cannot use AI scraper without HTML");
           }
+          const scraperImages = productData.images || [];
           const aiData = await extractProductDataWithAI(url, html);
-          console.log("[AI] AI extracted data (before adding images):", JSON.stringify({...aiData, images: aiData.images}, null, 2));
-          // Always use scraper images (hiRes from ImageBlockATF)
-          aiData.images = productData.images || [];
-          console.log("[FINAL] Adding scraper images to AI data:", JSON.stringify(aiData.images, null, 2));
+          console.log("[AI] AI extracted data:", JSON.stringify({...aiData, images: aiData.images?.slice(0, 3)}, null, 2));
+          console.log("[AI] Total AI images:", aiData.images?.length || 0);
+          console.log("[SCRAPER] Total scraper images:", scraperImages.length);
+          
+          // Prioritize scraper images (higher quality), but use AI images as fallback
+          aiData.images = scraperImages.length > 0 ? scraperImages : (aiData.images || []);
+          console.log("[FINAL] Using images from:", scraperImages.length > 0 ? "scraper" : "AI");
           console.log("[FINAL] Total images in final result:", aiData.images.length);
           productData = aiData;
         }
