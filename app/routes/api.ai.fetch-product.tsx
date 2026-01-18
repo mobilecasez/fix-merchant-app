@@ -178,18 +178,50 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     let html = "";
     let fetchSuccess = false;
     
-    // Try to fetch HTML with regular HTTP request first
+    // Try to fetch HTML with enhanced headers especially for Amazon
     try {
+      console.log("Attempting to fetch:", url);
+      
+      // Add random delay to mimic human behavior
+      await new Promise(resolve => setTimeout(resolve, Math.random() * 1000 + 500));
+      
       const response = await fetch(url, {
         headers: {
-          "User-Agent":
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/104.0.0.0 Safari/537.36",
+          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+          'Accept-Language': 'en-US,en;q=0.9',
+          'Accept-Encoding': 'gzip, deflate, br, zstd',
+          'Referer': url.includes('amazon.in') ? 'https://www.amazon.in/' : url.includes('amazon') ? 'https://www.amazon.com/' : 'https://www.google.com/',
+          'DNT': '1',
+          'Connection': 'keep-alive',
+          'Sec-Ch-Ua': '"Chromium";v="122", "Not(A:Brand";v="24", "Google Chrome";v="122"',
+          'Sec-Ch-Ua-Mobile': '?0',
+          'Sec-Ch-Ua-Platform': '"macOS"',
+          'Sec-Fetch-Dest': 'document',
+          'Sec-Fetch-Mode': 'navigate',
+          'Sec-Fetch-Site': 'same-origin',
+          'Sec-Fetch-User': '?1',
+          'Upgrade-Insecure-Requests': '1',
+          'Cache-Control': 'max-age=0',
         },
       });
       
       if (response.ok) {
         html = await response.text();
-        fetchSuccess = true;
+        
+        // Check if we got a CAPTCHA or bot detection page
+        if (html.includes('Type the characters you see in this picture') || 
+            html.includes('Enter the characters you see below') ||
+            html.includes('To discuss automated access to Amazon data please contact') ||
+            html.toLowerCase().includes('robot check') ||
+            html.length < 10000) {
+          console.log(`Got CAPTCHA/bot detection page (size: ${html.length}), clearing HTML`);
+          fetchSuccess = false;
+          html = ""; // Clear the CAPTCHA HTML so scraper doesn't use it
+        } else {
+          fetchSuccess = true;
+          console.log(`Successfully fetched page, HTML length: ${html.length}`);
+        }
       } else {
         console.log(`Initial fetch failed with status ${response.status}, will try with scraper`);
       }

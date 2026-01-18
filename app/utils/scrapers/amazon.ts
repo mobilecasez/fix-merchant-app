@@ -5,43 +5,94 @@ export async function scrapeAmazon(html: string, url: string): Promise<ScrapedPr
   try {
     console.log('[Amazon Scraper] Starting scrape for:', url);
     
-    // NEW APPROACH: Use simple fetch with browser-like headers (much faster, less detectable)
+    // Enhanced fetch with more realistic browser behavior
     console.log('[Amazon Scraper] Fetching page with HTTP request...');
+    
+    // Use a random delay to mimic human behavior
+    await new Promise(resolve => setTimeout(resolve, Math.random() * 1000 + 500));
+    
     const response = await fetch(url, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
         'Accept-Language': 'en-US,en;q=0.9',
-        'Accept-Encoding': 'gzip, deflate, br',
-        'Referer': 'https://www.google.com/',
-        'Sec-Ch-Ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+        'Accept-Encoding': 'gzip, deflate, br, zstd',
+        'Referer': 'https://www.amazon.in/',
+        'DNT': '1',
+        'Connection': 'keep-alive',
+        'Sec-Ch-Ua': '"Chromium";v="122", "Not(A:Brand";v="24", "Google Chrome";v="122"',
         'Sec-Ch-Ua-Mobile': '?0',
-        'Sec-Ch-Ua-Platform': '"Windows"',
+        'Sec-Ch-Ua-Platform': '"macOS"',
         'Sec-Fetch-Dest': 'document',
         'Sec-Fetch-Mode': 'navigate',
-        'Sec-Fetch-Site': 'cross-site',
+        'Sec-Fetch-Site': 'same-origin',
         'Sec-Fetch-User': '?1',
         'Upgrade-Insecure-Requests': '1',
         'Cache-Control': 'max-age=0',
+        'Cookie': 'session-id=000-0000000-0000000; session-id-time=2082787201l',
       },
     });
     
     if (!response.ok) {
       console.log(`[Amazon Scraper] HTTP error: ${response.status} ${response.statusText}`);
+      // If fetch fails, try to use the provided HTML parameter as fallback
+      if (html && html.length > 10000) {
+        console.log('[Amazon Scraper] Using provided HTML as fallback');
+        const htmlContent = html;
+        return await parseAmazonHTML(htmlContent, url);
+      }
       throw new Error(`Failed to fetch Amazon page: ${response.status}`);
     }
     
-    const htmlContent = await response.text();
+    let htmlContent = await response.text();
     console.log('[Amazon Scraper] Page fetched successfully, HTML length:', htmlContent.length);
     
     // Check for CAPTCHA or bot detection
     if (htmlContent.includes('Type the characters you see in this picture') || 
         htmlContent.includes('Enter the characters you see below') ||
         htmlContent.includes('To discuss automated access to Amazon data please contact') ||
-        htmlContent.toLowerCase().includes('robot check')) {
+        htmlContent.toLowerCase().includes('robot check') ||
+        htmlContent.length < 10000) {  // Very small page is likely CAPTCHA
       console.log('[Amazon Scraper] CAPTCHA/Bot detection page detected');
-      throw new Error('Amazon is showing CAPTCHA. The scraper was detected as a bot.');
+      
+      // Try to use the provided HTML parameter as fallback
+      if (html && html.length > 10000) {
+        console.log('[Amazon Scraper] Using provided HTML parameter as fallback');
+        htmlContent = html;
+      } else {
+        throw new Error('Amazon is showing CAPTCHA. The scraper was detected as a bot.');
+      }
     }
+
+    return await parseAmazonHTML(htmlContent, url);
+  } catch (error) {
+    console.error("[Amazon Scraper] Error during Amazon scraping:", error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error("[Amazon Scraper] Error details:", errorMessage);
+    
+    // Return empty data to trigger AI fallback
+    return {
+      productName: "",
+      description: "",
+      price: "",
+      images: [],
+      vendor: "Amazon",
+      productType: "",
+      tags: "",
+      compareAtPrice: "",
+      costPerItem: "",
+      sku: "",
+      barcode: "",
+      weight: "",
+      weightUnit: "",
+      options: [],
+      variants: [],
+    };
+  }
+}
+
+// Extract parsing logic into a separate function
+async function parseAmazonHTML(htmlContent: string, url: string): Promise<ScrapedProductData> {
 
     // Extract product data using regex patterns from HTML
     console.log('[Amazon Scraper] Extracting product data from HTML...');
@@ -146,28 +197,4 @@ export async function scrapeAmazon(html: string, url: string): Promise<ScrapedPr
       options: [],
       variants: [],
     };
-  } catch (error) {
-    console.error("[Amazon Scraper] Error during Amazon scraping:", error);
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    console.error("[Amazon Scraper] Error details:", errorMessage);
-    
-    // Return empty data to trigger AI fallback
-    return {
-      productName: "",
-      description: "",
-      price: "",
-      images: [],
-      vendor: "Amazon",
-      productType: "",
-      tags: "",
-      compareAtPrice: "",
-      costPerItem: "",
-      sku: "",
-      barcode: "",
-      weight: "",
-      weightUnit: "",
-      options: [],
-      variants: [],
-    };
-  }
 }
