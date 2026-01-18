@@ -9,6 +9,35 @@ export async function scrapeAmazon(html: string, url: string): Promise<ScrapedPr
     browser = await launchBrowser();
     const page = await browser.newPage();
     
+    // CRITICAL: Remove webdriver property before navigation
+    await page.evaluateOnNewDocument(() => {
+      Object.defineProperty(navigator, 'webdriver', {
+        get: () => false,
+      });
+      
+      // Fake plugins and languages
+      Object.defineProperty(navigator, 'plugins', {
+        get: () => [1, 2, 3, 4, 5],
+      });
+      
+      Object.defineProperty(navigator, 'languages', {
+        get: () => ['en-US', 'en'],
+      });
+      
+      // Mock chrome object
+      (window as any).chrome = {
+        runtime: {},
+      };
+      
+      // Mock permissions
+      const originalQuery = window.navigator.permissions.query;
+      window.navigator.permissions.query = (parameters: any) => (
+        parameters.name === 'notifications' ?
+          Promise.resolve({ state: Notification.permission } as PermissionStatus) :
+          originalQuery(parameters)
+      );
+    });
+    
     // Enhanced anti-detection with realistic headers and behavior
     await page.setUserAgent(
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -27,25 +56,40 @@ export async function scrapeAmazon(html: string, url: string): Promise<ScrapedPr
       'sec-fetch-site': 'none',
       'sec-fetch-user': '?1',
       'upgrade-insecure-requests': '1',
+      'referer': 'https://www.google.com/',
     });
 
-    // Set viewport
+    // Set viewport to common resolution
     await page.setViewport({ width: 1920, height: 1080 });
 
     console.log('[Amazon Scraper] Navigating to URL...');
     // Navigate with longer timeout and domcontentloaded instead of networkidle2
     await page.goto(url, { 
       waitUntil: "domcontentloaded",
-      timeout: 45000 
+      timeout: 60000 
     });
     
-    // Wait a bit for JavaScript to execute using setTimeout wrapped in Promise
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    // Simulate human-like behavior: small random delay
+    const randomDelay = Math.floor(Math.random() * 2000) + 3000; // 3-5 seconds
+    await new Promise(resolve => setTimeout(resolve, randomDelay));
+    
+    // Simulate mouse movement to appear more human-like
+    await page.mouse.move(100, 100);
+    await page.mouse.move(200, 200);
     
     console.log('[Amazon Scraper] Page loaded successfully');
 
     // Get the full HTML content for regex extraction
     const htmlContent = await page.content();
+    
+    // Check for CAPTCHA or bot detection
+    if (htmlContent.includes('Type the characters you see in this picture') || 
+        htmlContent.includes('Enter the characters you see below') ||
+        htmlContent.includes('To discuss automated access to Amazon data please contact') ||
+        htmlContent.toLowerCase().includes('robot check')) {
+      console.log('[Amazon Scraper] CAPTCHA/Bot detection page detected');
+      throw new Error('Amazon is showing CAPTCHA. The scraper was detected as a bot.');
+    }
 
     const pageData = await page.evaluate(() => {
       // Extract title from h1#title (as per article)

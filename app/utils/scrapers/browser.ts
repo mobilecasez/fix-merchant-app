@@ -17,6 +17,11 @@ export async function launchBrowser(): Promise<Browser> {
     '--no-first-run',
     '--disable-gpu',
     '--disable-blink-features=AutomationControlled', // Hide automation
+    '--disable-infobars',
+    '--window-size=1920,1080',
+    '--start-maximized',
+    '--disable-notifications',
+    '--disable-popup-blocking',
   ];
 
   // Additional args needed for Alpine Linux / containers
