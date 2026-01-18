@@ -9,27 +9,38 @@ export async function scrapeAmazon(html: string, url: string): Promise<ScrapedPr
     browser = await launchBrowser();
     const page = await browser.newPage();
     
-    // Better anti-detection with realistic headers
+    // Enhanced anti-detection with realistic headers and behavior
     await page.setUserAgent(
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36",
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     );
     
     // Set extra headers to look more like a real browser
     await page.setExtraHTTPHeaders({
+      'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
       'accept-language': 'en-US,en;q=0.9',
       'accept-encoding': 'gzip, deflate, br',
-      'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+      'sec-ch-ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+      'sec-ch-ua-mobile': '?0',
+      'sec-ch-ua-platform': '"Windows"',
+      'sec-fetch-dest': 'document',
+      'sec-fetch-mode': 'navigate',
+      'sec-fetch-site': 'none',
+      'sec-fetch-user': '?1',
+      'upgrade-insecure-requests': '1',
     });
 
     // Set viewport
     await page.setViewport({ width: 1920, height: 1080 });
 
     console.log('[Amazon Scraper] Navigating to URL...');
-    // Navigate with networkidle2 to ensure all content is loaded
+    // Navigate with longer timeout and domcontentloaded instead of networkidle2
     await page.goto(url, { 
-      waitUntil: "networkidle2",
-      timeout: 60000 
+      waitUntil: "domcontentloaded",
+      timeout: 45000 
     });
+    
+    // Wait a bit for JavaScript to execute
+    await page.waitForTimeout(2000);
     
     console.log('[Amazon Scraper] Page loaded successfully');
 

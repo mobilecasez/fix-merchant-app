@@ -16,6 +16,7 @@ export async function launchBrowser(): Promise<Browser> {
     '--disable-accelerated-2d-canvas',
     '--no-first-run',
     '--disable-gpu',
+    '--disable-blink-features=AutomationControlled', // Hide automation
   ];
 
   // Additional args needed for Alpine Linux / containers
@@ -33,6 +34,7 @@ export async function launchBrowser(): Promise<Browser> {
     '--no-zygote',
     '--single-process',
     '--headless=new',
+    '--disable-web-security', // May help with some blocks
   ];
 
   const options: any = {
