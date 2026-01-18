@@ -216,13 +216,12 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         console.log("[SCRAPER] ========================================");
 
         // Validate that scraper returned valid data
-        if (!productData.productName || productData.productName.trim() === "") {
+        // If product name is missing but we have images, still use the scraper data
+        if ((!productData.productName || productData.productName.trim() === "") && 
+            (!productData.images || productData.images.length === 0)) {
           console.log(
-            "Scraper returned empty product name",
+            "Scraper returned empty product name AND no images, falling back to AI if possible",
           );
-          
-          // If scraper has images, keep them for potential AI use
-          const scraperImages = productData.images || [];
           
           // Only fall back to AI if we have HTML content
           if (fetchSuccess && html && html.trim().length > 0) {
@@ -230,17 +229,13 @@ export const action = async ({ request }: ActionFunctionArgs) => {
             const aiData = await extractProductDataWithAI(url, html);
             console.log("[AI] AI extracted data:", JSON.stringify({...aiData, images: aiData.images?.slice(0, 3)}, null, 2));
             console.log("[AI] Total AI images:", aiData.images?.length || 0);
-            console.log("[SCRAPER] Total scraper images:", scraperImages.length);
-            
-            // Prioritize scraper images (higher quality), but use AI images as fallback
-            aiData.images = scraperImages.length > 0 ? scraperImages : (aiData.images || []);
-            console.log("[FINAL] Using images from:", scraperImages.length > 0 ? "scraper" : "AI");
-            console.log("[FINAL] Total images in final result:", aiData.images.length);
             productData = aiData;
           } else {
-            console.log("No HTML available for AI fallback, scraper failed completely");
-            throw new Error("Unable to extract product data. The scraper failed and no HTML is available for AI processing.");
+            console.log("No HTML available for AI fallback");
+            throw new Error("Unable to extract product data. Please try again or add the product manually.");
           }
+        } else if (!productData.productName || productData.productName.trim() === "") {
+          console.log("[SCRAPER] Product name empty but has images, will proceed with scraper data");
         }
       } catch (scraperError) {
         console.error("Local scraper failed, falling back to AI:", scraperError);
