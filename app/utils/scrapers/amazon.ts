@@ -39,8 +39,8 @@ export async function scrapeAmazon(html: string, url: string): Promise<ScrapedPr
       timeout: 45000 
     });
     
-    // Wait a bit for JavaScript to execute
-    await page.waitForTimeout(2000);
+    // Wait a bit for JavaScript to execute using setTimeout wrapped in Promise
+    await new Promise(resolve => setTimeout(resolve, 2000));
     
     console.log('[Amazon Scraper] Page loaded successfully');
 
