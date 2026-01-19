@@ -93,9 +93,39 @@ async function parseAmazonHTML(htmlContent: string, url: string): Promise<Scrape
     const descMatch = htmlContent.match(/<div[^>]*id="feature-bullets"[^>]*>(.*?)<\/div>/s);
     const description = descMatch ? descMatch[1] : "";
     
-    // Extract price - look for a-price span
-    const priceMatch = htmlContent.match(/<span[^>]*class="[^"]*a-price[^"]*"[^>]*>.*?<span[^>]*class="[^"]*a-offscreen[^"]*"[^>]*>(.*?)<\/span>/s);
-    const price = priceMatch ? priceMatch[1].trim() : "";
+    // Extract price - try multiple patterns
+    let price = "";
+    
+    // Pattern 1: Standard a-price with a-offscreen (most common)
+    let priceMatch = htmlContent.match(/<span[^>]*class="[^"]*a-price[^"]*"[^>]*>.*?<span[^>]*class="[^"]*a-offscreen[^"]*"[^>]*>(.*?)<\/span>/s);
+    if (priceMatch) {
+      price = priceMatch[1].trim();
+    }
+    
+    // Pattern 2: Look for priceblock_ourprice or priceblock_dealprice
+    if (!price) {
+      priceMatch = htmlContent.match(/<span[^>]*(?:id|class)="[^"]*priceblock_(?:ourprice|dealprice)[^"]*"[^>]*>(.*?)<\/span>/s);
+      if (priceMatch) {
+        price = priceMatch[1].replace(/<[^>]*>/g, '').trim();
+      }
+    }
+    
+    // Pattern 3: Look for corePriceDisplay_desktop_feature_div
+    if (!price) {
+      priceMatch = htmlContent.match(/id="corePriceDisplay_desktop_feature_div"[^>]*>[\s\S]*?<span[^>]*class="[^"]*a-offscreen[^"]*"[^>]*>(.*?)<\/span>/);
+      if (priceMatch) {
+        price = priceMatch[1].trim();
+      }
+    }
+    
+    // Pattern 4: Look for any price-related offscreen spans (more permissive)
+    if (!price) {
+      priceMatch = htmlContent.match(/<span[^>]*class="[^"]*a-offscreen[^"]*"[^>]*>(₹[\d,]+(?:\.\d{2})?)<\/span>/);
+      if (priceMatch) {
+        price = priceMatch[1].trim();
+      }
+    }
+    
     console.log('[Amazon Scraper] Price:', price);
     
     // Extract compare at price
