@@ -120,19 +120,37 @@ async function parseAmazonHTML(htmlContent: string, url: string): Promise<Scrape
     
     const foundImages: string[] = [];
     
-    // Find the colorImages section (simpler approach - just find the section start)
-    const colorImagesMatch = htmlContent.match(/['"']colorImages['"']\s*:\s*{\s*['"']initial['"']\s*:/m);
+    // Find the colorImages.initial array by locating start position and counting brackets
+    // This approach handles nested objects with multiple } brackets correctly
+    const colorImagesStartMatch = htmlContent.match(/['"']colorImages['"']\s*:\s*\{\s*['"']initial['"']\s*:\s*\[/);
     
-    if (colorImagesMatch) {
-      console.log('[Amazon Scraper] Found colorImages.initial in HTML');
+    if (colorImagesStartMatch && colorImagesStartMatch.index !== undefined) {
+      console.log('[Amazon Scraper] Found colorImages.initial start position');
+      const startPos = colorImagesStartMatch.index + colorImagesStartMatch[0].length;
       
-      // Extract ALL hiRes URLs from the entire HTML 
-      // (they're all within the ImageBlockATF section anyway)
+      // Count brackets to find where the array ends
+      let bracketCount = 1; // We already have the opening [
+      let endPos = startPos;
+      
+      while (bracketCount > 0 && endPos < htmlContent.length) {
+        if (htmlContent[endPos] === '[') {
+          bracketCount++;
+        } else if (htmlContent[endPos] === ']') {
+          bracketCount--;
+        }
+        endPos++;
+      }
+      
+      // Extract just the colorImages.initial array content
+      const colorImagesArray = htmlContent.substring(startPos - 1, endPos);
+      console.log(`[Amazon Scraper] Extracted colorImages array, length: ${colorImagesArray.length}`);
+      
+      // Now extract hiRes URLs only from this array
       const hiResRegex = /"hiRes"\s*:\s*"([^"]+)"/g;
       let match;
       let matchCount = 0;
       
-      while ((match = hiResRegex.exec(htmlContent)) !== null) {
+      while ((match = hiResRegex.exec(colorImagesArray)) !== null) {
         matchCount++;
         const imageUrl = match[1];
         console.log(`[Amazon Scraper] Found hiRes match ${matchCount}: ${imageUrl}`);
@@ -145,7 +163,7 @@ async function parseAmazonHTML(htmlContent: string, url: string): Promise<Scrape
       }
       console.log(`[Amazon Scraper] Total hiRes matches found: ${matchCount}, valid images: ${foundImages.length}`);
     } else {
-      console.log('[Amazon Scraper] Could not find colorImages in ImageBlockATF');
+      console.log('[Amazon Scraper] Could not find colorImages.initial start in HTML');
       console.log('[Amazon Scraper] HTML snippet (first 1000 chars):', htmlContent.substring(0, 1000));
     }
     
