@@ -93,18 +93,42 @@ async function parseAmazonHTML(htmlContent: string, url: string): Promise<Scrape
     const descMatch = htmlContent.match(/<div[^>]*id="feature-bullets"[^>]*>(.*?)<\/div>/s);
     const description = descMatch ? descMatch[1] : "";
     
-    // Extract price - find span with class a-price, then get first child span
+    // Extract price - find span with class a-price (not inside data-a-strike), then get first child span
     let price = "";
-    const aPriceMatch = htmlContent.match(/<span[^>]*class="[^"]*a-price[^"]*"[^>]*>([\s\S]*?)<\/span>\s*<\/span>/);
-    if (aPriceMatch) {
-      // Extract the first child span's text content
-      const firstSpanMatch = aPriceMatch[1].match(/<span[^>]*>(.*?)<\/span>/);
+    
+    // First, find all a-price spans and use the one that's NOT inside a strikethrough
+    const allAPriceMatches = htmlContent.matchAll(/<span[^>]*class="[^"]*a-price[^"]*"[^>]*>([\s\S]*?)<\/span>\s*<\/span>/g);
+    
+    for (const match of allAPriceMatches) {
+      const priceContent = match[1];
+      // Check if this is not inside a strike-through span (compare at price)
+      const fullMatch = match[0];
+      const precedingText = htmlContent.substring(Math.max(0, match.index! - 200), match.index!);
+      
+      // Skip if this is inside a data-a-strike="true" span
+      if (precedingText.includes('data-a-strike="true"')) {
+        console.log('[Amazon Scraper] Skipping strikethrough price');
+        continue;
+      }
+      
+      // Extract the first visible child span (not a-offscreen which is for screen readers)
+      const visibleSpanMatch = priceContent.match(/<span[^>]*class="[^"]*a-price-whole[^"]*"[^>]*>(.*?)<\/span>/);
+      if (visibleSpanMatch) {
+        price = visibleSpanMatch[1].replace(/<[^>]*>/g, '').trim();
+        console.log('[Amazon Scraper] Found price in a-price-whole:', price);
+        break;
+      }
+      
+      // Fallback: try first child span
+      const firstSpanMatch = priceContent.match(/<span[^>]*>(.*?)<\/span>/);
       if (firstSpanMatch) {
         price = firstSpanMatch[1].replace(/<[^>]*>/g, '').trim();
+        console.log('[Amazon Scraper] Found price in first span:', price);
+        break;
       }
     }
     
-    console.log('[Amazon Scraper] Price:', price);
+    console.log('[Amazon Scraper] Final Price:', price);
     
     // Extract compare at price
     const compareMatch = htmlContent.match(/<span[^>]*data-a-strike="true"[^>]*>.*?<span[^>]*class="[^"]*a-offscreen[^"]*"[^>]*>(.*?)<\/span>/s);
