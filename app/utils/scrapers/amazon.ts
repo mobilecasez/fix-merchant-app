@@ -5,7 +5,7 @@ export async function scrapeAmazon(html: string, url: string): Promise<ScrapedPr
   try {
     console.log('[Amazon Scraper] Starting scrape for:', url);
     
-    // Enhanced fetch with more realistic browser behavior
+    // Use proven headers that bypass Amazon's anti-scraping protection
     console.log('[Amazon Scraper] Fetching page with HTTP request...');
     
     // Use a random delay to mimic human behavior
@@ -13,23 +13,10 @@ export async function scrapeAmazon(html: string, url: string): Promise<ScrapedPr
     
     const response = await fetch(url, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'Accept-Encoding': 'gzip, deflate, br, zstd',
-        'Referer': 'https://www.amazon.in/',
-        'DNT': '1',
-        'Connection': 'keep-alive',
-        'Sec-Ch-Ua': '"Chromium";v="122", "Not(A:Brand";v="24", "Google Chrome";v="122"',
-        'Sec-Ch-Ua-Mobile': '?0',
-        'Sec-Ch-Ua-Platform': '"macOS"',
-        'Sec-Fetch-Dest': 'document',
-        'Sec-Fetch-Mode': 'navigate',
-        'Sec-Fetch-Site': 'same-origin',
-        'Sec-Fetch-User': '?1',
-        'Upgrade-Insecure-Requests': '1',
-        'Cache-Control': 'max-age=0',
-        'Cookie': 'session-id=000-0000000-0000000; session-id-time=2082787201l',
+        'accept-language': 'en-US,en;q=0.9',
+        'accept-encoding': 'gzip, deflate, br',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36',
+        'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
       },
     });
     
