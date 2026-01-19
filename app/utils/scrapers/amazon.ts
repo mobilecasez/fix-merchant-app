@@ -116,6 +116,7 @@ async function parseAmazonHTML(htmlContent: string, url: string): Promise<Scrape
 
     // Extract high-res images from colorImages array inside ImageBlockATF
     console.log('[Amazon Scraper] Looking for ImageBlockATF colorImages array...');
+    console.log('[Amazon Scraper] HTML length:', htmlContent.length);
     
     const foundImages: string[] = [];
     
@@ -125,20 +126,29 @@ async function parseAmazonHTML(htmlContent: string, url: string): Promise<Scrape
     if (imageBlockMatch && imageBlockMatch[1]) {
       console.log('[Amazon Scraper] Found colorImages.initial array in ImageBlockATF');
       const colorImagesArray = imageBlockMatch[1];
+      console.log('[Amazon Scraper] colorImages array length:', colorImagesArray.length);
+      console.log('[Amazon Scraper] colorImages array preview:', colorImagesArray.substring(0, 500));
       
       // Extract all hiRes URLs from this array
       const hiResRegex = /"hiRes"\s*:\s*"([^"]+)"/g;
       let match;
+      let matchCount = 0;
       
       while ((match = hiResRegex.exec(colorImagesArray)) !== null) {
+        matchCount++;
         const imageUrl = match[1];
+        console.log(`[Amazon Scraper] Found hiRes match ${matchCount}: ${imageUrl}`);
         if (imageUrl && imageUrl !== 'null' && imageUrl.startsWith('http')) {
           foundImages.push(imageUrl);
-          console.log(`[Amazon Scraper] Extracted hiRes ${foundImages.length}: ${imageUrl}`);
+          console.log(`[Amazon Scraper] ✓ Added hiRes ${foundImages.length}: ${imageUrl}`);
+        } else {
+          console.log(`[Amazon Scraper] ✗ Skipped invalid hiRes: ${imageUrl}`);
         }
       }
+      console.log(`[Amazon Scraper] Total hiRes matches found: ${matchCount}, valid images: ${foundImages.length}`);
     } else {
       console.log('[Amazon Scraper] Could not find colorImages in ImageBlockATF');
+      console.log('[Amazon Scraper] HTML snippet (first 1000 chars):', htmlContent.substring(0, 1000));
     }
     
     console.log(`[Amazon Scraper] Total images extracted: ${foundImages.length}`);

@@ -103,6 +103,14 @@ export default function AddProductReplica() {
   useEffect(() => {
     if (fetcher.state === 'idle' && fetcher.data) {
       const scrapedData = fetcher.data as any;
+      
+      // Log the raw HTML if it's present in the response (for debugging)
+      if (scrapedData.debugHtml) {
+        console.log("📄 RAW HTML FROM SCRAPER (first 3000 chars):");
+        console.log(scrapedData.debugHtml.substring(0, 3000));
+        console.log("📄 HTML length:", scrapedData.debugHtml.length);
+      }
+      
       if (scrapedData.error) {
         setToastMessage(scrapedData.error);
         setToastError(true);

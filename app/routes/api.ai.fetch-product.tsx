@@ -223,6 +223,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     if (scraper) {
       console.log("Using local scraper.");
       try {
+        // Log HTML to help with debugging (first 2000 chars)
+        console.log("[SCRAPER HTML] First 2000 characters:");
+        console.log(html.substring(0, 2000));
+        
         productData = await scraper(html, url);
         console.log("[SCRAPER] ========================================");
         console.log("[SCRAPER] Extracted images:", JSON.stringify(productData.images, null, 2));
@@ -295,7 +299,11 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       );
     }
 
-    return json(productData);
+    // Add HTML for debugging in browser console
+    return json({
+      ...productData,
+      debugHtml: html.substring(0, 5000), // First 5000 chars for debugging
+    });
   } catch (error) {
     console.error("Error fetching product data:", error);
     const errorMessage =
