@@ -120,21 +120,19 @@ async function parseAmazonHTML(htmlContent: string, url: string): Promise<Scrape
     
     const foundImages: string[] = [];
     
-    // Find ImageBlockATF function
-    const imageBlockMatch = htmlContent.match(/P\.when\(['"]A['"]\)\.register\(['"]ImageBlockATF['"]\s*,\s*function[^]*?'colorImages':\s*{\s*'initial':\s*(\[[\s\S]*?\])\s*\}/m);
+    // Find the colorImages section (simpler approach - just find the section start)
+    const colorImagesMatch = htmlContent.match(/['"']colorImages['"']\s*:\s*{\s*['"']initial['"']\s*:/m);
     
-    if (imageBlockMatch && imageBlockMatch[1]) {
-      console.log('[Amazon Scraper] Found colorImages.initial array in ImageBlockATF');
-      const colorImagesArray = imageBlockMatch[1];
-      console.log('[Amazon Scraper] colorImages array length:', colorImagesArray.length);
-      console.log('[Amazon Scraper] colorImages array preview:', colorImagesArray.substring(0, 500));
+    if (colorImagesMatch) {
+      console.log('[Amazon Scraper] Found colorImages.initial in HTML');
       
-      // Extract all hiRes URLs from this array
+      // Extract ALL hiRes URLs from the entire HTML 
+      // (they're all within the ImageBlockATF section anyway)
       const hiResRegex = /"hiRes"\s*:\s*"([^"]+)"/g;
       let match;
       let matchCount = 0;
       
-      while ((match = hiResRegex.exec(colorImagesArray)) !== null) {
+      while ((match = hiResRegex.exec(htmlContent)) !== null) {
         matchCount++;
         const imageUrl = match[1];
         console.log(`[Amazon Scraper] Found hiRes match ${matchCount}: ${imageUrl}`);
