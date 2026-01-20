@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from "react";
+import React, { useState, useCallback, useEffect, useRef } from "react";
 import { useFetcher, useLoaderData } from "@remix-run/react";
 import { json, LoaderFunction } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
@@ -100,6 +100,40 @@ export default function AddProductReplica() {
   const [loadingProgress, setLoadingProgress] = useState(0);
   const [loadingStep, setLoadingStep] = useState('');
   const [showLoader, setShowLoader] = useState(false);
+  const progressIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const targetProgressRef = useRef(0);
+  
+  // Smooth progress animation function
+  const animateProgress = (targetProgress: number) => {
+    targetProgressRef.current = targetProgress;
+    
+    if (progressIntervalRef.current) {
+      clearInterval(progressIntervalRef.current);
+    }
+    
+    progressIntervalRef.current = setInterval(() => {
+      setLoadingProgress((currentProgress) => {
+        if (currentProgress >= targetProgressRef.current) {
+          if (progressIntervalRef.current) {
+            clearInterval(progressIntervalRef.current);
+            progressIntervalRef.current = null;
+          }
+          return targetProgressRef.current;
+        }
+        // Increment by 1% every 50ms for smooth animation
+        return Math.min(currentProgress + 1, targetProgressRef.current);
+      });
+    }, 50);
+  };
+  
+  // Cleanup interval on unmount
+  useEffect(() => {
+    return () => {
+      if (progressIntervalRef.current) {
+        clearInterval(progressIntervalRef.current);
+      }
+    };
+  }, []);
 
   // Simplified loading state that tracks only the main fetch and process operations
   const isFetchingProduct = 
@@ -112,19 +146,20 @@ export default function AddProductReplica() {
       setShowLoader(true);
       setLoadingProgress(0);
       setLoadingStep('Connecting to product source...');
+      animateProgress(30);
     } else if (fetcher.state === 'loading') {
-      setLoadingProgress(30);
       setLoadingStep('Fetching product data from Amazon...');
+      animateProgress(50);
     }
   }, [fetcher.state]);
 
   useEffect(() => {
     if (processAllFetcher.state === 'submitting') {
-      setLoadingProgress(50);
       setLoadingStep('Processing with AI...');
+      animateProgress(65);
     } else if (processAllFetcher.state === 'loading') {
-      setLoadingProgress(70);
       setLoadingStep('Cleverly rewriting title and description...');
+      animateProgress(80);
     }
   }, [processAllFetcher.state]);
 
@@ -140,6 +175,10 @@ export default function AddProductReplica() {
       }
       
       if (scrapedData.error) {
+        if (progressIntervalRef.current) {
+          clearInterval(progressIntervalRef.current);
+          progressIntervalRef.current = null;
+        }
         setShowLoader(false);
         setToastMessage(scrapedData.error);
         setToastError(true);
@@ -147,8 +186,8 @@ export default function AddProductReplica() {
         return;
       }
 
-      setLoadingProgress(50);
       setLoadingStep('Analyzing product data...');
+      animateProgress(55);
 
       // Single unified call to process all AI operations in parallel
       processAllFetcher.submit(
@@ -163,12 +202,16 @@ export default function AddProductReplica() {
 
   useEffect(() => {
     if (processAllFetcher.state === 'idle' && processAllFetcher.data) {
-      setLoadingProgress(85);
       setLoadingStep('Preparing images and final data...');
+      animateProgress(85);
       
       const processedData = processAllFetcher.data as any;
       
       if (processedData.error) {
+        if (progressIntervalRef.current) {
+          clearInterval(progressIntervalRef.current);
+          progressIntervalRef.current = null;
+        }
         setShowLoader(false);
         setToastMessage(processedData.error);
         setToastError(true);
@@ -261,21 +304,26 @@ export default function AddProductReplica() {
         setVariants(scrapedVariants);
       }
 
-      setLoadingProgress(95);
       setLoadingStep('Finalizing product import...');
+      animateProgress(95);
 
-      // Small delay to show final progress
+      // Wait for animation to reach 95%
       setTimeout(() => {
-        setLoadingProgress(100);
         setLoadingStep('Complete! Product is ready.');
+        animateProgress(100);
         
+        // Wait for animation to complete before hiding
         setTimeout(() => {
+          if (progressIntervalRef.current) {
+            clearInterval(progressIntervalRef.current);
+            progressIntervalRef.current = null;
+          }
           setShowLoader(false);
           setToastMessage("Product data fetched and rewritten successfully!");
           setToastError(false);
           setToastActive(true);
-        }, 500);
-      }, 300);
+        }, 600);
+      }, 800);
       
       // Increment product usage counter on successful import and update local quota
       (async () => {
