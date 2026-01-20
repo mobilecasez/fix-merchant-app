@@ -122,9 +122,58 @@ async function parseAmazonHTML(htmlContent: string, url: string): Promise<Scrape
     const compareMatch = htmlContent.match(/<span[^>]*data-a-strike="true"[^>]*>.*?<span[^>]*class="[^"]*a-offscreen[^"]*"[^>]*>(.*?)<\/span>/s);
     const compareAtPrice = compareMatch ? compareMatch[1].trim() : "";
     
-    // Extract weight - look for "Item Weight" or "Product Weight"
-    const weightMatch = htmlContent.match(/(?:Item Weight|Product Weight)[:\s]*<\/span>.*?<span[^>]*>(.*?)<\/span>/si);
-    const weight = weightMatch ? weightMatch[1].replace(/<[^>]*>/g, '').trim() : "";
+    // Extract weight - try multiple patterns
+    let weight = "";
+    let weightUnit = "kg";
+    
+    // Pattern 1: Look for "Item Weight" or "Product Weight" in product details
+    const weightMatch1 = htmlContent.match(/(?:Item Weight|Product Weight|Shipping Weight)[:\s]*<\/span>.*?<span[^>]*>(.*?)<\/span>/si);
+    if (weightMatch1) {
+      const weightText = weightMatch1[1].replace(/<[^>]*>/g, '').trim();
+      console.log('[Amazon Scraper] Found weight (Pattern 1):', weightText);
+      
+      // Parse weight and unit
+      const poundsMatch = weightText.match(/([\d.]+)\s*(?:pounds?|lbs?)/i);
+      const kgMatch = weightText.match(/([\d.]+)\s*(?:kg|kilograms?)/i);
+      const gramsMatch = weightText.match(/([\d.]+)\s*(?:g|grams?)/i);
+      
+      if (poundsMatch) {
+        weight = poundsMatch[1];
+        weightUnit = "lb";
+      } else if (kgMatch) {
+        weight = kgMatch[1];
+        weightUnit = "kg";
+      } else if (gramsMatch) {
+        weight = gramsMatch[1];
+        weightUnit = "g";
+      }
+    }
+    
+    // Pattern 2: Look in product details table
+    if (!weight) {
+      const weightMatch2 = htmlContent.match(/<th[^>]*>(?:Item Weight|Product Weight|Shipping Weight)<\/th>[\s\S]*?<td[^>]*>(.*?)<\/td>/i);
+      if (weightMatch2) {
+        const weightText = weightMatch2[1].replace(/<[^>]*>/g, '').trim();
+        console.log('[Amazon Scraper] Found weight (Pattern 2):', weightText);
+        
+        const poundsMatch = weightText.match(/([\d.]+)\s*(?:pounds?|lbs?)/i);
+        const kgMatch = weightText.match(/([\d.]+)\s*(?:kg|kilograms?)/i);
+        const gramsMatch = weightText.match(/([\d.]+)\s*(?:g|grams?)/i);
+        
+        if (poundsMatch) {
+          weight = poundsMatch[1];
+          weightUnit = "lb";
+        } else if (kgMatch) {
+          weight = kgMatch[1];
+          weightUnit = "kg";
+        } else if (gramsMatch) {
+          weight = gramsMatch[1];
+          weightUnit = "g";
+        }
+      }
+    }
+    
+    console.log('[Amazon Scraper] Extracted weight:', weight, weightUnit);
     
     // Extract dimensions
     const dimensionsMatch = htmlContent.match(/Product Dimensions[:\s]*<\/span>.*?<span[^>]*>(.*?)<\/span>/si);
@@ -203,11 +252,15 @@ async function parseAmazonHTML(htmlContent: string, url: string): Promise<Scrape
         finalDescription += `<div class="warranty-info"><h3>Warranty Information</h3><p>${warranty}</p></div>`;
     }
 
-    // Parse weight or estimate
-    let weightParsed = parseWeight(weight);
-    if (!weightParsed.value) {
-      console.log('Amazon: No weight found, estimating based on product name');
-      weightParsed = estimateWeight(productName);
+    // Use extracted weight or estimate if not found
+    let finalWeight = weight;
+    let finalWeightUnit = weightUnit;
+    
+    if (!weight) {
+      console.log('[Amazon Scraper] No weight found, estimating based on product name');
+      const weightParsed = estimateWeight(productName);
+      finalWeight = weightParsed.value;
+      finalWeightUnit = weightParsed.unit;
     }
 
     // Ensure compare at price (add 20% if missing)
@@ -225,8 +278,8 @@ async function parseAmazonHTML(htmlContent: string, url: string): Promise<Scrape
       costPerItem: "",
       sku: "",
       barcode: "",
-      weight: weightParsed.value,
-      weightUnit: weightParsed.unit,
+      weight: finalWeight,
+      weightUnit: finalWeightUnit,
       options: [],
       variants: [],
     };
