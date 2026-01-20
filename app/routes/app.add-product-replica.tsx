@@ -120,10 +120,10 @@ export default function AddProductReplica() {
           }
           return targetProgressRef.current;
         }
-        // Increment by 1% every 50ms for smooth animation
+        // Increment by 1% every 100ms for smooth animation
         return Math.min(currentProgress + 1, targetProgressRef.current);
       });
-    }, 50);
+    }, 100);
   };
   
   // Cleanup interval on unmount

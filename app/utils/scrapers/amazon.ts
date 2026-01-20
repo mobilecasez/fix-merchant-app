@@ -126,11 +126,34 @@ async function parseAmazonHTML(htmlContent: string, url: string): Promise<Scrape
     let weight = "";
     let weightUnit = "kg";
     
-    // Pattern 1: Look for weight in JSON data (most reliable)
-    const jsonWeightMatch = htmlContent.match(/"item_weight"\s*:\s*"([^"]+)"/i);
-    if (jsonWeightMatch) {
-      const weightText = jsonWeightMatch[1].trim();
-      console.log('[Amazon Scraper] Found weight (JSON):', weightText);
+    console.log('[Amazon Scraper] Starting weight extraction...');
+    
+    // Pattern 1: Look for weight anywhere in the page (most aggressive)
+    const broadWeightMatch = htmlContent.match(/(?:item|product|shipping)\s*weight[^<>]*[:>]\s*([\d.]+)\s*(pounds?|lbs?|kg|kilograms?|g|grams?|oz|ounces?)/i);
+    if (broadWeightMatch) {
+      const weightValue = broadWeightMatch[1];
+      const unit = broadWeightMatch[2].toLowerCase();
+      console.log('[Amazon Scraper] Found weight (Broad Pattern):', weightValue, unit);
+      
+      weight = weightValue;
+      if (unit.includes('pound') || unit.includes('lb')) {
+        weightUnit = "lb";
+      } else if (unit.includes('kg') || unit.includes('kilogram')) {
+        weightUnit = "kg";
+      } else if (unit.includes('oz') || unit.includes('ounce')) {
+        weight = (parseFloat(weightValue) / 16).toFixed(2);
+        weightUnit = "lb";
+      } else if (unit.includes('g') || unit.includes('gram')) {
+        weightUnit = "g";
+      }
+    }
+    
+    // Pattern 2: Look for weight in JSON data
+    if (!weight) {
+      const jsonWeightMatch = htmlContent.match(/"item_weight"\s*:\s*"([^"]+)"/i);
+      if (jsonWeightMatch) {
+        const weightText = jsonWeightMatch[1].trim();
+        console.log('[Amazon Scraper] Found weight (JSON):', weightText);
       
       const poundsMatch = weightText.match(/([\d.]+)\s*(?:pounds?|lbs?)/i);
       const kgMatch = weightText.match(/([\d.]+)\s*(?:kg|kilograms?)/i);
@@ -152,12 +175,12 @@ async function parseAmazonHTML(htmlContent: string, url: string): Promise<Scrape
       }
     }
     
-    // Pattern 2: Look for "Item Weight" or "Product Weight" in product details
+    // Pattern 3: Look for "Item Weight" or "Product Weight" in product details
     if (!weight) {
       const weightMatch1 = htmlContent.match(/(?:Item Weight|Product Weight|Shipping Weight)[:\s]*<\/span>.*?<span[^>]*>(.*?)<\/span>/si);
       if (weightMatch1) {
         const weightText = weightMatch1[1].replace(/<[^>]*>/g, '').trim();
-        console.log('[Amazon Scraper] Found weight (Pattern 2):', weightText);
+        console.log('[Amazon Scraper] Found weight (Pattern 3):', weightText);
         
         const poundsMatch = weightText.match(/([\d.]+)\s*(?:pounds?|lbs?)/i);
         const kgMatch = weightText.match(/([\d.]+)\s*(?:kg|kilograms?)/i);
@@ -180,12 +203,12 @@ async function parseAmazonHTML(htmlContent: string, url: string): Promise<Scrape
       }
     }
     
-    // Pattern 3: Look in product details table
+    // Pattern 4: Look in product details table
     if (!weight) {
       const weightMatch2 = htmlContent.match(/<th[^>]*>(?:Item Weight|Product Weight|Shipping Weight)<\/th>[\s\S]*?<td[^>]*>(.*?)<\/td>/i);
       if (weightMatch2) {
         const weightText = weightMatch2[1].replace(/<[^>]*>/g, '').trim();
-        console.log('[Amazon Scraper] Found weight (Pattern 3):', weightText);
+        console.log('[Amazon Scraper] Found weight (Pattern 4):', weightText);
         
         const poundsMatch = weightText.match(/([\d.]+)\s*(?:pounds?|lbs?)/i);
         const kgMatch = weightText.match(/([\d.]+)\s*(?:kg|kilograms?)/i);
