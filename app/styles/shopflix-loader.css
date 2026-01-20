@@ -27,35 +27,37 @@
 .shopflix-loader-content {
   text-align: center;
   padding: 40px;
-  border-radius: 16px;
-  background: rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
   min-width: 400px;
 }
 
 .shopflix-logo {
   font-size: 56px;
   font-weight: 900;
-  margin-bottom: 20px;
+  margin-bottom: 40px;
   display: flex;
   justify-content: center;
   align-items: center;
   gap: 8px;
 }
 
-.shopflix-shop {
-  color: #00D4FF;
-  animation: bounce 0.6s ease-in-out infinite alternate;
-  display: inline-block;
-  text-shadow: 0 0 20px rgba(0, 212, 255, 0.5);
+.shopflix-shop,
+.shopflix-flix {
+  display: inline-flex;
 }
 
-.shopflix-flix {
-  color: #FF006E;
-  animation: bounce 0.6s ease-in-out 0.15s infinite alternate;
+.shopflix-letter {
   display: inline-block;
-  text-shadow: 0 0 20px rgba(255, 0, 110, 0.5);
+  animation: bounce 0.6s ease-in-out infinite alternate;
+}
+
+.shopflix-shop .shopflix-letter {
+  color: #0099CC;
+  text-shadow: 0 0 15px rgba(0, 153, 204, 0.4);
+}
+
+.shopflix-flix .shopflix-letter {
+  color: #CC0055;
+  text-shadow: 0 0 15px rgba(204, 0, 85, 0.4);
 }
 
 @keyframes bounce {
@@ -65,15 +67,6 @@
   100% {
     transform: translateY(-15px) scale(1.05);
   }
-}
-
-.shopflix-processing {
-  color: #FFFFFF;
-  font-size: 18px;
-  font-weight: 600;
-  margin-bottom: 30px;
-  letter-spacing: 2px;
-  min-height: 27px;
 }
 
 .shopflix-progress-bar {
@@ -87,10 +80,10 @@
 
 .shopflix-progress-fill {
   height: 100%;
-  background: linear-gradient(90deg, #00D4FF 0%, #FF006E 100%);
+  background: linear-gradient(90deg, #0099CC 0%, #CC0055 100%);
   border-radius: 4px;
   transition: width 0.3s ease-out;
-  box-shadow: 0 0 10px rgba(0, 212, 255, 0.5);
+  box-shadow: 0 0 10px rgba(0, 153, 204, 0.4);
 }
 
 .shopflix-progress-text {
@@ -101,10 +94,10 @@
 }
 
 .shopflix-status {
-  color: rgba(255, 255, 255, 0.8);
-  font-size: 14px;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 15px;
   font-weight: 500;
-  min-height: 21px;
+  min-height: 23px;
   animation: pulse 2s ease-in-out infinite;
 }
 
@@ -126,9 +119,5 @@
 
   .shopflix-logo {
     font-size: 42px;
-  }
-
-  .shopflix-processing {
-    font-size: 16px;
   }
 }
