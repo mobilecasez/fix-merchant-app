@@ -22,7 +22,6 @@ export default function App() {
         <Links />
       </head>
       <body>
-        <a href="/api/ai/list-models">List Models</a>
         <Outlet />
         <ScrollRestoration />
         <Scripts />
