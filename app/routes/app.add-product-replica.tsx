@@ -32,6 +32,7 @@ import {
 import { useDropzone } from "react-dropzone";
 import RichTextEditor from "../components/RichTextEditor";
 import HierarchicalSelect from "../components/HierarchicalSelect";
+import ShopFlixLoader from "../components/ShopFlixLoader";
 import { XIcon } from '@shopify/polaris-icons';
 
 export const loader: LoaderFunction = async ({ request }) => {
@@ -95,10 +96,37 @@ export default function AddProductReplica() {
   const saveFetcher = useFetcher();
   const processAllFetcher = useFetcher();
 
+  // Loading states for ShopFlix animated loader
+  const [loadingProgress, setLoadingProgress] = useState(0);
+  const [loadingStep, setLoadingStep] = useState('');
+  const [showLoader, setShowLoader] = useState(false);
+
   // Simplified loading state that tracks only the main fetch and process operations
   const isFetchingProduct = 
     fetcher.state !== 'idle' || 
     processAllFetcher.state !== 'idle';
+
+  // Update loader based on fetcher states
+  useEffect(() => {
+    if (fetcher.state === 'submitting') {
+      setShowLoader(true);
+      setLoadingProgress(0);
+      setLoadingStep('Connecting to product source...');
+    } else if (fetcher.state === 'loading') {
+      setLoadingProgress(30);
+      setLoadingStep('Fetching product data from Amazon...');
+    }
+  }, [fetcher.state]);
+
+  useEffect(() => {
+    if (processAllFetcher.state === 'submitting') {
+      setLoadingProgress(50);
+      setLoadingStep('Processing with AI...');
+    } else if (processAllFetcher.state === 'loading') {
+      setLoadingProgress(70);
+      setLoadingStep('Cleverly rewriting title and description...');
+    }
+  }, [processAllFetcher.state]);
 
   useEffect(() => {
     if (fetcher.state === 'idle' && fetcher.data) {
@@ -112,11 +140,15 @@ export default function AddProductReplica() {
       }
       
       if (scrapedData.error) {
+        setShowLoader(false);
         setToastMessage(scrapedData.error);
         setToastError(true);
         setToastActive(true);
         return;
       }
+
+      setLoadingProgress(50);
+      setLoadingStep('Analyzing product data...');
 
       // Single unified call to process all AI operations in parallel
       processAllFetcher.submit(
@@ -131,9 +163,13 @@ export default function AddProductReplica() {
 
   useEffect(() => {
     if (processAllFetcher.state === 'idle' && processAllFetcher.data) {
+      setLoadingProgress(85);
+      setLoadingStep('Preparing images and final data...');
+      
       const processedData = processAllFetcher.data as any;
       
       if (processedData.error) {
+        setShowLoader(false);
         setToastMessage(processedData.error);
         setToastError(true);
         setToastActive(true);
@@ -225,7 +261,21 @@ export default function AddProductReplica() {
         setVariants(scrapedVariants);
       }
 
-      setToastMessage("Product data fetched and rewritten successfully!");
+      setLoadingProgress(95);
+      setLoadingStep('Finalizing product import...');
+
+      // Small delay to show final progress
+      setTimeout(() => {
+        setLoadingProgress(100);
+        setLoadingStep('Complete! Product is ready.');
+        
+        setTimeout(() => {
+          setShowLoader(false);
+          setToastMessage("Product data fetched and rewritten successfully!");
+          setToastError(false);
+          setToastActive(true);
+        }, 500);
+      }, 300);
       
       // Increment product usage counter on successful import and update local quota
       (async () => {
@@ -237,8 +287,6 @@ export default function AddProductReplica() {
           console.error("Failed to increment usage:", error);
         }
       })();
-      setToastError(false);
-      setToastActive(true);
     }
   }, [processAllFetcher.data, processAllFetcher.state]);
 
@@ -446,6 +494,11 @@ export default function AddProductReplica() {
 
   return (
     <Frame>
+      <ShopFlixLoader 
+        isVisible={showLoader} 
+        currentStep={loadingStep} 
+        progress={loadingProgress} 
+      />
       <Page
         title={`Add product (${currentProductsUsed}/${productLimit} used)`}
         backAction={{ content: "Products", url: "/app" }}
