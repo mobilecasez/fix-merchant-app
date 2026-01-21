@@ -100,8 +100,29 @@ export default function AddProductReplica() {
   const [loadingProgress, setLoadingProgress] = useState(0);
   const [loadingStep, setLoadingStep] = useState('');
   const [showLoader, setShowLoader] = useState(false);
+  const [productSource, setProductSource] = useState('the product source');
   const progressIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const targetProgressRef = useRef(0);
+  
+  // Helper function to detect source from URL
+  const getSourceFromUrl = (url: string): string => {
+    try {
+      const hostname = new URL(url).hostname.toLowerCase();
+      if (hostname.includes('amazon')) return 'Amazon';
+      if (hostname.includes('flipkart')) return 'Flipkart';
+      if (hostname.includes('myntra')) return 'Myntra';
+      if (hostname.includes('ajio')) return 'Ajio';
+      if (hostname.includes('meesho')) return 'Meesho';
+      if (hostname.includes('snapdeal')) return 'Snapdeal';
+      if (hostname.includes('ebay')) return 'eBay';
+      if (hostname.includes('etsy')) return 'Etsy';
+      if (hostname.includes('walmart')) return 'Walmart';
+      if (hostname.includes('target')) return 'Target';
+      return 'the product source';
+    } catch {
+      return 'the product source';
+    }
+  };
   
   // Smooth progress animation function
   const animateProgress = (targetProgress: number) => {
@@ -148,7 +169,7 @@ export default function AddProductReplica() {
       setLoadingStep('Connecting to product source...');
       animateProgress(30);
     } else if (fetcher.state === 'loading') {
-      setLoadingStep('Fetching product data from Amazon...');
+      setLoadingStep(`Fetching product data from ${productSource}...`);
       animateProgress(50);
     }
   }, [fetcher.state]);
@@ -532,6 +553,10 @@ export default function AddProductReplica() {
       return;
     }
 
+    // Detect source from URL
+    const source = getSourceFromUrl(productUrl);
+    setProductSource(source);
+    
     const formData = new FormData();
     formData.append("url", productUrl);
     fetcher.submit(formData, {
