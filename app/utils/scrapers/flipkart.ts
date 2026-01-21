@@ -214,7 +214,7 @@ async function parseFlipkartHTML(htmlContent: string, url: string): Promise<Scra
       }
     }
     
-    // Extract description and warranty information
+    // Extract description
     let description = "";
     const descPatterns = [
       /<div class="_6VBbE3"[^>]*>(.*?)<\/div>/s,
@@ -230,86 +230,32 @@ async function parseFlipkartHTML(htmlContent: string, url: string): Promise<Scra
       }
     }
     
-    // Extract warranty information
-    const warrantyPatterns = [
-      /(?:Warranty|warranty)[:\s]*<\/td>\s*<td[^>]*>(.*?)<\/td>/si,
-      /<div[^>]*>(?:Warranty|warranty)[:\s]*(.*?)<\/div>/si,
-      /(?:Warranty|warranty)[:\s]*([^<\n]+)/i
-    ];
-    
-    for (const pattern of warrantyPatterns) {
-      const match = htmlContent.match(pattern);
-      if (match) {
-        const warrantyInfo = match[1].replace(/<[^>]*>/g, '').trim();
-        if (warrantyInfo && warrantyInfo.length > 5) {
-          description += (description ? '\n\n' : '') + `Warranty: ${warrantyInfo}`;
-          console.log('[Flipkart Scraper] Warranty found:', warrantyInfo);
-          break;
-        }
-      }
-    }
-    
-    // Extract images from rukminim CDN - ONLY from product gallery
+    // Extract images from rukminim CDN
     const images: string[] = [];
-    
-    // First, try to find the section BEFORE "frequently bought" or similar sections
-    // Split HTML at common "frequently bought together" markers
-    const splitMarkers = [
-      /Frequently Bought Together/i,
-      /Similar Products/i,
-      /You May Also Like/i,
-      /Customers who viewed/i,
-      /<div[^>]*class="[^"]*_3n4TvP[^"]*"/i  // Flipkart's frequently bought container
-    ];
-    
-    let productSection = htmlContent;
-    for (const marker of splitMarkers) {
-      const splitPos = htmlContent.search(marker);
-      if (splitPos > 5000) { // Must be after product info (at least 5KB in)
-        productSection = htmlContent.substring(0, splitPos);
-        console.log('[Flipkart Scraper] Found section marker, cutting at position:', splitPos);
-        break;
-      }
-    }
-    
-    // Extract all image URLs from product section only
     const imagePattern = /https:\/\/rukminim[12]\.flixcart\.com\/image\/[^"'\s<>]+\.(jpg|jpeg|png|webp)/gi;
-    const imageMatches = productSection.match(imagePattern);
+    const imageMatches = htmlContent.match(imagePattern);
     
     if (imageMatches) {
-      // Track seen images to avoid duplicates
-      const seenImages = new Set<string>();
-      
       imageMatches.forEach(imgUrl => {
-        // Clean URL - remove any HTML fragments and query parameters
-        let cleanUrl = imgUrl.split('>')[0].split('<')[0].split('"')[0].split("'")[0].split('?')[0];
+        // Clean URL - remove any HTML fragments
+        const cleanUrl = imgUrl.split('>')[0].split('<')[0].split('"')[0].split("'")[0];
         
-        // Skip very small thumbnails
-        if (cleanUrl.includes('/128/128/') || cleanUrl.includes('/64/64/') || cleanUrl.includes('/50/50/')) {
-          return;
-        }
+        // Convert to high-res by changing dimensions
+        let highResUrl = cleanUrl;
+        // Replace small dimensions with large ones
+        highResUrl = highResUrl.replace(/\/128\/128\//, '/832/832/');
+        highResUrl = highResUrl.replace(/\/416\/416\//, '/832/832/');
+        highResUrl = highResUrl.replace(/\/200\/200\//, '/832/832/');
+        highResUrl = highResUrl.replace(/\/312\/312\//, '/832/832/');
         
-        // Convert to high resolution (832x832)
-        let highResUrl = cleanUrl
-          .replace(/\/200\/200\//, '/832/832/')
-          .replace(/\/312\/312\//, '/832/832/')
-          .replace(/\/416\/416\//, '/832/832/')
-          .replace(/\/1664\/1664\//, '/832/832/');
-        
-        // Extract unique identifier to avoid duplicates
-        const urlId = highResUrl.match(/\/([^\/]+)\.(jpg|jpeg|png|webp)$/i);
-        if (urlId && !seenImages.has(urlId[1])) {
-          seenImages.add(urlId[1]);
+        if (!images.includes(highResUrl) && !highResUrl.includes('/128/') && !highResUrl.includes('/64/')) {
           images.push(highResUrl);
         }
       });
     }
     
-    console.log('[Flipkart Scraper] Images extracted:', images.length);
-    if (images.length > 0) {
-      console.log('[Flipkart Scraper] First image:', images[0]);
-      console.log('[Flipkart Scraper] Last image:', images[images.length - 1]);
-    }
+    const uniqueImages = Array.from(new Set(images)).slice(0, 10);
+    console.log('[Flipkart Scraper] Images extracted:', uniqueImages.length);
     
     // Extract weight
     let weight = "";
@@ -359,7 +305,7 @@ async function parseFlipkartHTML(htmlContent: string, url: string): Promise<Scra
       description,
       price,
       compareAtPrice: finalCompareAtPrice,
-      images: images,
+      images: uniqueImages,
       vendor: "Flipkart",
       productType: "",
       tags: "",

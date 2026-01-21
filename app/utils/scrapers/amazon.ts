@@ -268,6 +268,10 @@ async function parseAmazonHTML(htmlContent: string, url: string): Promise<Scrape
     const dimensionsMatch = htmlContent.match(/Product Dimensions[:\s]*<\/span>.*?<span[^>]*>(.*?)<\/span>/si);
     const dimensions = dimensionsMatch ? dimensionsMatch[1].replace(/<[^>]*>/g, '').trim() : "";
     
+    // Extract what's in the box
+    const whatsInBoxMatch = htmlContent.match(/(?:What'?s? in the [Bb]ox|Whats in the Box)[:\s]*<\/span>.*?<span[^>]*>(.*?)<\/span>/si);
+    const whatsInBox = whatsInBoxMatch ? whatsInBoxMatch[1].replace(/<[^>]*>/g, '').trim() : "";
+    
     // Extract warranty
     const warrantyMatch = htmlContent.match(/(?:Warranty|Manufacturer Warranty)[:\s]*<\/span>.*?<span[^>]*>(.*?)<\/span>/si);
     const warranty = warrantyMatch ? warrantyMatch[1].replace(/<[^>]*>/g, '').trim() : "";
@@ -336,6 +340,9 @@ async function parseAmazonHTML(htmlContent: string, url: string): Promise<Scrape
     let finalDescription = description;
     if (dimensions) {
         finalDescription += `<p>Dimensions: ${dimensions}</p>`;
+    }
+    if (whatsInBox) {
+        finalDescription += `<div class="whats-in-box"><h3>What's in the Box</h3><p>${whatsInBox}</p></div>`;
     }
     if (warranty) {
         finalDescription += `<div class="warranty-info"><h3>Warranty Information</h3><p>${warranty}</p></div>`;
