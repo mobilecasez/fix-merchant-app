@@ -214,7 +214,7 @@ async function parseFlipkartHTML(htmlContent: string, url: string): Promise<Scra
       }
     }
     
-    // Extract description
+    // Extract description and warranty information
     let description = "";
     const descPatterns = [
       /<div class="_6VBbE3"[^>]*>(.*?)<\/div>/s,
@@ -230,21 +230,61 @@ async function parseFlipkartHTML(htmlContent: string, url: string): Promise<Scra
       }
     }
     
-    // Extract images from rukminim CDN
+    // Extract warranty information
+    const warrantyPatterns = [
+      /(?:Warranty|warranty)[:\s]*<\/td>\s*<td[^>]*>(.*?)<\/td>/si,
+      /<div[^>]*>(?:Warranty|warranty)[:\s]*(.*?)<\/div>/si,
+      /(?:Warranty|warranty)[:\s]*([^<\n]+)/i
+    ];
+    
+    for (const pattern of warrantyPatterns) {
+      const match = htmlContent.match(pattern);
+      if (match) {
+        const warrantyInfo = match[1].replace(/<[^>]*>/g, '').trim();
+        if (warrantyInfo && warrantyInfo.length > 5) {
+          description += (description ? '\n\n' : '') + `Warranty: ${warrantyInfo}`;
+          console.log('[Flipkart Scraper] Warranty found:', warrantyInfo);
+          break;
+        }
+      }
+    }
+    
+    // Extract images from rukminim CDN - ONLY from product gallery
     const images: string[] = [];
+    
+    // First, try to find the section BEFORE "frequently bought" or similar sections
+    // Split HTML at common "frequently bought together" markers
+    const splitMarkers = [
+      /Frequently Bought Together/i,
+      /Similar Products/i,
+      /You May Also Like/i,
+      /Customers who viewed/i,
+      /<div[^>]*class="[^"]*_3n4TvP[^"]*"/i  // Flipkart's frequently bought container
+    ];
+    
+    let productSection = htmlContent;
+    for (const marker of splitMarkers) {
+      const splitPos = htmlContent.search(marker);
+      if (splitPos > 5000) { // Must be after product info (at least 5KB in)
+        productSection = htmlContent.substring(0, splitPos);
+        console.log('[Flipkart Scraper] Found section marker, cutting at position:', splitPos);
+        break;
+      }
+    }
+    
+    // Extract all image URLs from product section only
     const imagePattern = /https:\/\/rukminim[12]\.flixcart\.com\/image\/[^"'\s<>]+\.(jpg|jpeg|png|webp)/gi;
-    const imageMatches = htmlContent.match(imagePattern);
+    const imageMatches = productSection.match(imagePattern);
     
     if (imageMatches) {
       // Track seen images to avoid duplicates
       const seenImages = new Set<string>();
-      const processedImages: string[] = [];
       
       imageMatches.forEach(imgUrl => {
         // Clean URL - remove any HTML fragments and query parameters
         let cleanUrl = imgUrl.split('>')[0].split('<')[0].split('"')[0].split("'")[0].split('?')[0];
         
-        // Skip very small thumbnails (these are usually for "frequently bought together")
+        // Skip very small thumbnails
         if (cleanUrl.includes('/128/128/') || cleanUrl.includes('/64/64/') || cleanUrl.includes('/50/50/')) {
           return;
         }
@@ -260,13 +300,9 @@ async function parseFlipkartHTML(htmlContent: string, url: string): Promise<Scra
         const urlId = highResUrl.match(/\/([^\/]+)\.(jpg|jpeg|png|webp)$/i);
         if (urlId && !seenImages.has(urlId[1])) {
           seenImages.add(urlId[1]);
-          processedImages.push(highResUrl);
+          images.push(highResUrl);
         }
       });
-      
-      // Take first 10 images (these are usually the main product images)
-      // "Frequently bought together" images typically appear later in the HTML
-      images.push(...processedImages.slice(0, 10));
     }
     
     console.log('[Flipkart Scraper] Images extracted:', images.length);
