@@ -12,7 +12,7 @@ export async function retryOperation<T>(
       console.error(`Attempt ${retries + 1} failed for ${identifier}:`, error.message);
       retries++;
       if (retries < maxRetries) {
-        const delay = Math.min(initialDelayMs * Math.pow(2, retries), 60000); // Exponential backoff, max 60 seconds
+        const delay = Math.min(initialDelayMs * Math.pow(2, retries), 120000); // Exponential backoff, max 2 minutes
         const jitter = Math.random() * delay * 0.2; // Add 20% jitter
         await new Promise(resolve => setTimeout(resolve, delay + jitter));
       } else {

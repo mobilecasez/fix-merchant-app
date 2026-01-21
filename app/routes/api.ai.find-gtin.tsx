@@ -51,7 +51,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
       const result = await Promise.race([
         model.generateContent(prompt),
         new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('AI response timed out')), 60000) // 60 seconds timeout
+          setTimeout(() => reject(new Error('AI response timed out')), 300000) // 5 minute timeout
         ),
       ]);
       const response = await (result as any).response;
