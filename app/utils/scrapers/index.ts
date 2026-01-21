@@ -35,7 +35,7 @@ async function withTimeout<T>(
 }
 
 // Wrapper for scrapers with timeout
-function createTimeoutScraper(scraper: ScraperFunction, timeoutMs: number = 300000): ScraperFunction {
+function createTimeoutScraper(scraper: ScraperFunction, timeoutMs: number = 60000): ScraperFunction {
   return async (html: string, url: string): Promise<ScrapedProductData> => {
     try {
       return await withTimeout(
@@ -54,9 +54,9 @@ function createTimeoutScraper(scraper: ScraperFunction, timeoutMs: number = 3000
 export function getScraper(url: string): ScraperFunction | null {
   const urlLower = url.toLowerCase();
   
-  // Amazon (all domains) - with 5 minute timeout
+  // Amazon (all domains) - with 60s timeout
   if (urlLower.includes("amazon.")) {
-    return createTimeoutScraper(scrapeAmazon, 300000);
+    return createTimeoutScraper(scrapeAmazon, 60000);
   }
   
   // Taobao
@@ -104,9 +104,9 @@ export function getScraper(url: string): ScraperFunction | null {
     return scrapeAliExpress;
   }
   
-  // Flipkart - with 5 minute timeout
+  // Flipkart - with 60s timeout
   if (urlLower.includes("flipkart.com")) {
-    return createTimeoutScraper(scrapeFlipkart, 300000);
+    return createTimeoutScraper(scrapeFlipkart, 60000);
   }
   
   // No matching scraper found
