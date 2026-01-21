@@ -4,7 +4,7 @@ import { cleanProductName, ensureCompareAtPrice, parseWeight, estimateWeight } f
 export async function scrapeFlipkart(html: string, url: string): Promise<ScrapedProductData> {
   try {
     console.log('[Flipkart Scraper] Starting scrape for:', url);
-    console.log('[Flipkart Scraper] Fetching page with HTTP request...');
+    console.log('[Flipkart Scraper] Attempting fast fetch() first...');
     
     // Random delay to mimic human behavior
     await new Promise(resolve => setTimeout(resolve, Math.random() * 1000 + 500));
@@ -26,38 +26,126 @@ export async function scrapeFlipkart(html: string, url: string): Promise<Scraped
       },
     });
     
+    // Check if we hit anti-bot protection (529 or similar errors)
     if (!response.ok) {
-      console.log(`[Flipkart Scraper] HTTP error: ${response.status}`);
+      console.log(`[Flipkart Scraper] fetch() failed with status ${response.status}`);
+      
+      // If 529 or 403 (anti-bot), fall back to Puppeteer
+      if (response.status === 529 || response.status === 403 || response.status === 503) {
+        console.log('[Flipkart Scraper] Anti-bot detected, falling back to Puppeteer...');
+        return await scrapeFlipkartWithPuppeteer(url);
+      }
+      
+      // For other errors, try provided HTML
       if (html && html.length > 10000) {
         console.log('[Flipkart Scraper] Using provided HTML as fallback');
         return await parseFlipkartHTML(html, url);
       }
+      
       throw new Error(`Failed to fetch Flipkart page: ${response.status}`);
     }
     
     let htmlContent = await response.text();
-    console.log('[Flipkart Scraper] Page fetched successfully, HTML length:', htmlContent.length);
+    console.log('[Flipkart Scraper] fetch() successful! HTML length:', htmlContent.length);
+    
+    // Check if we got a CAPTCHA or error page despite 200 status
+    if (htmlContent.includes('Access Denied') || htmlContent.includes('Robot or human') || htmlContent.length < 5000) {
+      console.log('[Flipkart Scraper] Detected CAPTCHA/block page, falling back to Puppeteer...');
+      return await scrapeFlipkartWithPuppeteer(url);
+    }
     
     return await parseFlipkartHTML(htmlContent, url);
   } catch (error) {
     console.error('[Flipkart Scraper] Error:', error);
-    return {
-      productName: "",
-      description: "",
-      price: "",
-      images: [],
-      vendor: "Flipkart",
-      productType: "",
-      tags: "",
-      compareAtPrice: "",
-      costPerItem: "",
-      sku: "",
-      barcode: "",
-      weight: "",
-      weightUnit: "kg",
-      options: [],
-      variants: [],
-    };
+    // Last resort: try Puppeteer
+    console.log('[Flipkart Scraper] Attempting Puppeteer as last resort...');
+    try {
+      return await scrapeFlipkartWithPuppeteer(url);
+    } catch (puppeteerError) {
+      console.error('[Flipkart Scraper] Puppeteer also failed:', puppeteerError);
+      return {
+        productName: "",
+        description: "",
+        price: "",
+        images: [],
+        vendor: "Flipkart",
+        productType: "",
+        tags: "",
+        compareAtPrice: "",
+        costPerItem: "",
+        sku: "",
+        barcode: "",
+        weight: "",
+        weightUnit: "kg",
+        options: [],
+        variants: [],
+      };
+    }
+  }
+}
+
+// Puppeteer fallback for when anti-bot blocks fetch()
+async function scrapeFlipkartWithPuppeteer(url: string): Promise<ScrapedProductData> {
+  const puppeteer = await import('puppeteer');
+  let browser;
+  
+  try {
+    console.log('[Flipkart Puppeteer] Launching browser with stealth mode...');
+    browser = await puppeteer.default.launch({
+      headless: true,
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-accelerated-2d-canvas',
+        '--disable-gpu',
+        '--window-size=1920x1080',
+        '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+      ],
+    });
+    
+    const page = await browser.newPage();
+    
+    // Set viewport and extra headers
+    await page.setViewport({ width: 1920, height: 1080 });
+    await page.setExtraHTTPHeaders({
+      'accept-language': 'en-US,en;q=0.9',
+      'accept-encoding': 'gzip, deflate, br',
+      'referer': 'https://www.flipkart.com/',
+    });
+    
+    // Block unnecessary resources to speed up
+    await page.setRequestInterception(true);
+    page.on('request', (req) => {
+      const resourceType = req.resourceType();
+      if (['stylesheet', 'font', 'media'].includes(resourceType)) {
+        req.abort();
+      } else {
+        req.continue();
+      }
+    });
+    
+    console.log('[Flipkart Puppeteer] Navigating to URL...');
+    await page.goto(url, { 
+      waitUntil: 'domcontentloaded',
+      timeout: 30000 
+    });
+    
+    // Wait a bit for dynamic content to load
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    
+    const htmlContent = await page.content();
+    console.log('[Flipkart Puppeteer] Page loaded successfully, HTML length:', htmlContent.length);
+    
+    await browser.close();
+    
+    return await parseFlipkartHTML(htmlContent, url);
+  } catch (error) {
+    console.error('[Flipkart Puppeteer] Error:', error);
+    if (browser) {
+      await browser.close();
+    }
+    throw error;
   }
 }
 
