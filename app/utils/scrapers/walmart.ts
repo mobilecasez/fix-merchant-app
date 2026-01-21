@@ -7,9 +7,31 @@ export async function scrapeWalmart(html: string, url: string): Promise<ScrapedP
   try {
     browser = await launchBrowser();
     const page = await browser.newPage();
+    
+    // Anti-detection measures
+    await page.evaluateOnNewDocument(() => {
+      // Override the navigator.webdriver property
+      Object.defineProperty(navigator, 'webdriver', {
+        get: () => false,
+      });
+      
+      // Mock plugins to appear more like a real browser
+      Object.defineProperty(navigator, 'plugins', {
+        get: () => [1, 2, 3, 4, 5],
+      });
+      
+      // Mock languages
+      Object.defineProperty(navigator, 'languages', {
+        get: () => ['en-US', 'en'],
+      });
+    });
+    
     await page.setUserAgent(
-      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/104.0.0.0 Safari/537.36",
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     );
+    
+    await page.setViewport({ width: 1920, height: 1080 });
+    
     await page.goto(url, { waitUntil: "networkidle2" });
 
     const pageData = await page.evaluate(() => {
