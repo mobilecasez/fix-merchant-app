@@ -230,100 +230,49 @@ async function parseFlipkartHTML(htmlContent: string, url: string): Promise<Scra
       }
     }
     
-    // Extract images from rukminim CDN - only from main product gallery
+    // Extract images from rukminim CDN
     const images: string[] = [];
-    
-    // Try to find the main product image gallery section first
-    // Flipkart usually has product images in a specific container with larger dimensions
-    let productGallerySection = "";
-    const gallerySectionPatterns = [
-      // Look for the main image container div
-      /<div class="_3kidJX"[^>]*>(.*?)<div class="_3l4d8T"/s,
-      /<div class="_20Gt85"[^>]*>(.*?)<div class="_1AtVbE"/s,
-      /<div class="_2r_T1I"[^>]*>(.*?)<\/div>/s,
-    ];
-    
-    for (const pattern of gallerySectionPatterns) {
-      const match = htmlContent.match(pattern);
-      if (match && match[1].length > 1000) {
-        productGallerySection = match[1];
-        console.log('[Flipkart Scraper] Found product gallery section');
-        break;
-      }
-    }
-    
-    // If gallery section found, extract images only from there
-    const searchContent = productGallerySection || htmlContent;
-    
-    // Extract only high-resolution images (416x416 or larger)
-    // This filters out thumbnails and "frequently bought together" small images
-    const imagePattern = /https:\/\/rukminim[12]\.flixcart\.com\/image\/[^"'\s<>]+\/(416|832|1664)\/[^"'\s<>]+\.(jpg|jpeg|png|webp)/gi;
-    const imageMatches = searchContent.match(imagePattern);
+    const imagePattern = /https:\/\/rukminim[12]\.flixcart\.com\/image\/[^"'\s<>]+\.(jpg|jpeg|png|webp)/gi;
+    const imageMatches = htmlContent.match(imagePattern);
     
     if (imageMatches) {
       // Track seen images to avoid duplicates
       const seenImages = new Set<string>();
+      const processedImages: string[] = [];
       
       imageMatches.forEach(imgUrl => {
         // Clean URL - remove any HTML fragments and query parameters
         let cleanUrl = imgUrl.split('>')[0].split('<')[0].split('"')[0].split("'")[0].split('?')[0];
         
-        // Skip if contains markers for related/frequently bought items
-        if (cleanUrl.includes('/p/') || cleanUrl.includes('/fk-p/')) {
+        // Skip very small thumbnails (these are usually for "frequently bought together")
+        if (cleanUrl.includes('/128/128/') || cleanUrl.includes('/64/64/') || cleanUrl.includes('/50/50/')) {
           return;
         }
         
-        // Convert to highest resolution (832x832)
+        // Convert to high resolution (832x832)
         let highResUrl = cleanUrl
-          .replace(/\/128\/128\//, '/832/832/')
           .replace(/\/200\/200\//, '/832/832/')
           .replace(/\/312\/312\//, '/832/832/')
           .replace(/\/416\/416\//, '/832/832/')
-          .replace(/\/1664\/1664\//, '/832/832/'); // 1664 is too large, use 832
+          .replace(/\/1664\/1664\//, '/832/832/');
         
         // Extract unique identifier to avoid duplicates
         const urlId = highResUrl.match(/\/([^\/]+)\.(jpg|jpeg|png|webp)$/i);
         if (urlId && !seenImages.has(urlId[1])) {
           seenImages.add(urlId[1]);
-          images.push(highResUrl);
+          processedImages.push(highResUrl);
         }
       });
-    }
-    
-    // Fallback: if no images found with strict pattern, try broader search but limit to first 6
-    if (images.length === 0) {
-      console.log('[Flipkart Scraper] No gallery images found, trying fallback pattern...');
-      const fallbackPattern = /https:\/\/rukminim[12]\.flixcart\.com\/image\/[^"'\s<>]+\.(jpg|jpeg|png|webp)/gi;
-      const fallbackMatches = htmlContent.match(fallbackPattern);
       
-      if (fallbackMatches) {
-        const seenImages = new Set<string>();
-        fallbackMatches.slice(0, 15).forEach(imgUrl => { // Check first 15 to find 6 good ones
-          const cleanUrl = imgUrl.split('>')[0].split('<')[0].split('"')[0].split("'")[0].split('?')[0];
-          
-          // Skip small thumbnails
-          if (cleanUrl.includes('/128/128/') || cleanUrl.includes('/64/64/')) {
-            return;
-          }
-          
-          const highResUrl = cleanUrl
-            .replace(/\/200\/200\//, '/832/832/')
-            .replace(/\/312\/312\//, '/832/832/')
-            .replace(/\/416\/416\//, '/832/832/');
-          
-          const urlId = highResUrl.match(/\/([^\/]+)\.(jpg|jpeg|png|webp)$/i);
-          if (urlId && !seenImages.has(urlId[1]) && images.length < 6) {
-            seenImages.add(urlId[1]);
-            images.push(highResUrl);
-          }
-        });
-      }
+      // Take first 10 images (these are usually the main product images)
+      // "Frequently bought together" images typically appear later in the HTML
+      images.push(...processedImages.slice(0, 10));
     }
     
-    const uniqueImages = images.slice(0, 8); // Limit to 8 product images
-    console.log('[Flipkart Scraper] Images extracted:', uniqueImages.length);
-    if (uniqueImages.length > 0) {
-      console.log('[Flipkart Scraper] First image:', uniqueImages[0]);
+    console.log('[Flipkart Scraper] Images extracted:', images.length);
+    if (images.length > 0) {
+      console.log('[Flipkart Scraper] First image:', images[0]);
+      console.log('[Flipkart Scraper] Last image:', images[images.length - 1]);
     }
     
     // Extract weight
@@ -374,7 +323,7 @@ async function parseFlipkartHTML(htmlContent: string, url: string): Promise<Scra
       description,
       price,
       compareAtPrice: finalCompareAtPrice,
-      images: uniqueImages,
+      images: images,
       vendor: "Flipkart",
       productType: "",
       tags: "",
