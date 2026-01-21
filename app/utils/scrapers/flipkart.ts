@@ -150,13 +150,15 @@ async function parseFlipkartHTML(htmlContent: string, url: string): Promise<Scra
     if (imageMatches) {
       imageMatches.forEach(imgUrl => {
         // Clean URL - remove any HTML fragments
-        const cleanUrl = imgUrl.split('>')[0].split('<')[0].split('"')[0].split("'")[0];\n        \n        // Convert to high-res by changing dimensions
+        const cleanUrl = imgUrl.split('>')[0].split('<')[0].split('"')[0].split("'")[0];
+        
+        // Convert to high-res by changing dimensions
         let highResUrl = cleanUrl;
         // Replace small dimensions with large ones
-        highResUrl = highResUrl.replace(/\\/128\\/128\\//, '/832/832/');
-        highResUrl = highResUrl.replace(/\\/416\\/416\\//, '/832/832/');
-        highResUrl = highResUrl.replace(/\\/200\\/200\\//, '/832/832/');
-        highResUrl = highResUrl.replace(/\\/312\\/312\\//, '/832/832/');
+        highResUrl = highResUrl.replace(/\/128\/128\//, '/832/832/');
+        highResUrl = highResUrl.replace(/\/416\/416\//, '/832/832/');
+        highResUrl = highResUrl.replace(/\/200\/200\//, '/832/832/');
+        highResUrl = highResUrl.replace(/\/312\/312\//, '/832/832/');
         
         if (!images.includes(highResUrl) && !highResUrl.includes('/128/') && !highResUrl.includes('/64/')) {
           images.push(highResUrl);
