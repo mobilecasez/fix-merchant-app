@@ -1,213 +1,36 @@
-import { launchBrowser } from "./browser";
 import { ScrapedProductData } from "./types";
 import { cleanProductName, ensureCompareAtPrice, parseWeight, estimateWeight } from "./helpers";
 
 export async function scrapeEbay(html: string, url: string): Promise<ScrapedProductData> {
-  let browser;
   try {
-    browser = await launchBrowser();
-    const page = await browser.newPage();
-    await page.setUserAgent(
-      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/104.0.0.0 Safari/537.36",
-    );
+    console.log('[eBay Scraper] Starting scrape for:', url);
+    console.log('[eBay Scraper] Fetching page with HTTP request...');
     
-    // Use domcontentloaded instead of networkidle2 for faster loading
-    await page.goto(url, { 
-      waitUntil: "domcontentloaded",
-      timeout: 30000 
+    await new Promise(resolve => setTimeout(resolve, Math.random() * 1000 + 500));
+    
+    const response = await fetch(url, {
+      headers: {
+        'accept-language': 'en-US,en;q=0.9',
+        'accept-encoding': 'gzip, deflate, br',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36',
+        'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+      },
     });
-
-    console.log('eBay: Starting to scrape product data...');
-
-    const pageData = await page.evaluate(() => {
-      const productName =
-        document.querySelector('h1.x-item-title__mainTitle')?.textContent?.trim() ||
-        document.querySelector('.it-ttl')?.textContent?.trim() ||
-        document.querySelector('h1')?.textContent?.trim() || "";
-      
-      console.log('eBay: Product name found:', productName);
-      
-      const descriptionElement =
-        document.querySelector('#viTabs_0_panel') ||
-        document.querySelector('.item-description') ||
-        document.querySelector('#desc_div');
-      const description = descriptionElement?.innerHTML || "";
-      
-      const priceElement = 
-        document.querySelector('.x-price-primary span') ||
-        document.querySelector('#prcIsum') ||
-        document.querySelector('.x-price-primary') ||
-        document.querySelector('[itemprop="price"]');
-      const price = priceElement?.textContent?.trim() || priceElement?.getAttribute('content') || "";
-      
-      console.log('eBay: Price found:', price);
-      
-      const originalPriceElement =
-        document.querySelector('.x-price-approx__price') ||
-        document.querySelector('.strikethrough') ||
-        document.querySelector('.x-price-secondary');
-      const compareAtPrice = originalPriceElement?.textContent?.trim() || "";
-
-      // Extract images - only from product gallery, not related products
-      const images: string[] = [];
-      
-      // Method 1: Main image from the product image carousel
-      const mainImage = document.querySelector('#icImg');
-      if (mainImage) {
-        const src = mainImage.getAttribute('src');
-        if (src) {
-          const highResSrc = src.replace(/s-l\d+/, 's-l1600');
-          images.push(highResSrc);
-          console.log('eBay: Main image found:', highResSrc);
-        }
+    
+    if (!response.ok) {
+      console.log(`[eBay Scraper] HTTP error: ${response.status}`);
+      if (html && html.length > 10000) {
+        return await parseEbayHTML(html, url);
       }
-      
-      // Method 2: Thumbnail images from product gallery only (not related products)
-      // Target only the main product image gallery container
-      const galleryContainer = document.querySelector('#vi_main_img_fs') || 
-                               document.querySelector('.ux-image-carousel') ||
-                               document.querySelector('.vi-image-gallery');
-      
-      if (galleryContainer) {
-        const thumbnails = galleryContainer.querySelectorAll('img');
-        thumbnails.forEach(img => {
-          const src = img.getAttribute('src') || img.getAttribute('data-src');
-          if (src && !src.includes('s-l64') && !src.includes('icon') && !src.includes('logo')) {
-            const highResSrc = src.replace(/s-l\d+/, 's-l1600');
-            images.push(highResSrc);
-          }
-        });
-        console.log('eBay: Gallery images found:', thumbnails.length);
-      }
-      
-      // Method 3: Picture panel thumbnails (only from main product area)
-      const picPanel = document.querySelector('#vi_main_img_fs ul');
-      if (picPanel) {
-        const picturePanelImgs = picPanel.querySelectorAll('img');
-        picturePanelImgs.forEach(img => {
-          const src = img.getAttribute('src');
-          if (src && !src.includes('s-l64') && !src.includes('icon')) {
-            const highResSrc = src.replace(/s-l\d+/, 's-l1600');
-            images.push(highResSrc);
-          }
-        });
-      }
-      
-      // Method 4: Extract from image data script (only for main product)
-      // Look specifically for the image data within the product details area
-      const scripts = Array.from(document.querySelectorAll('script'));
-      const imageScript = scripts.find(script => {
-        const content = script.textContent || '';
-        return content.includes('"fsImgList"') || content.includes('"DEFAULT_IMAGE"');
-      });
-      
-      if (imageScript && images.length < 3) { // Only use if we haven't found enough images
-        const content = imageScript.textContent || '';
-        // More specific regex to target main product images only
-        const match = content.match(/"fsImgList":\s*\[(.*?)\]/);
-        if (match && match[1]) {
-          const urlMatches = match[1].match(/https:\/\/i\.ebayimg\.com\/images\/[^"]+/g);
-          if (urlMatches) {
-            urlMatches.forEach(url => {
-              if (!url.includes('s-l64') && !url.includes('icon')) {
-                images.push(url.replace(/s-l\d+/, 's-l1600'));
-              }
-            });
-          }
-        }
-      }
-
-      console.log('eBay: Total unique product images found:', new Set(images).size);
-
-      // Extract specifications
-      let weight = '';
-      const specs = document.querySelectorAll('.ux-labels-values__labels-content, .attrLabels, [data-testid="ux-labels-values"]');
-      specs.forEach(label => {
-        const text = label.textContent?.toLowerCase() || '';
-        if (text.includes('weight')) {
-          const valueElement = label.nextElementSibling;
-          if (valueElement) {
-            weight = valueElement.textContent?.trim() || '';
-            console.log('eBay: Weight found:', weight);
-          }
-        }
-      });
-      
-      // Try item specifics table
-      if (!weight) {
-        const itemSpecifics = document.querySelectorAll('.ux-layout-section-evo__item');
-        itemSpecifics.forEach(item => {
-          const label = item.querySelector('.ux-textspans--BOLD');
-          const value = item.querySelector('.ux-textspans:not(.ux-textspans--BOLD)');
-          if (label && value) {
-            const labelText = label.textContent?.toLowerCase() || '';
-            if (labelText.includes('weight')) {
-              weight = value.textContent?.trim() || '';
-              console.log('eBay: Weight found in specifics:', weight);
-            }
-          }
-        });
-      }
-
-      // Extract warranty information
-      let warranty = '';
-      const allSpecs = document.querySelectorAll('.ux-labels-values__labels-content, .attrLabels, [data-testid="ux-labels-values"]');
-      allSpecs.forEach(label => {
-        const text = label.textContent?.toLowerCase() || '';
-        if (text.includes('warranty')) {
-          const valueElement = label.nextElementSibling;
-          if (valueElement) {
-            warranty = valueElement.textContent?.trim() || '';
-            console.log('eBay: Warranty found:', warranty);
-          }
-        }
-      });
-
-      return { productName, description, price, compareAtPrice, images, weight, warranty };
-    });
-
-    const { productName, description, price, compareAtPrice, images, weight, warranty } = pageData;
-
-    console.log('eBay: Extracted data:', { productName, price, imageCount: images.length, weight, warranty });
-
-    // Add warranty to description if found
-    let finalDescription = description;
-    if (warranty) {
-      finalDescription += `<div class="warranty-info"><h3>Warranty Information</h3><p>${warranty}</p></div>`;
+      throw new Error(`Failed to fetch eBay page: ${response.status}`);
     }
-
-    // Parse weight or estimate
-    let weightParsed = parseWeight(weight);
-    if (!weightParsed.value) {
-      console.log('eBay: No weight found, estimating based on product name');
-      weightParsed = estimateWeight(productName);
-    }
-
-    // Ensure compare at price (add 20% if missing)
-    console.log('eBay: Price before ensureCompareAtPrice:', price);
-    console.log('eBay: CompareAtPrice before ensureCompareAtPrice:', compareAtPrice);
-    const finalCompareAtPrice = ensureCompareAtPrice(price, compareAtPrice);
-    console.log('eBay: Final compareAtPrice after ensureCompareAtPrice:', finalCompareAtPrice);
-
-    return {
-      productName: cleanProductName(productName),
-      description: finalDescription,
-      price,
-      compareAtPrice: finalCompareAtPrice,
-      images: Array.from(new Set(images)).filter(img => img && img.trim() !== ''),
-      vendor: "eBay",
-      productType: "",
-      tags: "",
-      costPerItem: "",
-      sku: "",
-      barcode: "",
-      weight: weightParsed.value,
-      weightUnit: weightParsed.unit,
-      options: [],
-      variants: [],
-    };
+    
+    const htmlContent = await response.text();
+    console.log('[eBay Scraper] Page fetched successfully, HTML length:', htmlContent.length);
+    
+    return await parseEbayHTML(htmlContent, url);
   } catch (error) {
-    console.error("Error during eBay scraping:", error);
+    console.error('[eBay Scraper] Error:', error);
     return {
       productName: "",
       description: "",
@@ -221,13 +44,177 @@ export async function scrapeEbay(html: string, url: string): Promise<ScrapedProd
       sku: "",
       barcode: "",
       weight: "",
-      weightUnit: "",
+      weightUnit: "lb",
       options: [],
       variants: [],
     };
-  } finally {
-    if (browser) {
-      await browser.close();
+  }
+}
+
+async function parseEbayHTML(htmlContent: string, url: string): Promise<ScrapedProductData> {
+  try {
+    console.log('[eBay Scraper] Parsing HTML...');
+    
+    // Extract product name
+    let productName = "";
+    const namePatterns = [
+      /<h1 class="x-item-title__mainTitle"[^>]*>(.*?)<\/h1>/s,
+      /<h1 class="it-ttl"[^>]*>(.*?)<\/h1>/s,
+      /<h1[^>]*>(.*?)<\/h1>/s
+    ];
+    
+    for (const pattern of namePatterns) {
+      const match = htmlContent.match(pattern);
+      if (match) {
+        productName = match[1].replace(/<[^>]*>/g, '').trim();
+        if (productName) break;
+      }
     }
+    console.log('[eBay Scraper] Product name:', productName);
+    
+    // Extract price
+    let price = "";
+    const pricePatterns = [
+      /<span class="x-price-primary"[^>]*>.*?<span[^>]*>(.*?)<\/span>/s,
+      /<span id="prcIsum"[^>]*>(.*?)<\/span>/s,
+      /<span itemprop="price"[^>]*>(.*?)<\/span>/s,
+      /\$[\d,]+\.?\d*/
+    ];
+    
+    for (const pattern of pricePatterns) {
+      const match = htmlContent.match(pattern);
+      if (match) {
+        price = match[1] || match[0];
+        price = price.replace(/<[^>]*>/g, '').trim();
+        if (price.includes('$')) break;
+      }
+    }
+    console.log('[eBay Scraper] Price:', price);
+    
+    // Extract compare at price
+    let compareAtPrice = "";
+    const comparePatterns = [
+      /<span class="x-price-approx__price"[^>]*>(.*?)<\/span>/s,
+      /<span class="strikethrough"[^>]*>(.*?)<\/span>/s,
+      /<span class="x-price-secondary"[^>]*>(.*?)<\/span>/s
+    ];
+    
+    for (const pattern of comparePatterns) {
+      const match = htmlContent.match(pattern);
+      if (match) {
+        compareAtPrice = match[1].replace(/<[^>]*>/g, '').trim();
+        if (compareAtPrice.includes('$')) break;
+      }
+    }
+    
+    // Extract description
+    let description = "";
+    const descPatterns = [
+      /<div id="viTabs_0_panel"[^>]*>(.*?)<\/div>/s,
+      /<div class="item-description"[^>]*>(.*?)<\/div>/s,
+      /<div id="desc_div"[^>]*>(.*?)<\/div>/s
+    ];
+    
+    for (const pattern of descPatterns) {
+      const match = htmlContent.match(pattern);
+      if (match) {
+        description = match[1].trim();
+        if (description.length > 50) break;
+      }
+    }
+    
+    // Extract images
+    const images: string[] = [];
+    
+    // Pattern 1: Main image
+    const mainImgMatch = htmlContent.match(/<img[^>]+id="icImg"[^>]+src="([^"]+)"/);
+    if (mainImgMatch) {
+      const highRes = mainImgMatch[1].replace(/s-l\d+/, 's-l1600');
+      images.push(highRes);
+    }
+    
+    // Pattern 2: Gallery images
+    const galleryPattern = /https:\/\/i\.ebayimg\.com\/images\/[^"\s]+/g;
+    const galleryMatches = htmlContent.match(galleryPattern);
+    if (galleryMatches) {
+      galleryMatches.forEach(imgUrl => {
+        if (!imgUrl.includes('s-l64') && !imgUrl.includes('icon') && !imgUrl.includes('logo')) {
+          const highRes = imgUrl.replace(/s-l\d+/, 's-l1600');
+          if (!images.includes(highRes)) {
+            images.push(highRes);
+          }
+        }
+      });
+    }
+    
+    const uniqueImages = Array.from(new Set(images)).slice(0, 10);
+    console.log('[eBay Scraper] Images extracted:', uniqueImages.length);
+    
+    // Extract weight
+    let weight = "";
+    let weightUnit = "lb";
+    const weightPatterns = [
+      /(?:Item Weight|Weight|Shipping Weight)[:\s]*<\/[^>]+>.*?<[^>]+>(.*?)<\/[^>]+>/si,
+      /(?:weight|Weight)[:\s]*([\d.]+)\s*(lbs?|pounds?|kg|g|grams?|oz|ounces?)/i
+    ];
+    
+    for (const pattern of weightPatterns) {
+      const match = htmlContent.match(pattern);
+      if (match) {
+        const weightText = match[1] || match[0];
+        const weightNum = weightText.match(/([\d.]+)/);
+        const unitMatch = weightText.match(/(lbs?|pounds?|kg|g|grams?|oz|ounces?)/i);
+        
+        if (weightNum) {
+          weight = weightNum[1];
+          if (unitMatch) {
+            const unit = unitMatch[1].toLowerCase();
+            if (unit.includes('lb') || unit.includes('pound')) weightUnit = "lb";
+            else if (unit.includes('kg') || unit.includes('kilogram')) weightUnit = "kg";
+            else if (unit === 'g' || unit.includes('gram')) weightUnit = "g";
+            else if (unit.includes('oz') || unit.includes('ounce')) {
+              weight = (parseFloat(weight) / 16).toFixed(2);
+              weightUnit = "lb";
+            }
+          }
+          console.log('[eBay Scraper] Weight found:', weight, weightUnit);
+          break;
+        }
+      }
+    }
+    
+    // Final weight handling
+    let finalWeight = weight;
+    let finalWeightUnit = weightUnit;
+    
+    if (!weight) {
+      console.log('[eBay Scraper] No weight found, estimating');
+      const estimated = estimateWeight(productName);
+      finalWeight = estimated.value;
+      finalWeightUnit = estimated.unit;
+    }
+    
+    const finalCompareAtPrice = ensureCompareAtPrice(price, compareAtPrice);
+    
+    return {
+      productName: cleanProductName(productName),
+      description,
+      price,
+      compareAtPrice: finalCompareAtPrice,
+      images: uniqueImages,
+      vendor: "eBay",
+      productType: "",
+      tags: "",
+      costPerItem: "",
+      sku: "",
+      barcode: "",
+      weight: finalWeight,
+      weightUnit: finalWeightUnit,
+      options: [],
+      variants: [],
+    };
+  } catch (error) {
+    console.error('[eBay Scraper] Parse error:', error);
+    throw error;
   }
 }
