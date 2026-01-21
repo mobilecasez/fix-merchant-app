@@ -134,12 +134,14 @@ async function parseEbayHTML(htmlContent: string, url: string): Promise<ScrapedP
     }
     
     // Pattern 2: Gallery images
-    const galleryPattern = /https:\/\/i\.ebayimg\.com\/images\/[^"\s]+/g;
+    const galleryPattern = /https:\/\/i\.ebayimg\.com\/images\/g\/[A-Za-z0-9_~-]+\/s-l\d+\.(jpg|webp|png)/g;
     const galleryMatches = htmlContent.match(galleryPattern);
     if (galleryMatches) {
       galleryMatches.forEach(imgUrl => {
-        if (!imgUrl.includes('s-l64') && !imgUrl.includes('icon') && !imgUrl.includes('logo')) {
-          const highRes = imgUrl.replace(/s-l\d+/, 's-l1600');
+        if (!imgUrl.includes('s-l64')) {
+          // Clean URL and convert to high-res
+          const cleanUrl = imgUrl.split('>')[0].split('<')[0].split('"')[0];
+          const highRes = cleanUrl.replace(/s-l\d+/, 's-l1600');
           if (!images.includes(highRes)) {
             images.push(highRes);
           }

@@ -10,10 +10,19 @@ export async function scrapeWalmart(html: string, url: string): Promise<ScrapedP
     
     const response = await fetch(url, {
       headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
         'accept-language': 'en-US,en;q=0.9',
         'accept-encoding': 'gzip, deflate, br',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36',
-        'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+        'referer': 'https://www.walmart.com/',
+        'sec-ch-ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+        'sec-ch-ua-mobile': '?0',
+        'sec-ch-ua-platform': '"Windows"',
+        'sec-fetch-dest': 'document',
+        'sec-fetch-mode': 'navigate',
+        'sec-fetch-site': 'same-origin',
+        'sec-fetch-user': '?1',
+        'upgrade-insecure-requests': '1',
       },
     });
     
@@ -27,6 +36,15 @@ export async function scrapeWalmart(html: string, url: string): Promise<ScrapedP
     
     const htmlContent = await response.text();
     console.log('[Walmart Scraper] Page fetched successfully, HTML length:', htmlContent.length);
+    
+    // Check for CAPTCHA or bot detection
+    if (htmlContent.includes('Robot or human') || htmlContent.includes('BogleWeb') || htmlContent.length < 20000) {
+      console.log('[Walmart Scraper] CAPTCHA detected, using provided HTML fallback');
+      if (html && html.length > 10000) {
+        return await parseWalmartHTML(html, url);
+      }
+      throw new Error('Walmart CAPTCHA detected - unable to scrape');
+    }
     
     return await parseWalmartHTML(htmlContent, url);
   } catch (error) {
@@ -123,15 +141,14 @@ async function parseWalmartHTML(htmlContent: string, url: string): Promise<Scrap
     // Extract images
     const images: string[] = [];
     
-    // Pattern 1: i5.walmartimages.com
-    const imgPattern = /https:\/\/i5\.walmartimages\.com\/[^"\s?]+/g;
+    // Pattern 1: Product images from asr/ad directories (actual product photos)
+    const imgPattern = /https:\/\/i5\.walmartimages\.com\/(asr|ad|seo)\/[a-f0-9-]+\.jpg/gi;
     const imgMatches = htmlContent.match(imgPattern);
     if (imgMatches) {
       imgMatches.forEach(imgUrl => {
-        if (!imgUrl.includes('icon') && !imgUrl.includes('logo') && !imgUrl.includes('thumbnail')) {
-          if (!images.includes(imgUrl)) {
-            images.push(imgUrl);
-          }
+        const cleanUrl = imgUrl.split('?')[0]; // Remove query params
+        if (!images.includes(cleanUrl)) {
+          images.push(cleanUrl);
         }
       });
     }

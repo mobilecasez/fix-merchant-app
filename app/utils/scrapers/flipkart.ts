@@ -11,10 +11,18 @@ export async function scrapeFlipkart(html: string, url: string): Promise<Scraped
     
     const response = await fetch(url, {
       headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
         'accept-language': 'en-US,en;q=0.9',
         'accept-encoding': 'gzip, deflate, br',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36',
-        'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+        'referer': 'https://www.flipkart.com/',
+        'sec-ch-ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+        'sec-ch-ua-mobile': '?0',
+        'sec-ch-ua-platform': '"Windows"',
+        'sec-fetch-dest': 'document',
+        'sec-fetch-mode': 'navigate',
+        'sec-fetch-site': 'same-origin',
+        'upgrade-insecure-requests': '1',
       },
     });
     
@@ -136,17 +144,19 @@ async function parseFlipkartHTML(htmlContent: string, url: string): Promise<Scra
     
     // Extract images from rukminim CDN
     const images: string[] = [];
-    const imagePattern = /https:\/\/rukminim[12]\.flixcart\.com\/image\/[^"'\s]+/g;
+    const imagePattern = /https:\/\/rukminim[12]\.flixcart\.com\/image\/[^"'\s<>]+\.(jpg|jpeg|png|webp)/gi;
     const imageMatches = htmlContent.match(imagePattern);
     
     if (imageMatches) {
       imageMatches.forEach(imgUrl => {
-        // Convert to high-res by changing dimensions
-        let highResUrl = imgUrl;
+        // Clean URL - remove any HTML fragments
+        const cleanUrl = imgUrl.split('>')[0].split('<')[0].split('"')[0].split("'")[0];\n        \n        // Convert to high-res by changing dimensions
+        let highResUrl = cleanUrl;
         // Replace small dimensions with large ones
-        highResUrl = highResUrl.replace(/\/128\/128\//, '/832/832/');
-        highResUrl = highResUrl.replace(/\/416\/416\//, '/832/832/');
-        highResUrl = highResUrl.replace(/\/200\/200\//, '/832/832/');
+        highResUrl = highResUrl.replace(/\\/128\\/128\\//, '/832/832/');
+        highResUrl = highResUrl.replace(/\\/416\\/416\\//, '/832/832/');
+        highResUrl = highResUrl.replace(/\\/200\\/200\\//, '/832/832/');
+        highResUrl = highResUrl.replace(/\\/312\\/312\\//, '/832/832/');
         
         if (!images.includes(highResUrl) && !highResUrl.includes('/128/') && !highResUrl.includes('/64/')) {
           images.push(highResUrl);
