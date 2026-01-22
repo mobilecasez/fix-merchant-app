@@ -4,65 +4,57 @@ import { cleanProductName, ensureCompareAtPrice, parseWeight, estimateWeight } f
 export async function scrapeMyntra(html: string, url: string): Promise<ScrapedProductData> {
   try {
     console.log('[Myntra Scraper] Starting scrape for:', url);
-    console.log('[Myntra Scraper] Attempting fast fetch() first...');
+    console.log('[Myntra Scraper] Myntra is heavily JavaScript-based, using Puppeteer...');
     
-    // Random delay to mimic human behavior
-    await new Promise(resolve => setTimeout(resolve, Math.random() * 1000 + 500));
+    // Myntra loads product data dynamically via JavaScript, so use Puppeteer by default
+    // This ensures we get the fully rendered page with all product data
+    return await scrapeMyntraWithPuppeteer(url);
     
-    const response = await fetch(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-        'accept-language': 'en-US,en;q=0.9',
-        'accept-encoding': 'gzip, deflate, br',
-        'referer': 'https://www.myntra.com/',
-        'sec-ch-ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
-        'sec-ch-ua-mobile': '?0',
-        'sec-ch-ua-platform': '"Windows"',
-        'sec-fetch-dest': 'document',
-        'sec-fetch-mode': 'navigate',
-        'sec-fetch-site': 'same-origin',
-        'upgrade-insecure-requests': '1',
-      },
-    });
+  } catch (error) {
+    console.error('[Myntra Scraper] Puppeteer failed, trying fetch() fallback:', error);
     
-    // Check if we hit anti-bot protection (529 or similar errors)
-    if (!response.ok) {
-      console.log(`[Myntra Scraper] fetch() failed with status ${response.status}`);
+    // If Puppeteer fails, try fetch() as fallback
+    try {
+      console.log('[Myntra Scraper] Attempting fetch() as fallback...');
       
-      // If 529 or 403 (anti-bot), fall back to Puppeteer
-      if (response.status === 529 || response.status === 403 || response.status === 503) {
-        console.log('[Myntra Scraper] Anti-bot detected, falling back to Puppeteer...');
-        return await scrapeMyntraWithPuppeteer(url);
+      // Random delay to mimic human behavior
+      await new Promise(resolve => setTimeout(resolve, Math.random() * 1000 + 500));
+      
+      const response = await fetch(url, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+          'accept-language': 'en-US,en;q=0.9',
+          'accept-encoding': 'gzip, deflate, br',
+          'referer': 'https://www.myntra.com/',
+          'sec-ch-ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+          'sec-ch-ua-mobile': '?0',
+          'sec-ch-ua-platform': '"Windows"',
+          'sec-fetch-dest': 'document',
+          'sec-fetch-mode': 'navigate',
+          'sec-fetch-site': 'same-origin',
+          'upgrade-insecure-requests': '1',
+        },
+      });
+      
+      if (!response.ok) {
+        console.log(`[Myntra Scraper] fetch() failed with status ${response.status}`);
+        throw new Error(`Failed to fetch Myntra page: ${response.status}`);
       }
       
-      // For other errors, try provided HTML
-      if (html && html.length > 10000) {
-        console.log('[Myntra Scraper] Using provided HTML as fallback');
+      let htmlContent = await response.text();
+      console.log('[Myntra Scraper] fetch() successful! HTML length:', htmlContent.length);
+      
+      return await parseMyntraHTML(htmlContent, url);
+    } catch (fetchError) {
+      console.error('[Myntra Scraper] Both Puppeteer and fetch() failed:', fetchError);
+      
+      // If provided HTML exists, try using it
+      if (html && html.length > 5000) {
+        console.log('[Myntra Scraper] Using provided HTML as last resort...');
         return await parseMyntraHTML(html, url);
       }
       
-      throw new Error(`Failed to fetch Myntra page: ${response.status}`);
-    }
-    
-    let htmlContent = await response.text();
-    console.log('[Myntra Scraper] fetch() successful! HTML length:', htmlContent.length);
-    
-    // Check if we got a CAPTCHA or error page despite 200 status
-    if (htmlContent.includes('Access Denied') || htmlContent.includes('Robot or human') || htmlContent.length < 5000) {
-      console.log('[Myntra Scraper] Detected CAPTCHA/block page, falling back to Puppeteer...');
-      return await scrapeMyntraWithPuppeteer(url);
-    }
-    
-    return await parseMyntraHTML(htmlContent, url);
-  } catch (error) {
-    console.error('[Myntra Scraper] Error:', error);
-    // Last resort: try Puppeteer
-    console.log('[Myntra Scraper] Attempting Puppeteer as last resort...');
-    try {
-      return await scrapeMyntraWithPuppeteer(url);
-    } catch (puppeteerError) {
-      console.error('[Myntra Scraper] Puppeteer also failed:', puppeteerError);
       return {
         productName: "",
         description: "",
@@ -152,140 +144,224 @@ async function scrapeMyntraWithPuppeteer(url: string): Promise<ScrapedProductDat
 async function parseMyntraHTML(htmlContent: string, url: string): Promise<ScrapedProductData> {
   try {
     console.log('[Myntra Scraper] Parsing HTML...');
+    console.log('[Myntra Scraper] HTML length:', htmlContent.length);
     
-    // Extract product name - Myntra uses h1.pdp-title or script JSON data
-    let productName = "";
-    const namePatterns = [
-      /<h1[^>]*class="[^"]*pdp-title[^"]*"[^>]*>(.*?)<\/h1>/s,
-      /<h1[^>]*class="[^"]*pdp-name[^"]*"[^>]*>(.*?)<\/h1>/s,
-      /"name"\s*:\s*"([^"]+)"/,
-      /<meta[^>]*property="og:title"[^>]*content="([^"]+)"/,
+    // First, try to extract JSON data from script tags - Myntra embeds product data as JSON
+    let productData: any = null;
+    
+    // Pattern 1: Look for __PRELOADED_STATE__ or similar JSON data
+    const jsonPatterns = [
+      /<script[^>]*>window\.__PRELOADED_STATE__\s*=\s*({.*?})<\/script>/s,
+      /<script[^>]*>window\.pdpData\s*=\s*({.*?})<\/script>/s,
+      /<script[^>]*type="application\/ld\+json"[^>]*>(.*?)<\/script>/gs,
+      /<script[^>]*>var\s+pdpData\s*=\s*({.*?});<\/script>/s,
     ];
     
-    for (const pattern of namePatterns) {
-      const match = htmlContent.match(pattern);
-      if (match) {
-        productName = match[1].replace(/<[^>]*>/g, '').trim();
-        if (productName) break;
+    for (const pattern of jsonPatterns) {
+      const matches = htmlContent.matchAll(pattern);
+      for (const match of matches) {
+        try {
+          const jsonText = match[1];
+          productData = JSON.parse(jsonText);
+          if (productData && (productData.name || productData.pdpData || productData['@type'] === 'Product')) {
+            console.log('[Myntra Scraper] Found product JSON data');
+            break;
+          }
+        } catch (e) {
+          // Invalid JSON, continue
+        }
+      }
+      if (productData) break;
+    }
+    
+    // Extract from JSON if available
+    let productName = "";
+    let price = "";
+    let compareAtPrice = "";
+    let images: string[] = [];
+    let description = "";
+    let brand = "";
+    let sizes: string[] = [];
+    
+    if (productData) {
+      console.log('[Myntra Scraper] Extracting from JSON data');
+      
+      // Try different JSON structures
+      if (productData['@type'] === 'Product') {
+        // JSON-LD format
+        productName = productData.name || "";
+        if (productData.offers) {
+          price = '₹' + (productData.offers.price || "");
+          compareAtPrice = '₹' + (productData.offers.highPrice || "");
+        }
+        if (productData.image) {
+          images = Array.isArray(productData.image) ? productData.image : [productData.image];
+        }
+        description = productData.description || "";
+        brand = productData.brand?.name || "";
+      } else if (productData.pdpData) {
+        // Myntra's custom format
+        const pd = productData.pdpData;
+        productName = pd.name || "";
+        price = pd.price?.discounted ? '₹' + pd.price.discounted : "";
+        compareAtPrice = pd.price?.mrp ? '₹' + pd.price.mrp : "";
+        images = pd.media?.albums?.[0]?.images || [];
+        description = pd.description || "";
+        brand = pd.brand?.name || "";
+        sizes = pd.sizes?.map((s: any) => s.label) || [];
       }
     }
+    
+    // If JSON extraction failed, fall back to HTML parsing
+    if (!productName) {
+      console.log('[Myntra Scraper] JSON extraction failed, trying HTML patterns...');
+      
+      // Extract product name from HTML
+      const namePatterns = [
+        /<h1[^>]*class="[^"]*pdp-title[^"]*"[^>]*>(.*?)<\/h1>/s,
+        /<h1[^>]*class="[^"]*pdp-name[^"]*"[^>]*>(.*?)<\/h1>/s,
+        /"name"\s*:\s*"([^"]+)"/,
+        /<meta[^>]*property="og:title"[^>]*content="([^"]+)"/,
+        /<title>([^<]+)<\/title>/,
+      ];
+      
+      for (const pattern of namePatterns) {
+        const match = htmlContent.match(pattern);
+        if (match) {
+          productName = match[1].replace(/<[^>]*>/g, '').trim();
+          if (productName) break;
+        }
+      }
+    }
+    
     console.log('[Myntra Scraper] Product name:', productName);
     
-    // Extract price - Myntra uses pdp-price or script JSON
-    let price = "";
-    const pricePatterns = [
-      /<span[^>]*class="[^"]*pdp-price[^"]*"[^>]*>.*?₹\s*([\d,]+)/s,
-      /<strong[^>]*class="[^"]*pdp-price[^"]*"[^>]*>.*?₹\s*([\d,]+)/s,
-      /"price"\s*:\s*"?₹?\s*([\d,]+)"?/,
-      /<span[^>]*class="[^"]*pdp-discount-price[^"]*"[^>]*>.*?₹\s*([\d,]+)/s,
-    ];
-    
-    for (const pattern of pricePatterns) {
-      const match = htmlContent.match(pattern);
-      if (match) {
-        price = '₹' + match[1];
-        console.log('[Myntra Scraper] Price found:', price);
-        break;
-      }
-    }
-    
-    // Extract compare at price (MRP)
-    let compareAtPrice = "";
-    const comparePatterns = [
-      /<span[^>]*class="[^"]*pdp-mrp[^"]*"[^>]*>.*?₹\s*([\d,]+)/s,
-      /<s[^>]*>.*?₹\s*([\d,]+)/s,
-      /<del[^>]*>.*?₹\s*([\d,]+)/s,
-      /"mrp"\s*:\s*"?₹?\s*([\d,]+)"?/,
-    ];
-    
-    for (const pattern of comparePatterns) {
-      const match = htmlContent.match(pattern);
-      if (match) {
-        compareAtPrice = '₹' + match[1];
-        console.log('[Myntra Scraper] Compare price found:', compareAtPrice);
-        break;
-      }
-    }
-    
-    // Extract description - Myntra uses product details sections
-    let description = "";
-    const descPatterns = [
-      /<div[^>]*class="[^"]*pdp-product-description-content[^"]*"[^>]*>(.*?)<\/div>/s,
-      /<div[^>]*class="[^"]*pdp-description[^"]*"[^>]*>(.*?)<\/div>/s,
-      /<div[^>]*class="[^"]*product-description[^"]*"[^>]*>(.*?)<\/div>/s,
-    ];
-    
-    for (const pattern of descPatterns) {
-      const match = htmlContent.match(pattern);
-      if (match) {
-        description = match[1].trim();
-        if (description.length > 50) break;
-      }
-    }
-    
-    // Extract images from Myntra's image viewer or JSON data
-    const images: string[] = [];
-    
-    // Pattern 1: Look for image URLs in image viewer
-    const imagePattern = /https:\/\/assets\.myntassets\.com\/[^"'\s<>]+\.(jpg|jpeg|png|webp)/gi;
-    const imageMatches = htmlContent.match(imagePattern);
-    
-    if (imageMatches) {
-      imageMatches.forEach(imgUrl => {
-        // Clean URL - remove any HTML fragments
-        const cleanUrl = imgUrl.split('>')[0].split('<')[0].split('"')[0].split("'")[0];
-        
-        // Convert to high-res by removing size parameters or changing dimensions
-        let highResUrl = cleanUrl;
-        // Remove size parameters that might limit quality
-        highResUrl = highResUrl.replace(/\/w_\d+,h_\d+\//, '/');
-        highResUrl = highResUrl.replace(/\/resize\/\d+x\d+\//, '/');
-        
-        // Only include product images (not logos, icons, etc)
-        if (highResUrl.includes('/h_') || highResUrl.includes('/f_auto') || !highResUrl.includes('/w_')) {
-          if (!images.includes(highResUrl)) {
-            images.push(highResUrl);
-          }
+    if (!price) {
+      // Extract price from HTML
+      const pricePatterns = [
+        /<span[^>]*class="[^"]*pdp-price[^"]*"[^>]*>.*?₹\s*([\d,]+)/s,
+        /<strong[^>]*class="[^"]*pdp-price[^"]*"[^>]*>.*?₹\s*([\d,]+)/s,
+        /"price"\s*:\s*"?₹?\s*([\d,]+)"?/,
+        /<span[^>]*class="[^"]*pdp-discount-price[^"]*"[^>]*>.*?₹\s*([\d,]+)/s,
+        /"discounted"\s*:\s*(\d+)/,
+      ];
+      
+      for (const pattern of pricePatterns) {
+        const match = htmlContent.match(pattern);
+        if (match) {
+          price = '₹' + match[1];
+          console.log('[Myntra Scraper] Price found:', price);
+          break;
         }
-      });
+      }
     }
     
-    // Pattern 2: Look in JSON data for image URLs
-    const jsonImagePattern = /"(?:image|images|imageUrl)"\s*:\s*"(https:\/\/assets\.myntassets\.com\/[^"]+)"/gi;
-    let jsonMatch;
-    while ((jsonMatch = jsonImagePattern.exec(htmlContent)) !== null) {
-      const imgUrl = jsonMatch[1];
-      if (!images.includes(imgUrl)) {
-        images.push(imgUrl);
+    if (!compareAtPrice) {
+      // Extract compare at price (MRP) from HTML
+      const comparePatterns = [
+        /<span[^>]*class="[^"]*pdp-mrp[^"]*"[^>]*>.*?₹\s*([\d,]+)/s,
+        /<s[^>]*>.*?₹\s*([\d,]+)/s,
+        /<del[^>]*>.*?₹\s*([\d,]+)/s,
+        /"mrp"\s*:\s*"?₹?\s*([\d,]+)"?/,
+        /"mrp"\s*:\s*(\d+)/,
+      ];
+      
+      for (const pattern of comparePatterns) {
+        const match = htmlContent.match(pattern);
+        if (match) {
+          compareAtPrice = '₹' + match[1];
+          console.log('[Myntra Scraper] Compare price found:', compareAtPrice);
+          break;
+        }
+      }
+    }
+    
+    if (!description) {
+      // Extract description from HTML
+      const descPatterns = [
+        /<div[^>]*class="[^"]*pdp-product-description-content[^"]*"[^>]*>(.*?)<\/div>/s,
+        /<div[^>]*class="[^"]*pdp-description[^"]*"[^>]*>(.*?)<\/div>/s,
+        /<div[^>]*class="[^"]*product-description[^"]*"[^>]*>(.*?)<\/div>/s,
+        /"description"\s*:\s*"([^"]+)"/,
+      ];
+      
+      for (const pattern of descPatterns) {
+        const match = htmlContent.match(pattern);
+        if (match) {
+          description = match[1].trim();
+          if (description.length > 50) break;
+        }
+      }
+    }
+    
+    if (images.length === 0) {
+      // Extract images from Myntra's image viewer or JSON data
+      console.log('[Myntra Scraper] Extracting images from HTML...');
+      
+      // Pattern 1: Look for image URLs in image viewer
+      const imagePattern = /https:\/\/assets\.myntassets\.com\/[^"'\s<>]+\.(jpg|jpeg|png|webp)/gi;
+      const imageMatches = htmlContent.match(imagePattern);
+      
+      if (imageMatches) {
+        imageMatches.forEach(imgUrl => {
+          // Clean URL - remove any HTML fragments
+          const cleanUrl = imgUrl.split('>')[0].split('<')[0].split('"')[0].split("'")[0];
+          
+          // Convert to high-res by removing size parameters or changing dimensions
+          let highResUrl = cleanUrl;
+          // Remove size parameters that might limit quality
+          highResUrl = highResUrl.replace(/\/w_\d+,h_\d+\//, '/');
+          highResUrl = highResUrl.replace(/\/resize\/\d+x\d+\//, '/');
+          
+          // Only include product images (not logos, icons, etc)
+          if (highResUrl.includes('/h_') || highResUrl.includes('/f_auto') || !highResUrl.includes('/w_')) {
+            if (!images.includes(highResUrl)) {
+              images.push(highResUrl);
+            }
+          }
+        });
+      }
+      
+      // Pattern 2: Look in JSON data for image URLs
+      const jsonImagePattern = /"(?:image|images|imageUrl)"\s*:\s*"(https:\/\/assets\.myntassets\.com\/[^"]+)"/gi;
+      let jsonMatch;
+      while ((jsonMatch = jsonImagePattern.exec(htmlContent)) !== null) {
+        const imgUrl = jsonMatch[1];
+        if (!images.includes(imgUrl)) {
+          images.push(imgUrl);
+        }
       }
     }
     
     const uniqueImages = Array.from(new Set(images)).slice(0, 10);
     console.log('[Myntra Scraper] Images extracted:', uniqueImages.length);
     
-    // Extract size options if available
-    const sizePattern = /<button[^>]*class="[^"]*size-buttons-[^"]*"[^>]*>([^<]+)<\/button>/gi;
-    const sizes: string[] = [];
-    let sizeMatch;
-    while ((sizeMatch = sizePattern.exec(htmlContent)) !== null) {
-      const size = sizeMatch[1].trim();
-      if (size && !sizes.includes(size)) {
-        sizes.push(size);
+    if (sizes.length === 0) {
+      // Extract size options if available
+      const sizePattern = /<button[^>]*class="[^"]*size-buttons-[^"]*"[^>]*>([^<]+)<\/button>/gi;
+      let sizeMatch;
+      while ((sizeMatch = sizePattern.exec(htmlContent)) !== null) {
+        const size = sizeMatch[1].trim();
+        if (size && !sizes.includes(size)) {
+          sizes.push(size);
+        }
       }
     }
     
-    // Extract brand
-    let brand = "";
-    const brandPatterns = [
-      /<div[^>]*class="[^"]*pdp-title[^"]*"[^>]*><h1[^>]*class="[^"]*pdp-name[^"]*"[^>]*>([^<]+)/s,
-      /"brand"\s*:\s*"([^"]+)"/,
-    ];
-    
-    for (const pattern of brandPatterns) {
-      const match = htmlContent.match(pattern);
-      if (match) {
-        brand = match[1].trim();
-        if (brand) break;
+    if (!brand) {
+      // Extract brand from HTML
+      const brandPatterns = [
+        /<div[^>]*class="[^"]*pdp-title[^"]*"[^>]*><h1[^>]*class="[^"]*pdp-name[^"]*"[^>]*>([^<]+)/s,
+        /"brand"\s*:\s*"([^"]+)"/,
+        /<meta[^>]*property="og:brand"[^>]*content="([^"]+)"/,
+      ];
+      
+      for (const pattern of brandPatterns) {
+        const match = htmlContent.match(pattern);
+        if (match) {
+          brand = match[1].trim();
+          if (brand) break;
+        }
       }
     }
     
