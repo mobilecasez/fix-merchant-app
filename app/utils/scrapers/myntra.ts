@@ -82,7 +82,7 @@ async function scrapeMyntraWithPuppeteer(url: string): Promise<ScrapedProductDat
   let browser;
   
   try {
-    console.log('[Myntra Puppeteer] Launching browser with stealth mode...');
+    console.log('[Myntra Puppeteer] Launching browser with enhanced stealth...');
     browser = await puppeteer.default.launch({
       headless: true,
       args: [
@@ -92,18 +92,48 @@ async function scrapeMyntraWithPuppeteer(url: string): Promise<ScrapedProductDat
         '--disable-accelerated-2d-canvas',
         '--disable-gpu',
         '--window-size=1920x1080',
-        '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        '--disable-blink-features=AutomationControlled',
+        '--disable-features=IsolateOrigins,site-per-process',
+        '--lang=en-US,en'
       ],
     });
     
     const page = await browser.newPage();
     
-    // Set viewport and extra headers
+    // Enhanced anti-detection: Override webdriver property
+    await page.evaluateOnNewDocument(() => {
+      Object.defineProperty(navigator, 'webdriver', {
+        get: () => false,
+      });
+      // Add chrome object
+      (window as any).chrome = {
+        runtime: {},
+      };
+      // Override permissions
+      const originalQuery = window.navigator.permissions.query;
+      window.navigator.permissions.query = (parameters: any) => (
+        parameters.name === 'notifications' ?
+          Promise.resolve({ state: Notification.permission } as PermissionStatus) :
+          originalQuery(parameters)
+      );
+    });
+    
+    // Set realistic viewport and user agent
     await page.setViewport({ width: 1920, height: 1080 });
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36');
     await page.setExtraHTTPHeaders({
+      'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
       'accept-language': 'en-US,en;q=0.9',
       'accept-encoding': 'gzip, deflate, br',
-      'referer': 'https://www.myntra.com/',
+      'referer': 'https://www.google.com/',
+      'sec-ch-ua': '"Not A(Brand";v="99", "Google Chrome";v="121", "Chromium";v="121"',
+      'sec-ch-ua-mobile': '?0',
+      'sec-ch-ua-platform': '"Windows"',
+      'sec-fetch-dest': 'document',
+      'sec-fetch-mode': 'navigate',
+      'sec-fetch-site': 'none',
+      'sec-fetch-user': '?1',
+      'upgrade-insecure-requests': '1',
     });
     
     // Block unnecessary resources to speed up
@@ -119,15 +149,33 @@ async function scrapeMyntraWithPuppeteer(url: string): Promise<ScrapedProductDat
     
     console.log('[Myntra Puppeteer] Navigating to URL...');
     await page.goto(url, { 
-      waitUntil: 'domcontentloaded',
-      timeout: 30000 
+      waitUntil: 'networkidle2',
+      timeout: 45000 
     });
     
-    // Wait a bit for dynamic content to load
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    // Wait for product-specific content to load (wait for any of these selectors)
+    try {
+      await Promise.race([
+        page.waitForSelector('.pdp-price', { timeout: 10000 }),
+        page.waitForSelector('.pdp-name', { timeout: 10000 }),
+        page.waitForSelector('[class*="price"]', { timeout: 10000 }),
+      ]);
+      console.log('[Myntra Puppeteer] Product content detected');
+    } catch (e) {
+      console.log('[Myntra Puppeteer] No product selectors found, may be blocked');
+    }
+    
+    // Additional wait for dynamic content
+    await new Promise(resolve => setTimeout(resolve, 3000));
     
     const htmlContent = await page.content();
     console.log('[Myntra Puppeteer] Page loaded successfully, HTML length:', htmlContent.length);
+    
+    // Check if we got a maintenance/block page
+    if (htmlContent.length < 5000 || htmlContent.includes('Site Maintenance') || htmlContent.includes('Access Denied')) {
+      console.error('[Myntra Puppeteer] Detected block page - HTML too small or contains block indicators');
+      throw new Error('Myntra blocked the request - try again later');
+    }
     
     await browser.close();
     
