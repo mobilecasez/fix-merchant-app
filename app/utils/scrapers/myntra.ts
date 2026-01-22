@@ -4,18 +4,10 @@ import { cleanProductName, ensureCompareAtPrice, parseWeight, estimateWeight } f
 export async function scrapeMyntra(html: string, url: string): Promise<ScrapedProductData> {
   try {
     console.log('[Myntra Scraper] Starting scrape for:', url);
-    console.log('[Myntra Scraper] Myntra is heavily JavaScript-based, using Puppeteer...');
     
-    // Myntra loads product data dynamically via JavaScript, so use Puppeteer by default
-    // This ensures we get the fully rendered page with all product data
-    return await scrapeMyntraWithPuppeteer(url);
-    
-  } catch (error) {
-    console.error('[Myntra Scraper] Puppeteer failed, trying fetch() fallback:', error);
-    
-    // If Puppeteer fails, try fetch() as fallback
+    // Try fetch() first - Puppeteer is too heavy for Railway environment
     try {
-      console.log('[Myntra Scraper] Attempting fetch() as fallback...');
+      console.log('[Myntra Scraper] Attempting fetch() with enhanced headers...');
       
       // Random delay to mimic human behavior
       await new Promise(resolve => setTimeout(resolve, Math.random() * 1000 + 500));
@@ -47,32 +39,36 @@ export async function scrapeMyntra(html: string, url: string): Promise<ScrapedPr
       
       return await parseMyntraHTML(htmlContent, url);
     } catch (fetchError) {
-      console.error('[Myntra Scraper] Both Puppeteer and fetch() failed:', fetchError);
+      console.error('[Myntra Scraper] fetch() failed:', fetchError);
       
-      // If provided HTML exists, try using it
+      // If fetch fails and we have provided HTML, try using it
       if (html && html.length > 5000) {
-        console.log('[Myntra Scraper] Using provided HTML as last resort...');
+        console.log('[Myntra Scraper] Using provided HTML...');
         return await parseMyntraHTML(html, url);
       }
       
-      return {
-        productName: "",
-        description: "",
-        price: "",
-        images: [],
-        vendor: "Myntra",
-        productType: "",
-        tags: "",
-        compareAtPrice: "",
-        costPerItem: "",
-        sku: "",
-        barcode: "",
-        weight: "",
-        weightUnit: "kg",
-        options: [],
-        variants: [],
-      };
+      throw fetchError;
     }
+  } catch (error) {
+    console.error('[Myntra Scraper] All methods failed:', error);
+    
+    return {
+      productName: "",
+      description: "",
+      price: "",
+      images: [],
+      vendor: "Myntra",
+      productType: "",
+      tags: "",
+      compareAtPrice: "",
+      costPerItem: "",
+      sku: "",
+      barcode: "",
+      weight: "",
+      weightUnit: "kg",
+      options: [],
+      variants: [],
+    };
   }
 }
 
