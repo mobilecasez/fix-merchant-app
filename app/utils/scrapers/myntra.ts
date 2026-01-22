@@ -149,24 +149,14 @@ async function scrapeMyntraWithPuppeteer(url: string): Promise<ScrapedProductDat
     
     console.log('[Myntra Puppeteer] Navigating to URL...');
     await page.goto(url, { 
-      waitUntil: 'networkidle2',
-      timeout: 45000 
+      waitUntil: 'domcontentloaded',
+      timeout: 30000 
     });
     
-    // Wait for product-specific content to load (wait for any of these selectors)
-    try {
-      await Promise.race([
-        page.waitForSelector('.pdp-price', { timeout: 10000 }),
-        page.waitForSelector('.pdp-name', { timeout: 10000 }),
-        page.waitForSelector('[class*="price"]', { timeout: 10000 }),
-      ]);
-      console.log('[Myntra Puppeteer] Product content detected');
-    } catch (e) {
-      console.log('[Myntra Puppeteer] No product selectors found, may be blocked');
-    }
+    console.log('[Myntra Puppeteer] Page loaded, waiting for content...');
     
-    // Additional wait for dynamic content
-    await new Promise(resolve => setTimeout(resolve, 3000));
+    // Wait for dynamic content to render
+    await new Promise(resolve => setTimeout(resolve, 5000));
     
     const htmlContent = await page.content();
     console.log('[Myntra Puppeteer] Page loaded successfully, HTML length:', htmlContent.length);
