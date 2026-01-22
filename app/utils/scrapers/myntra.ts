@@ -151,10 +151,10 @@ async function parseMyntraHTML(htmlContent: string, url: string): Promise<Scrape
     
     // Pattern 1: Look for __PRELOADED_STATE__ or similar JSON data
     const jsonPatterns = [
-      /<script[^>]*>window\.__PRELOADED_STATE__\s*=\s*({.*?})<\/script>/s,
-      /<script[^>]*>window\.pdpData\s*=\s*({.*?})<\/script>/s,
+      /<script[^>]*>window\.__PRELOADED_STATE__\s*=\s*({.*?})<\/script>/gs,
+      /<script[^>]*>window\.pdpData\s*=\s*({.*?})<\/script>/gs,
       /<script[^>]*type="application\/ld\+json"[^>]*>(.*?)<\/script>/gs,
-      /<script[^>]*>var\s+pdpData\s*=\s*({.*?});<\/script>/s,
+      /<script[^>]*>var\s+pdpData\s*=\s*({.*?});<\/script>/gs,
     ];
     
     for (const pattern of jsonPatterns) {
