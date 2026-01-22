@@ -65,7 +65,7 @@ async function scrapeMyntraWithPuppeteer(url: string): Promise<ScrapedProductDat
     });
 
     // Wait a bit for dynamic content to load
-    await page.waitForTimeout(3000);
+    await new Promise(resolve => setTimeout(resolve, 3000));
 
     const htmlContent = await page.content();
     console.log('[Myntra Puppeteer] Page loaded! HTML length:', htmlContent.length);
@@ -78,17 +78,6 @@ async function scrapeMyntraWithPuppeteer(url: string): Promise<ScrapedProductDat
     console.error('[Myntra Puppeteer] Error:', error);
     if (browser) await browser.close();
     throw error;
-  }
-}
-
-  } catch (error) {
-    console.error("[Myntra Scraper] Error:", error);
-    // Return empty fallback
-    return {
-      productName: "", description: "", price: "", images: [], vendor: "Myntra",
-      productType: "", tags: "", compareAtPrice: "", costPerItem: "", sku: "",
-      barcode: "", weight: "", weightUnit: "kg", options: [], variants: [],
-    };
   }
 }
 
@@ -195,7 +184,7 @@ async function parseMyntraJSON(htmlContent: string, url: string): Promise<Scrape
         barcode: "",
         weight: weightParsed.value,
         weightUnit: weightParsed.unit,
-        options: variants.length > 0 ? [{ name: "Size", values: variants.map(v => v.title) }] : [],
+        options: variants.length > 0 ? [{ name: "Size", values: variants.map(v => v.title).join(", ") }] : [],
         variants: variants
     };
 }
