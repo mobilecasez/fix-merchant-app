@@ -1,44 +1,85 @@
 import { ScrapedProductData } from "./types";
 import { cleanProductName, ensureCompareAtPrice, parseWeight, estimateWeight } from "./helpers";
+import puppeteer from "puppeteer";
 
 export async function scrapeMyntra(html: string, url: string): Promise<ScrapedProductData> {
   try {
     console.log('[Myntra Scraper] Starting scrape for:', url);
     
-    // Myntra is very sensitive to bot headers. We mimic a real Chrome browser.
-    const headers = {
-      'authority': 'www.myntra.com',
-      'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-      'accept-language': 'en-US,en;q=0.9',
-      'cache-control': 'max-age=0',
-      'sec-ch-ua': '"Google Chrome";v="117", "Not;A=Brand";v="8", "Chromium";v="117"',
-      'sec-ch-ua-mobile': '?0',
-      'sec-ch-ua-platform': '"Windows"',
-      'sec-fetch-dest': 'document',
-      'sec-fetch-mode': 'navigate',
-      'sec-fetch-site': 'none',
-      'sec-fetch-user': '?1',
-      'upgrade-insecure-requests': '1',
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0.0.0 Safari/537.36'
-    };
-
-    // Random delay to avoid rate limiting
-    await new Promise(resolve => setTimeout(resolve, Math.random() * 1000 + 500));
-
-    const response = await fetch(url, { headers });
-
-    if (!response.ok) {
-      console.log(`[Myntra Scraper] HTTP error: ${response.status}`);
-      if (html && html.length > 10000) {
-        console.log('[Myntra Scraper] Using provided HTML fallback');
-        return await parseMyntraJSON(html, url);
-      }
-      throw new Error(`Failed to fetch Myntra page: ${response.status}`);
+    // CRITICAL: Myntra blocks server-side fetch requests completely (returns 483-byte maintenance page)
+    // Check if provided HTML is blocked (too small)
+    const isHtmlBlocked = !html || html.length < 10000;
+    
+    if (isHtmlBlocked) {
+      console.log('[Myntra Scraper] HTML is blocked or missing (length:', html?.length || 0, '), using Puppeteer...');
+      return await scrapeMyntraWithPuppeteer(url);
     }
+    
+    console.log('[Myntra Scraper] Using provided HTML from browser (length:', html.length, ')');
+    return await parseMyntraJSON(html, url);
 
-    const htmlContent = await response.text();
-    console.log('[Myntra Scraper] Fetch successful! HTML length:', htmlContent.length);
+  } catch (error) {
+    console.error("[Myntra Scraper] Error:", error);
+    // Return empty fallback
+    return {
+      productName: "", description: "", price: "", images: [], vendor: "Myntra",
+      productType: "", tags: "", compareAtPrice: "", costPerItem: "", sku: "",
+      barcode: "", weight: "", weightUnit: "kg", options: [], variants: [],
+    };
+  }
+}
+
+async function scrapeMyntraWithPuppeteer(url: string): Promise<ScrapedProductData> {
+  let browser;
+  try {
+    console.log('[Myntra Puppeteer] Launching browser...');
+    browser = await puppeteer.launch({
+      headless: true,
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--window-size=1920,1080',
+        '--disable-web-security',
+        '--disable-features=IsolateOrigins,site-per-process'
+      ]
+    });
+
+    const page = await browser.newPage();
+    
+    // Set realistic viewport and user agent
+    await page.setViewport({ width: 1920, height: 1080 });
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0.0.0 Safari/537.36');
+    
+    // Set additional headers
+    await page.setExtraHTTPHeaders({
+      'accept-language': 'en-US,en;q=0.9',
+      'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+    });
+
+    console.log('[Myntra Puppeteer] Navigating to URL...');
+    await page.goto(url, { 
+      waitUntil: 'networkidle2',
+      timeout: 60000 
+    });
+
+    // Wait a bit for dynamic content to load
+    await page.waitForTimeout(3000);
+
+    const htmlContent = await page.content();
+    console.log('[Myntra Puppeteer] Page loaded! HTML length:', htmlContent.length);
+
+    await browser.close();
+
     return await parseMyntraJSON(htmlContent, url);
+
+  } catch (error) {
+    console.error('[Myntra Puppeteer] Error:', error);
+    if (browser) await browser.close();
+    throw error;
+  }
+}
 
   } catch (error) {
     console.error("[Myntra Scraper] Error:", error);
