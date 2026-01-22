@@ -10,6 +10,7 @@ import { scrapeMercadoLibre } from "./mercadolibre";
 import { scrapeJD } from "./jd";
 import { scrapeTaobao } from "./taobao";
 import { scrapeFlipkart } from "./flipkart";
+import { scrapeMyntra } from "./myntra";
 
 // Timeout wrapper to prevent hanging scrapers
 async function withTimeout<T>(
@@ -107,6 +108,11 @@ export function getScraper(url: string): ScraperFunction | null {
   // Flipkart - with 60s timeout
   if (urlLower.includes("flipkart.com")) {
     return createTimeoutScraper(scrapeFlipkart, 60000);
+  }
+  
+  // Myntra - with 60s timeout
+  if (urlLower.includes("myntra.com")) {
+    return createTimeoutScraper(scrapeMyntra, 60000);
   }
   
   // No matching scraper found

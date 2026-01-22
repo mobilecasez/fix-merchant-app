@@ -24,51 +24,7 @@ export async function action({ request }: ActionFunctionArgs) {
     condition, // Added condition to destructuring
     variants,
     tags, // Added tags to destructuring
-    forceUpdate, // Add option to force update regardless of timestamp
   } = productData;
-
-  // Check existing timestamp to prevent overwriting newer data
-  if (!forceUpdate) {
-    try {
-      const existingProductResponse = await admin.graphql(
-        `#graphql
-          query getProduct($id: ID!) {
-            product(id: $id) {
-              metafield(namespace: "shopflix_ai", key: "last_updated") {
-                value
-              }
-            }
-          }`,
-        {
-          variables: { id },
-        }
-      );
-
-      const existingProductData = await existingProductResponse.json();
-      const existingTimestamp = existingProductData?.data?.product?.metafield?.value;
-
-      if (existingTimestamp) {
-        const existingDate = new Date(existingTimestamp);
-        const currentDate = new Date();
-        
-        // If existing data is less than 5 seconds old, reject the update to prevent race condition
-        const timeDiff = currentDate.getTime() - existingDate.getTime();
-        if (timeDiff < 5000) {
-          console.log("Update rejected: Data was just updated", {
-            existingTimestamp,
-            timeDiff: `${timeDiff}ms`,
-          });
-          return json({ 
-            error: "Product was recently updated. Please refresh to see the latest version.",
-            existingTimestamp,
-          }, { status: 409 }); // 409 Conflict
-        }
-      }
-    } catch (error) {
-      console.error("Error checking existing timestamp:", error);
-      // Continue with update if timestamp check fails
-    }
-  }
 
   const descriptionHtml = await convertMarkdownToHtml(description);
 
@@ -126,15 +82,6 @@ export async function action({ request }: ActionFunctionArgs) {
   addMetafield("color", color);
   addMetafield("material", material);
   addMetafield("condition", condition);
-  
-  // Add last_updated timestamp to track version
-  metafieldsToSet.push({
-    ownerId: id,
-    namespace: "shopflix_ai",
-    key: "last_updated",
-    value: new Date().toISOString(),
-    type: "single_line_text_field",
-  });
 
   if (metafieldsToSet.length > 0) {
     const metafieldsSetResponse = await admin.graphql(
