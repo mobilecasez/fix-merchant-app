@@ -206,6 +206,7 @@ export default function AddProductReplica() {
         }
         setShowLoader(false);
         setShowManualHtmlInput(true);
+        setHtmlPanelOpen(true); // Auto-expand panel
         setToastMessage(scrapedData.message || "Manual HTML input required");
         setToastError(false);
         setToastActive(true);
@@ -594,6 +595,25 @@ export default function AddProductReplica() {
     // Clear any pasted HTML content
     setManualHtml('');
     setHtmlPanelOpen(false);
+    
+    // Clear all form fields to prevent old data from showing
+    setProductName('');
+    setDescription('');
+    setPrice('');
+    setCompareAtPrice('');
+    setMedia([]);
+    setVendor('');
+    setProductType('');
+    setTags('');
+    setCostPerItem('');
+    setProfit('');
+    setMargin('');
+    setSku('');
+    setBarcode('');
+    setWeight('');
+    setWeightUnit('kg');
+    setOptions([]);
+    setVariants([]);
     
     // Then call the normal fetch (don't clear showManualHtmlInput - let the server response control it)
     handleFetchProduct();
