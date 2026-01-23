@@ -32,7 +32,7 @@ export async function scrapeMyntra(html: string, url: string): Promise<ScrapedPr
 async function scrapeMyntraWithPuppeteer(url: string): Promise<ScrapedProductData> {
   let browser;
   try {
-    console.log('[Myntra Puppeteer] Launching browser...');
+    console.log('[Myntra Puppeteer] Launching browser with stealth mode...');
     browser = await puppeteer.launch({
       headless: true,
       args: [
@@ -41,34 +41,79 @@ async function scrapeMyntraWithPuppeteer(url: string): Promise<ScrapedProductDat
         '--disable-dev-shm-usage',
         '--disable-gpu',
         '--window-size=1920,1080',
-        '--disable-web-security',
-        '--disable-features=IsolateOrigins,site-per-process'
+        '--disable-blink-features=AutomationControlled',
+        '--disable-features=IsolateOrigins,site-per-process',
+        '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
       ]
     });
 
     const page = await browser.newPage();
     
+    // Hide webdriver property and other automation indicators
+    await page.evaluateOnNewDocument(() => {
+      // Remove webdriver property
+      Object.defineProperty(navigator, 'webdriver', {
+        get: () => false,
+      });
+      
+      // Override the plugins array
+      Object.defineProperty(navigator, 'plugins', {
+        get: () => [1, 2, 3, 4, 5],
+      });
+      
+      // Override languages
+      Object.defineProperty(navigator, 'languages', {
+        get: () => ['en-US', 'en'],
+      });
+      
+      // Add chrome object
+      (window as any).chrome = {
+        runtime: {},
+      };
+      
+      // Override permissions
+      const originalQuery = window.navigator.permissions.query;
+      window.navigator.permissions.query = (parameters: any) =>
+        parameters.name === 'notifications'
+          ? Promise.resolve({ state: 'denied' } as PermissionStatus)
+          : originalQuery(parameters);
+    });
+    
     // Set realistic viewport and user agent
     await page.setViewport({ width: 1920, height: 1080 });
-    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0.0.0 Safari/537.36');
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
     
-    // Set additional headers
+    // Set comprehensive headers
     await page.setExtraHTTPHeaders({
+      'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
       'accept-language': 'en-US,en;q=0.9',
-      'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+      'accept-encoding': 'gzip, deflate, br',
+      'cache-control': 'max-age=0',
+      'sec-ch-ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+      'sec-ch-ua-mobile': '?0',
+      'sec-ch-ua-platform': '"Windows"',
+      'sec-fetch-dest': 'document',
+      'sec-fetch-mode': 'navigate',
+      'sec-fetch-site': 'none',
+      'sec-fetch-user': '?1',
+      'upgrade-insecure-requests': '1',
     });
 
     console.log('[Myntra Puppeteer] Navigating to URL...');
     await page.goto(url, { 
-      waitUntil: 'networkidle2',
+      waitUntil: 'domcontentloaded',
       timeout: 60000 
     });
 
-    // Wait a bit for dynamic content to load
-    await new Promise(resolve => setTimeout(resolve, 3000));
+    // Wait for dynamic content to load
+    console.log('[Myntra Puppeteer] Waiting for content to load...');
+    await new Promise(resolve => setTimeout(resolve, 5000));
 
     const htmlContent = await page.content();
     console.log('[Myntra Puppeteer] Page loaded! HTML length:', htmlContent.length);
+    
+    // Log first 500 chars to debug
+    console.log('[Myntra Puppeteer] First 500 chars:', htmlContent.substring(0, 500));
 
     await browser.close();
 
