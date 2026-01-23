@@ -73,22 +73,39 @@ async function scrapeMyntraWithPuppeteer(url: string): Promise<ScrapedProductDat
     });
 
     console.log('[Myntra Puppeteer] Navigating to URL...');
-    await page.goto(url, { 
-      waitUntil: 'networkidle0',
-      timeout: 90000 
+    
+    // Use a timeout promise to prevent hanging
+    const navigationPromise = page.goto(url, { 
+      waitUntil: 'domcontentloaded',
+      timeout: 30000 
     });
+    
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('Navigation timeout')), 35000)
+    );
+    
+    try {
+      await Promise.race([navigationPromise, timeoutPromise]);
+    } catch (error) {
+      console.log('[Myntra Puppeteer] Navigation timed out or failed, checking content anyway...');
+    }
 
-    // Wait for dynamic content to load
-    console.log('[Myntra Puppeteer] Waiting for content to load...');
-    await new Promise(resolve => setTimeout(resolve, 8000));
+    // Wait briefly for JS to execute
+    console.log('[Myntra Puppeteer] Waiting for content...');
+    await new Promise(resolve => setTimeout(resolve, 3000));
 
     const htmlContent = await page.content();
-    console.log('[Myntra Puppeteer] Page loaded! HTML length:', htmlContent.length);
-    
-    // Log first 500 chars to debug
+    console.log('[Myntra Puppeteer] HTML length:', htmlContent.length);
     console.log('[Myntra Puppeteer] First 500 chars:', htmlContent.substring(0, 500));
 
     await browser.close();
+
+    // Check if we got the maintenance page
+    if (htmlContent.length < 1000 || htmlContent.includes('Site Maintenance')) {
+      console.error('[Myntra Puppeteer] Still getting blocked! Myntra detected bot despite stealth plugin.');
+      console.error('[Myntra Puppeteer] This requires a residential proxy or different approach.');
+      throw new Error('Myntra bot detection bypassed all evasion techniques. Server IP likely blocked.');
+    }
 
     return await parseMyntraJSON(htmlContent, url);
 
