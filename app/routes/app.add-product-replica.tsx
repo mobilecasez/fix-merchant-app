@@ -641,7 +641,13 @@ export default function AddProductReplica() {
                   helpText="Supports Amazon, Flipkart, eBay, and most e-commerce websites"
                   connectedRight={
                     <Button 
-                      onClick={handleFetchProduct} 
+                      onClick={() => {
+                        // Clear manual HTML and reset panel when using top button
+                        setManualHtml('');
+                        setShowManualHtmlInput(false);
+                        setHtmlPanelOpen(true);
+                        handleFetchProduct();
+                      }} 
                       loading={isFetchingProduct} 
                       disabled={isFetchingProduct || !productUrl}
                       variant="primary"
