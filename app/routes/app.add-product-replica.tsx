@@ -103,7 +103,6 @@ export default function AddProductReplica() {
   const [productSource, setProductSource] = useState('the product source');
   const [showManualHtmlInput, setShowManualHtmlInput] = useState(false);
   const [manualHtml, setManualHtml] = useState('');
-  const [htmlPanelOpen, setHtmlPanelOpen] = useState(true);
   const progressIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const targetProgressRef = useRef(0);
   
@@ -675,83 +674,63 @@ export default function AddProductReplica() {
                               <Text variant="bodyXs" as="p" fontWeight="semibold">2. Press Ctrl+U (Windows) or Cmd+Option+U (Mac) to view page source</Text>
                               <Text variant="bodyXs" as="p" tone="subdued">(If right-click is disabled, use keyboard shortcut above)</Text>
                               <Text variant="bodyXs" as="p">3. Select all HTML (Ctrl+A / Cmd+A) and copy it</Text>
-                              <Text variant="bodyXs" as="p">4. Paste the HTML below and click Import</Text>
+                              <Text variant="bodyXs" as="p">4. Paste the HTML below and click Import above</Text>
                             </BlockStack>
                           </Box>
                         </BlockStack>
                       </Box>
                     )}
-                    
-                    {/* Collapsible HTML Input Panel */}
-                    <Box 
-                      borderWidth="025" 
-                      borderRadius="200" 
-                      borderColor="border"
-                      padding="0"
-                    >
-                      <Box padding="400" borderBlockEndWidth="025" borderColor="border">
-                        <InlineStack align="space-between" blockAlign="center">
-                          <Text variant="headingSm" as="h3">
-                            HTML Source Code {manualHtml.trim() && `(${Math.round(manualHtml.length / 1024)}KB)`}
-                          </Text>
-                          <Button 
-                            onClick={() => setHtmlPanelOpen(!htmlPanelOpen)}
-                            size="slim"
-                          >
-                            {htmlPanelOpen ? '▲ Collapse' : '▼ Expand'}
-                          </Button>
-                        </InlineStack>
-                      </Box>
-                      
-                      <Collapsible open={htmlPanelOpen} id="html-panel">
-                        <Box padding="400">
-                          <BlockStack gap="400">
-                            {/* Fixed height textarea with internal scroll */}
-                            <div style={{ 
-                              height: '300px',
-                              border: '1px solid var(--p-color-border)',
-                              borderRadius: '8px',
-                              overflow: 'hidden'
-                            }}>
-                              <textarea
-                                value={manualHtml}
-                                onChange={(e) => setManualHtml(e.target.value)}
-                                placeholder="Paste the complete HTML source code here..."
-                                style={{
-                                  width: '100%',
-                                  height: '100%',
-                                  padding: '12px',
-                                  border: 'none',
-                                  outline: 'none',
-                                  fontFamily: 'Monaco, Courier, monospace',
-                                  fontSize: '13px',
-                                  resize: 'none',
-                                  backgroundColor: 'var(--p-color-bg-surface)',
-                                  color: 'var(--p-color-text)'
-                                }}
-                              />
-                            </div>
-                            
-                            <InlineStack gap="200">
-                              <Button 
-                                onClick={handleFetchProduct}
-                                loading={isFetchingProduct}
-                                disabled={!manualHtml.trim() || isFetchingProduct || !productUrl}
-                                variant="primary"
-                              >
-                                {isFetchingProduct ? 'Importing...' : 'Import Product from HTML'}
-                              </Button>
-                              <Button 
-                                onClick={() => setManualHtml('')}
-                                disabled={!manualHtml.trim()}
-                              >
-                                Clear HTML
-                              </Button>
-                            </InlineStack>
-                          </BlockStack>
-                        </Box>
-                      </Collapsible>
-                    </Box>
+                    <div style={{ position: 'relative' }}>
+                      <label style={{ 
+                        display: 'block', 
+                        marginBottom: '8px', 
+                        fontWeight: 500,
+                        fontSize: '14px'
+                      }}>
+                        Paste HTML Source Code {manualHtml.trim() && `(${Math.round(manualHtml.length / 1024)}KB)`}
+                      </label>
+                      <div style={{ 
+                        height: '250px',
+                        border: '1px solid #c9cccf',
+                        borderRadius: '8px',
+                        overflow: 'hidden',
+                        backgroundColor: '#f6f6f7'
+                      }}>
+                        <textarea
+                          value={manualHtml}
+                          onChange={(e) => setManualHtml(e.target.value)}
+                          placeholder="Paste the complete HTML source code here..."
+                          style={{
+                            width: '100%',
+                            height: '100%',
+                            padding: '12px',
+                            border: 'none',
+                            outline: 'none',
+                            fontFamily: 'Monaco, Courier, monospace',
+                            fontSize: '13px',
+                            resize: 'none',
+                            backgroundColor: 'transparent'
+                          }}
+                        />
+                      </div>
+                      <div style={{ 
+                        marginTop: '8px', 
+                        fontSize: '13px', 
+                        color: '#6d7175'
+                      }}>
+                        {manualHtml.trim() 
+                          ? `HTML pasted successfully - Click "Import Product" button above to process`
+                          : "Our AI will extract product information from the HTML"}
+                      </div>
+                    </div>
+                    {manualHtml.trim() && (
+                      <Button 
+                        onClick={() => setManualHtml('')}
+                        size="slim"
+                      >
+                        Clear HTML
+                      </Button>
+                    )}
                   </BlockStack>
                 )}
               </FormLayout>
