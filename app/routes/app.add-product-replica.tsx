@@ -623,8 +623,26 @@ export default function AddProductReplica() {
     setOptions([]);
     setVariants([]);
     
-    // Then call the normal fetch (don't clear showManualHtmlInput - let the server response control it)
-    handleFetchProduct();
+    // DON'T call handleFetchProduct() - it would include stale manualHtml from closure
+    // Instead, submit directly with fresh FormData that explicitly excludes manual HTML
+    if (!productUrl) {
+      setToastMessage("Please enter a product URL");
+      setToastError(true);
+      setToastActive(true);
+      return;
+    }
+
+    const source = getSourceFromUrl(productUrl);
+    setProductSource(source);
+    
+    const formData = new FormData();
+    formData.append("url", productUrl);
+    // Explicitly DON'T include manualHtml - fresh auto-fetch only
+    
+    fetcher.submit(formData, {
+      method: "post",
+      action: "/api/ai/fetch-product",
+    });
   };
 
   return (
