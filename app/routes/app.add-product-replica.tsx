@@ -206,6 +206,7 @@ export default function AddProductReplica() {
         }
         setShowLoader(false);
         setShowManualHtmlInput(true);
+        setHtmlPanelOpen(true); // Open the panel immediately
         setToastMessage(scrapedData.message || "Manual HTML input required");
         setToastError(false);
         setToastActive(true);
