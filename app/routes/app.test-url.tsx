@@ -74,7 +74,7 @@ export default function TestURL() {
               />
 
               <Button
-                primary
+                variant="primary"
                 onClick={handleImport}
                 loading={isLoading}
                 disabled={!url.trim() || isLoading}
@@ -85,7 +85,7 @@ export default function TestURL() {
           </Card>
         </Layout.Section>
 
-        {actionData?.error && (
+        {actionData && 'error' in actionData && actionData.error && (
           <Layout.Section>
             <Banner tone="critical">
               <p>{actionData.error}</p>
@@ -93,7 +93,7 @@ export default function TestURL() {
           </Layout.Section>
         )}
 
-        {actionData?.success && actionData?.data && (
+        {actionData && 'success' in actionData && actionData.success && actionData.data && (
           <Layout.Section>
             <Card>
               <BlockStack gap="400">
