@@ -106,6 +106,7 @@ export default function AddProductReplica() {
   const [htmlPanelOpen, setHtmlPanelOpen] = useState(true);
   const progressIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const targetProgressRef = useRef(0);
+  const prevFetcherState = useRef(fetcher.state);
   
   // Helper function to detect source from URL
   const getSourceFromUrl = (url: string): string => {
@@ -188,7 +189,11 @@ export default function AddProductReplica() {
   }, [processAllFetcher.state]);
 
   useEffect(() => {
-    if (fetcher.state === 'idle' && fetcher.data) {
+    // Only process when we get a NEW response (transition from loading to idle)
+    // This prevents repopulating with stale/cached fetcher.data
+    const isNewResponse = fetcher.state === 'idle' && prevFetcherState.current === 'loading';
+    
+    if (fetcher.state === 'idle' && fetcher.data && isNewResponse) {
       const scrapedData = fetcher.data as any;
       
       // Log the raw HTML if it's present in the response (for debugging)
@@ -237,6 +242,9 @@ export default function AddProductReplica() {
         { method: 'post', action: '/api/ai/process-all', encType: 'application/json' }
       );
     }
+    
+    // Update previous state for next comparison
+    prevFetcherState.current = fetcher.state;
   }, [fetcher.data, fetcher.state]);
 
   useEffect(() => {
