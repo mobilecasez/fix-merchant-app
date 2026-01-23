@@ -189,11 +189,7 @@ export default function AddProductReplica() {
   }, [processAllFetcher.state]);
 
   useEffect(() => {
-    // Only process when we get a NEW response (transition from loading to idle)
-    // This prevents repopulating with stale/cached fetcher.data
-    const isNewResponse = fetcher.state === 'idle' && prevFetcherState.current === 'loading';
-    
-    if (fetcher.state === 'idle' && fetcher.data && isNewResponse) {
+    if (fetcher.state === 'idle' && fetcher.data) {
       const scrapedData = fetcher.data as any;
       
       // Log the raw HTML if it's present in the response (for debugging)
@@ -203,7 +199,7 @@ export default function AddProductReplica() {
         console.log("📄 HTML length:", scrapedData.debugHtml.length);
       }
       
-      // Handle manual HTML required response
+      // CRITICAL: Handle manual HTML required response FIRST - must always work
       if (scrapedData.manualHtmlRequired) {
         if (progressIntervalRef.current) {
           clearInterval(progressIntervalRef.current);
@@ -215,6 +211,7 @@ export default function AddProductReplica() {
         setToastMessage(scrapedData.message || "Manual HTML input required");
         setToastError(false);
         setToastActive(true);
+        prevFetcherState.current = fetcher.state; // Update state
         return;
       }
       
@@ -227,20 +224,26 @@ export default function AddProductReplica() {
         setToastMessage(scrapedData.error);
         setToastError(true);
         setToastActive(true);
+        prevFetcherState.current = fetcher.state; // Update state
         return;
       }
 
-      setLoadingStep('Analyzing product data...');
-      animateProgress(55);
+      // Only populate fields when we get a NEW response (prevents stale data repopulating)
+      const isNewResponse = prevFetcherState.current === 'loading';
+      
+      if (isNewResponse) {
+        setLoadingStep('Analyzing product data...');
+        animateProgress(55);
 
-      // Single unified call to process all AI operations in parallel
-      processAllFetcher.submit(
-        {
-          title: scrapedData.productName,
-          description: scrapedData.description,
-        },
-        { method: 'post', action: '/api/ai/process-all', encType: 'application/json' }
-      );
+        // Single unified call to process all AI operations in parallel
+        processAllFetcher.submit(
+          {
+            title: scrapedData.productName,
+            description: scrapedData.description,
+          },
+          { method: 'post', action: '/api/ai/process-all', encType: 'application/json' }
+        );
+      }
     }
     
     // Update previous state for next comparison
