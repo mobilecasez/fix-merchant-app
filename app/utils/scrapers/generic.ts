@@ -9,8 +9,8 @@ export const MANUAL_HTML_REQUIRED = "MANUAL_HTML_REQUIRED";
  * Strategy:
  * 1. Try auto-fetch with good headers
  * 2. If blocked → return flag for manual HTML paste
- * 3. Parse HTML using common patterns (Open Graph, JSON-LD, meta tags)
- * 4. If parsing fails → use Gemini AI
+ * 3. When manual HTML provided → use Gemini AI directly (accurate extraction)
+ * 4. When auto-fetched → try pattern parsing first, then AI fallback
  */
 export async function scrapeGeneric(
   html: string,
@@ -21,6 +21,7 @@ export async function scrapeGeneric(
     console.log('[Generic Scraper] Starting scrape for:', url);
     
     let htmlContent = html || "";
+    let isManualHtml = false;
     
     // If no HTML provided, try to fetch it
     if (!htmlContent) {
@@ -68,15 +69,20 @@ export async function scrapeGeneric(
         console.error('[Generic Scraper] Fetch failed:', fetchError);
         return MANUAL_HTML_REQUIRED;
       }
+    } else {
+      // HTML was provided manually by user
+      isManualHtml = true;
+      console.log('[Generic Scraper] Using manually provided HTML, length:', htmlContent.length);
     }
     
-    // If useAI flag is set, use Gemini directly
-    if (useAI) {
-      console.log('[Generic Scraper] Using AI parsing (forced)');
+    // CRITICAL: If manual HTML or useAI flag is set, use Gemini AI directly
+    // Pattern-based parsing is too fragile for diverse website structures
+    if (isManualHtml || useAI) {
+      console.log('[Generic Scraper] Using AI parsing (manual HTML or forced)');
       return await parseWithGemini(htmlContent, url);
     }
     
-    // Try to parse HTML using common patterns
+    // For auto-fetched HTML, try pattern-based parsing first (faster)
     console.log('[Generic Scraper] Attempting pattern-based parsing...');
     const parsedData = parseGenericHTML(htmlContent, url);
     
@@ -366,43 +372,73 @@ async function parseWithGemini(html: string, url: string): Promise<ScrapedProduc
     // Truncate HTML to avoid token limits (keep first 50k chars)
     const truncatedHtml = html.substring(0, 50000);
     
-    const prompt = `You are an expert at extracting product data from e-commerce websites. Analyze this HTML and extract product information with EXTREME ACCURACY.
+    const prompt = `You are a professional e-commerce data extraction expert. Your task is to analyze this product page HTML and extract ACCURATE product information.
 
-Return ONLY a valid JSON object (no markdown, no explanations) with this exact structure:
+Return ONLY a valid JSON object (no markdown code blocks, no explanations, no extra text) in this exact format:
 
 {
   "productName": "exact product name",
-  "description": "product description in HTML format",
-  "price": "current selling price (numeric only)",
-  "compareAtPrice": "MRP/original price if shown",
-  "images": ["array of full image URLs"],
+  "description": "product description in HTML",
+  "price": "selling price number",
+  "compareAtPrice": "MRP/original price",
+  "images": ["image URLs"],
   "vendor": "brand name",
-  "productType": "category",
-  "sku": "SKU",
+  "productType": "product category/type",
+  "sku": "SKU code",
   "weight": "weight value",
   "weightUnit": "unit"
 }
 
-CRITICAL INSTRUCTIONS:
-1. PRODUCT NAME: Extract the EXACT product name/title. DO NOT use meta og:title if it contains website name. Look for:
-   - Product-specific headings (h1 with product/title class)
-   - JSON-LD product name
-   - Clean page title (remove website name/brand suffixes after | or -)
+EXTRACTION RULES (FOLLOW EXACTLY):
 
-2. PRICE: Current selling price (after discount). Remove currency symbols (₹, $, etc.). Just the number.
+1. PRODUCT NAME - Extract the ACTUAL product title shown to customers:
+   • Look for main product heading (usually h1 tag or prominent title)
+   • DO NOT use website name, store name, or meta og:title if it includes brand suffixes
+   • Remove website name after " | " or " - " characters
+   • Example: "Men's Cotton Shirt - Blue" NOT "Men's Cotton Shirt - Blue | AJIO"
 
-3. COMPARE AT PRICE (MRP): This is CRITICAL for Indian sites. Look for:
-   - Strikethrough/crossed-out prices (<del>, <s>, <strike> tags)
-   - Labels: "MRP", "M.R.P.", "Was:", "Original Price:", "List Price:"
-   - Should be HIGHER than selling price
-   - If not found, leave as empty string (don't calculate)
+2. DESCRIPTION - Extract comprehensive product details:
+   • Include features, specifications, material, care instructions
+   • Format in clean HTML with <p>, <ul>, <li> tags
+   • Include size guide, fit info if available
+   • At least 100-200 words of meaningful content
 
-4. IMAGES: Extract ALL product image URLs (not logos/icons). Must start with http/https.
+3. PRICE - Current selling price (customer pays this):
+   • Extract the LOWEST visible price
+   • Remove ALL currency symbols (₹, Rs, $, etc.)
+   • Remove commas, spaces
+   • Just the numeric value: "1499" NOT "₹1,499"
 
-5. DESCRIPTION: Key product features and details in HTML format.
+4. COMPARE AT PRICE (MRP) - CRITICAL for showing discounts:
+   • Find strikethrough/crossed prices (<del>, <s>, <strike> tags)
+   • Look for "MRP:", "M.R.P.:", "Was:", "Original Price:", "List Price:"
+   • MUST be HIGHER than selling price
+   • If genuinely not found, use empty string "" (don't make up or calculate)
 
-HTML:
+5. IMAGES - Product photos only:
+   • Extract ALL product image URLs (ignore logos, banners, ads)
+   • Must start with http:// or https://
+   • Include zoom/high-res versions if available
+   • Minimum 3-5 images preferred
+
+6. VENDOR - Brand/manufacturer name:
+   • Extract brand name from product page
+   • NOT the store/website name
+   • Example: "Nike" NOT "myntra.com"
+
+7. PRODUCT TYPE - Category/classification:
+   • What type of product is this?
+   • Examples: "Shirt", "T-Shirt", "Jeans", "Shoes", "Watch"
+   • Be specific: "Men's Casual Shirt" better than just "Clothing"
+
+8. WEIGHT - Physical weight if mentioned:
+   • Look in product specifications table
+   • Only if explicitly stated
+   • Empty string if not found
+
+HTML to analyze:
 ${truncatedHtml}`;
+
 
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
