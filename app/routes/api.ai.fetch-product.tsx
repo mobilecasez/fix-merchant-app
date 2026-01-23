@@ -241,7 +241,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
             message: "The website is blocking automated access. Please manually copy the HTML:",
             instructions: [
               "1. Open the product URL in your browser",
-              "2. Right-click on the page and select 'View Page Source' (or press Ctrl+U / Cmd+Option+U)",
+              "2. Press Ctrl+U (Windows) or Cmd+Option+U (Mac) to view page source",
+              "   (If right-click is disabled, use keyboard shortcut)",
               "3. Select all the HTML (Ctrl+A / Cmd+A) and copy it",
               "4. Paste the HTML in the text box below and click Import again"
             ]

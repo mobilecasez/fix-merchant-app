@@ -651,46 +651,52 @@ export default function AddProductReplica() {
                 />
                 
                 {/* Manual HTML Input - shown when auto-fetch is blocked */}
-                {showManualHtmlInput && (
+                {(showManualHtmlInput || manualHtml) && (
                   <BlockStack gap="300">
-                    <Box 
-                      borderWidth="025" 
-                      borderRadius="200" 
-                      borderColor="border"
-                      padding="400"
-                      background="bg-surface-warning"
-                    >
-                      <BlockStack gap="200">
-                        <Text variant="headingSm" as="h3">
-                          🔒 Website Blocking Detected
-                        </Text>
-                        <Text variant="bodySm" as="p">
-                          The website is blocking automated access. Follow these steps to manually import:
-                        </Text>
-                        <Box paddingBlockStart="200">
-                          <BlockStack gap="100">
-                            <Text variant="bodyXs" as="p">1. Open the product URL in your browser</Text>
-                            <Text variant="bodyXs" as="p">2. Right-click → "View Page Source" (Ctrl+U / Cmd+Option+U)</Text>
-                            <Text variant="bodyXs" as="p">3. Select all HTML (Ctrl+A / Cmd+A) and copy it</Text>
-                            <Text variant="bodyXs" as="p">4. Paste the HTML below and click Import again</Text>
-                          </BlockStack>
-                        </Box>
-                      </BlockStack>
-                    </Box>
+                    {showManualHtmlInput && (
+                      <Box 
+                        borderWidth="025" 
+                        borderRadius="200" 
+                        borderColor="border"
+                        padding="400"
+                        background="bg-surface-warning"
+                      >
+                        <BlockStack gap="200">
+                          <Text variant="headingSm" as="h3">
+                            🔒 Website Blocking Detected
+                          </Text>
+                          <Text variant="bodySm" as="p">
+                            The website is blocking automated access. Follow these steps to manually import:
+                          </Text>
+                          <Box paddingBlockStart="200">
+                            <BlockStack gap="100">
+                              <Text variant="bodyXs" as="p">1. Open the product URL in your browser</Text>
+                              <Text variant="bodyXs" as="p" fontWeight="semibold">2. Press Ctrl+U (Windows) or Cmd+Option+U (Mac) to view page source</Text>
+                              <Text variant="bodyXs" as="p" tone="subdued">(If right-click is disabled, use keyboard shortcut above)</Text>
+                              <Text variant="bodyXs" as="p">3. Select all HTML (Ctrl+A / Cmd+A) and copy it</Text>
+                              <Text variant="bodyXs" as="p">4. Paste the HTML below and click Import</Text>
+                            </BlockStack>
+                          </Box>
+                        </BlockStack>
+                      </Box>
+                    )}
                     <TextField
                       label="Paste HTML Source Code"
                       value={manualHtml}
-                      onChange={(value) => {
-                        setManualHtml(value);
-                        if (value.trim()) {
-                          setShowManualHtmlInput(false); // Hide warning once HTML is pasted
-                        }
-                      }}
+                      onChange={setManualHtml}
                       multiline={8}
                       autoComplete="off"
                       placeholder="Paste the complete HTML source code here..."
-                      helpText="Our AI will extract product information from the HTML"
+                      helpText={manualHtml.trim() ? `HTML pasted (${Math.round(manualHtml.length / 1024)}KB) - Click Import above to process` : "Our AI will extract product information from the HTML"}
                     />
+                    {manualHtml.trim() && (
+                      <Button 
+                        onClick={() => setManualHtml('')}
+                        size="slim"
+                      >
+                        Clear HTML
+                      </Button>
+                    )}
                   </BlockStack>
                 )}
               </FormLayout>
