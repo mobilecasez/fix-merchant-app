@@ -589,6 +589,17 @@ export default function AddProductReplica() {
     });
   };
 
+  // Top Import button - clears manual HTML and starts fresh
+  const handleFetchProductFromUrl = () => {
+    // Clear any pasted HTML
+    setManualHtml('');
+    setShowManualHtmlInput(false);
+    setHtmlPanelOpen(false);
+    
+    // Then call the normal fetch
+    handleFetchProduct();
+  };
+
   return (
     <Frame>
       <ShopFlixLoader 
@@ -641,13 +652,7 @@ export default function AddProductReplica() {
                   helpText="Supports Amazon, Flipkart, eBay, and most e-commerce websites"
                   connectedRight={
                     <Button 
-                      onClick={() => {
-                        // Clear manual HTML and reset panel when using top button
-                        setManualHtml('');
-                        setShowManualHtmlInput(false);
-                        setHtmlPanelOpen(true);
-                        handleFetchProduct();
-                      }} 
+                      onClick={handleFetchProductFromUrl} 
                       loading={isFetchingProduct} 
                       disabled={isFetchingProduct || !productUrl}
                       variant="primary"
