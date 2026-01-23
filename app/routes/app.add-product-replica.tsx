@@ -206,7 +206,6 @@ export default function AddProductReplica() {
         }
         setShowLoader(false);
         setShowManualHtmlInput(true);
-        setHtmlPanelOpen(true); // Open the panel immediately
         setToastMessage(scrapedData.message || "Manual HTML input required");
         setToastError(false);
         setToastActive(true);
@@ -578,11 +577,10 @@ export default function AddProductReplica() {
     const formData = new FormData();
     formData.append("url", productUrl);
     
-    // If manual HTML is provided, include it and collapse the panel
+    // If manual HTML is provided, include it
     if (manualHtml && manualHtml.trim()) {
       formData.append("manualHtml", manualHtml);
       console.log("Including manual HTML, length:", manualHtml.length);
-      setHtmlPanelOpen(false); // Auto-collapse after import
     }
     
     fetcher.submit(formData, {
@@ -669,15 +667,15 @@ export default function AddProductReplica() {
                       onClick={() => setHtmlPanelOpen(!htmlPanelOpen)}
                     >
                       <InlineStack align="space-between" blockAlign="center">
-                        <Text variant="headingSm" as="h3" fontWeight="semibold">
+                        <Text variant="headingMd" as="h3">
                           🔒 Manual HTML Import {manualHtml.trim() && `(${Math.round(manualHtml.length / 1024)}KB)`}
                         </Text>
                         <Button 
+                          plain
                           onClick={(e) => {
                             e.stopPropagation();
                             setHtmlPanelOpen(!htmlPanelOpen);
                           }}
-                          size="slim"
                         >
                           {htmlPanelOpen ? '▲ Collapse' : '▼ Expand'}
                         </Button>
@@ -689,23 +687,25 @@ export default function AddProductReplica() {
                         <BlockStack gap="400">
                           {showManualHtmlInput && (
                             <Box 
+                              borderWidth="025" 
+                              borderRadius="200" 
+                              borderColor="border"
                               padding="400"
                               background="bg-surface-warning"
-                              borderRadius="200"
                             >
                               <BlockStack gap="200">
-                                <Text variant="bodySm" fontWeight="semibold">
+                                <Text variant="headingSm" as="h3">
                                   Website Blocking Detected
                                 </Text>
                                 <Text variant="bodySm" as="p">
                                   The website is blocking automated access. Follow these steps:
                                 </Text>
-                                <Box paddingBlockStart="100">
+                                <Box paddingBlockStart="200">
                                   <BlockStack gap="100">
                                     <Text variant="bodyXs" as="p">1. Open the product URL in your browser</Text>
-                                    <Text variant="bodyXs" as="p" fontWeight="semibold">2. Press Ctrl+U (Windows) or Cmd+Option+U (Mac)</Text>
-                                    <Text variant="bodyXs" as="p" tone="subdued">(Use keyboard shortcut if right-click is disabled)</Text>
-                                    <Text variant="bodyXs" as="p">3. Select all HTML (Ctrl+A / Cmd+A) and copy</Text>
+                                    <Text variant="bodyXs" as="p" fontWeight="semibold">2. Press Ctrl+U (Windows) or Cmd+Option+U (Mac) to view page source</Text>
+                                    <Text variant="bodyXs" as="p" tone="subdued">(If right-click is disabled, use keyboard shortcut above)</Text>
+                                    <Text variant="bodyXs" as="p">3. Select all HTML (Ctrl+A / Cmd+A) and copy it</Text>
                                     <Text variant="bodyXs" as="p">4. Paste below and click Import</Text>
                                   </BlockStack>
                                 </Box>
@@ -713,43 +713,66 @@ export default function AddProductReplica() {
                             </Box>
                           )}
                           
-                          <div style={{ 
-                            height: '250px',
-                            border: '1px solid #c9cccf',
-                            borderRadius: '8px',
-                            overflow: 'hidden',
-                            backgroundColor: '#f6f6f7'
-                          }}>
-                            <textarea
-                              value={manualHtml}
-                              onChange={(e) => setManualHtml(e.target.value)}
-                              placeholder="Paste the complete HTML source code here..."
-                              style={{
-                                width: '100%',
-                                height: '100%',
-                                padding: '12px',
-                                border: 'none',
-                                outline: 'none',
-                                fontFamily: 'Monaco, Courier, monospace',
-                                fontSize: '13px',
-                                resize: 'none',
-                                backgroundColor: 'transparent'
-                              }}
-                            />
+                          <div style={{ position: 'relative' }}>
+                            <label style={{ 
+                              display: 'block', 
+                              marginBottom: '8px', 
+                              fontWeight: 500,
+                              fontSize: '14px'
+                            }}>
+                              Paste HTML Source Code
+                            </label>
+                            <div style={{ 
+                              height: '250px',
+                              border: '1px solid #c9cccf',
+                              borderRadius: '8px',
+                              overflow: 'hidden',
+                              backgroundColor: '#f6f6f7'
+                            }}>
+                              <textarea
+                                value={manualHtml}
+                                onChange={(e) => setManualHtml(e.target.value)}
+                                placeholder="Paste the complete HTML source code here..."
+                                style={{
+                                  width: '100%',
+                                  height: '100%',
+                                  padding: '12px',
+                                  border: 'none',
+                                  outline: 'none',
+                                  fontFamily: 'Monaco, Courier, monospace',
+                                  fontSize: '13px',
+                                  resize: 'none',
+                                  backgroundColor: 'transparent'
+                                }}
+                              />
+                            </div>
+                            <div style={{ 
+                              marginTop: '8px', 
+                              fontSize: '13px', 
+                              color: '#6d7175'
+                            }}>
+                              {manualHtml.trim() 
+                                ? `Ready to import - Click Import button below`
+                                : "Paste HTML and click Import button below"}
+                            </div>
                           </div>
                           
                           <InlineStack gap="200">
                             <Button 
-                              onClick={handleFetchProduct}
+                              variant="primary"
+                              onClick={() => {
+                                handleFetchProduct();
+                                setHtmlPanelOpen(false);
+                              }}
                               loading={isFetchingProduct}
                               disabled={!manualHtml.trim() || isFetchingProduct || !productUrl}
-                              variant="primary"
                             >
                               {isFetchingProduct ? 'Importing...' : 'Import Product'}
                             </Button>
                             <Button 
                               onClick={() => setManualHtml('')}
                               disabled={!manualHtml.trim()}
+                              tone="critical"
                             >
                               Clear HTML
                             </Button>
