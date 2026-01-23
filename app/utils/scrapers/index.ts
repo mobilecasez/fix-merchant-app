@@ -37,7 +37,7 @@ async function withTimeout<T>(
 
 // Wrapper for scrapers with timeout
 function createTimeoutScraper(scraper: ScraperFunction, timeoutMs: number = 60000): ScraperFunction {
-  return async (html: string, url: string): Promise<ScrapedProductData> => {
+  return async (html: string, url: string): Promise<ScrapedProductData | typeof MANUAL_HTML_REQUIRED> => {
     try {
       return await withTimeout(
         scraper(html, url),

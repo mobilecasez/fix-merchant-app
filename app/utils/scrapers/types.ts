@@ -23,4 +23,4 @@ export interface ScrapedProductData {
   }>;
 }
 
-export type ScraperFunction = (html: string, url: string) => Promise<ScrapedProductData>;
+export type ScraperFunction = (html: string, url: string) => Promise<ScrapedProductData | string>;
