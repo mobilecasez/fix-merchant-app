@@ -1,6 +1,7 @@
 import { ScrapedProductData } from "./types";
 import { cleanProductName, ensureCompareAtPrice, parseWeight, estimateWeight } from "./helpers";
-import puppeteer from "puppeteer";
+import puppeteer from "puppeteer-extra";
+import StealthPlugin from "puppeteer-extra-plugin-stealth";
 
 export async function scrapeMyntra(html: string, url: string): Promise<ScrapedProductData> {
   try {
@@ -32,7 +33,11 @@ export async function scrapeMyntra(html: string, url: string): Promise<ScrapedPr
 async function scrapeMyntraWithPuppeteer(url: string): Promise<ScrapedProductData> {
   let browser;
   try {
-    console.log('[Myntra Puppeteer] Launching browser with stealth mode...');
+    console.log('[Myntra Puppeteer] Using puppeteer-extra with stealth plugin...');
+    
+    // Add stealth plugin to evade detection
+    puppeteer.use(StealthPlugin());
+    
     browser = await puppeteer.launch({
       headless: true,
       args: [
@@ -42,46 +47,14 @@ async function scrapeMyntraWithPuppeteer(url: string): Promise<ScrapedProductDat
         '--disable-gpu',
         '--window-size=1920,1080',
         '--disable-blink-features=AutomationControlled',
-        '--disable-features=IsolateOrigins,site-per-process',
         '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
       ]
     });
 
     const page = await browser.newPage();
     
-    // Hide webdriver property and other automation indicators
-    await page.evaluateOnNewDocument(() => {
-      // Remove webdriver property
-      Object.defineProperty(navigator, 'webdriver', {
-        get: () => false,
-      });
-      
-      // Override the plugins array
-      Object.defineProperty(navigator, 'plugins', {
-        get: () => [1, 2, 3, 4, 5],
-      });
-      
-      // Override languages
-      Object.defineProperty(navigator, 'languages', {
-        get: () => ['en-US', 'en'],
-      });
-      
-      // Add chrome object
-      (window as any).chrome = {
-        runtime: {},
-      };
-      
-      // Override permissions
-      const originalQuery = window.navigator.permissions.query;
-      window.navigator.permissions.query = (parameters: any) =>
-        parameters.name === 'notifications'
-          ? Promise.resolve({ state: 'denied' } as PermissionStatus)
-          : originalQuery(parameters);
-    });
-    
-    // Set realistic viewport and user agent
+    // Set realistic viewport
     await page.setViewport({ width: 1920, height: 1080 });
-    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
     
     // Set comprehensive headers
     await page.setExtraHTTPHeaders({
@@ -101,13 +74,13 @@ async function scrapeMyntraWithPuppeteer(url: string): Promise<ScrapedProductDat
 
     console.log('[Myntra Puppeteer] Navigating to URL...');
     await page.goto(url, { 
-      waitUntil: 'domcontentloaded',
-      timeout: 60000 
+      waitUntil: 'networkidle0',
+      timeout: 90000 
     });
 
     // Wait for dynamic content to load
     console.log('[Myntra Puppeteer] Waiting for content to load...');
-    await new Promise(resolve => setTimeout(resolve, 5000));
+    await new Promise(resolve => setTimeout(resolve, 8000));
 
     const htmlContent = await page.content();
     console.log('[Myntra Puppeteer] Page loaded! HTML length:', htmlContent.length);
