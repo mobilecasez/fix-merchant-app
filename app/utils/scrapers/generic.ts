@@ -1,0 +1,427 @@
+import { ScrapedProductData } from "./types";
+import { cleanProductName, ensureCompareAtPrice, estimateWeight } from "./helpers";
+
+// Special flag to indicate manual HTML is needed
+export const MANUAL_HTML_REQUIRED = "MANUAL_HTML_REQUIRED";
+
+/**
+ * Generic scraper for any e-commerce website
+ * Strategy:
+ * 1. Try auto-fetch with good headers
+ * 2. If blocked → return flag for manual HTML paste
+ * 3. Parse HTML using common patterns (Open Graph, JSON-LD, meta tags)
+ * 4. If parsing fails → use Gemini AI
+ */
+export async function scrapeGeneric(
+  html: string,
+  url: string,
+  useAI: boolean = false
+): Promise<ScrapedProductData | typeof MANUAL_HTML_REQUIRED> {
+  try {
+    console.log('[Generic Scraper] Starting scrape for:', url);
+    
+    let htmlContent = html || "";
+    
+    // If no HTML provided, try to fetch it
+    if (!htmlContent) {
+      console.log('[Generic Scraper] Attempting auto-fetch...');
+      
+      try {
+        const response = await fetch(url, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'DNT': '1',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1',
+            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Site': 'none',
+            'Sec-Fetch-User': '?1',
+            'Cache-Control': 'max-age=0',
+          },
+        });
+        
+        if (!response.ok) {
+          console.log(`[Generic Scraper] HTTP error: ${response.status}`);
+          return MANUAL_HTML_REQUIRED;
+        }
+        
+        htmlContent = await response.text();
+        console.log('[Generic Scraper] Auto-fetch successful, HTML length:', htmlContent.length);
+        
+        // Check for common blocking patterns
+        if (
+          htmlContent.length < 5000 ||
+          htmlContent.toLowerCase().includes('captcha') ||
+          htmlContent.toLowerCase().includes('access denied') ||
+          htmlContent.toLowerCase().includes('blocked') ||
+          htmlContent.toLowerCase().includes('robot') ||
+          htmlContent.toLowerCase().includes('site maintenance')
+        ) {
+          console.log('[Generic Scraper] Detected blocking/CAPTCHA, requesting manual HTML');
+          return MANUAL_HTML_REQUIRED;
+        }
+      } catch (fetchError) {
+        console.error('[Generic Scraper] Fetch failed:', fetchError);
+        return MANUAL_HTML_REQUIRED;
+      }
+    }
+    
+    // If useAI flag is set, use Gemini directly
+    if (useAI) {
+      console.log('[Generic Scraper] Using AI parsing (forced)');
+      return await parseWithGemini(htmlContent, url);
+    }
+    
+    // Try to parse HTML using common patterns
+    console.log('[Generic Scraper] Attempting pattern-based parsing...');
+    const parsedData = parseGenericHTML(htmlContent, url);
+    
+    // If we got good data (title + at least one image), return it
+    if (parsedData.productName && parsedData.images.length > 0) {
+      console.log('[Generic Scraper] Pattern-based parsing successful');
+      return parsedData;
+    }
+    
+    // Otherwise, fall back to AI
+    console.log('[Generic Scraper] Pattern-based parsing incomplete, using AI...');
+    return await parseWithGemini(htmlContent, url);
+    
+  } catch (error) {
+    console.error('[Generic Scraper] Error:', error);
+    // Return empty data to trigger manual flow
+    return MANUAL_HTML_REQUIRED;
+  }
+}
+
+/**
+ * Parse HTML using common e-commerce patterns
+ * Looks for: Open Graph, JSON-LD, meta tags, common selectors
+ */
+function parseGenericHTML(html: string, url: string): ScrapedProductData {
+  console.log('[Generic Parser] Extracting data from HTML...');
+  
+  const data: ScrapedProductData = {
+    productName: "",
+    description: "",
+    price: "",
+    images: [],
+    vendor: extractDomain(url),
+    productType: "",
+    tags: "",
+    compareAtPrice: "",
+    costPerItem: "",
+    sku: "",
+    barcode: "",
+    weight: "",
+    weightUnit: "kg",
+    options: [],
+    variants: [],
+  };
+  
+  // 1. Try JSON-LD structured data
+  const jsonLdMatch = html.match(/<script[^>]*type=["']application\/ld\+json["'][^>]*>(.*?)<\/script>/gis);
+  if (jsonLdMatch) {
+    console.log(`[Generic Parser] Found ${jsonLdMatch.length} JSON-LD blocks`);
+    for (const match of jsonLdMatch) {
+      try {
+        const jsonText = match.replace(/<script[^>]*>/i, '').replace(/<\/script>/i, '');
+        const jsonData = JSON.parse(jsonText);
+        
+        // Extract product data from JSON-LD
+        if (jsonData['@type'] === 'Product' || jsonData.name) {
+          data.productName = data.productName || jsonData.name || "";
+          data.description = data.description || jsonData.description || "";
+          
+          // Price from JSON-LD
+          if (jsonData.offers) {
+            const offers = Array.isArray(jsonData.offers) ? jsonData.offers[0] : jsonData.offers;
+            data.price = data.price || offers.price || "";
+            
+            // Compare at price (highPrice or price before discount)
+            if (offers.highPrice) {
+              data.compareAtPrice = offers.highPrice;
+            }
+          }
+          
+          // Images from JSON-LD
+          if (jsonData.image) {
+            const images = Array.isArray(jsonData.image) ? jsonData.image : [jsonData.image];
+            images.forEach((img: any) => {
+              const imgUrl = typeof img === 'string' ? img : img.url || img.contentUrl;
+              if (imgUrl && imgUrl.startsWith('http')) {
+                data.images.push(imgUrl);
+              }
+            });
+          }
+          
+          // SKU
+          data.sku = data.sku || jsonData.sku || "";
+          
+          // Brand as vendor
+          if (jsonData.brand) {
+            const brand = typeof jsonData.brand === 'string' ? jsonData.brand : jsonData.brand.name;
+            data.vendor = brand || data.vendor;
+          }
+          
+          console.log('[Generic Parser] ✓ Extracted from JSON-LD:', {
+            name: data.productName.substring(0, 50),
+            price: data.price,
+            images: data.images.length
+          });
+        }
+      } catch (e) {
+        // Skip invalid JSON
+      }
+    }
+  }
+  
+  // 2. Try Open Graph meta tags
+  const ogTitle = html.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)["']/i);
+  if (ogTitle && !data.productName) {
+    data.productName = ogTitle[1];
+    console.log('[Generic Parser] ✓ Title from og:title');
+  }
+  
+  const ogDescription = html.match(/<meta[^>]*property=["']og:description["'][^>]*content=["']([^"']+)["']/i);
+  if (ogDescription && !data.description) {
+    data.description = ogDescription[1];
+    console.log('[Generic Parser] ✓ Description from og:description');
+  }
+  
+  const ogImage = html.match(/<meta[^>]*property=["']og:image["'][^>]*content=["']([^"']+)["']/gi);
+  if (ogImage) {
+    ogImage.forEach(match => {
+      const imgMatch = match.match(/content=["']([^"']+)["']/i);
+      if (imgMatch && imgMatch[1].startsWith('http')) {
+        data.images.push(imgMatch[1]);
+      }
+    });
+    console.log(`[Generic Parser] ✓ Found ${ogImage.length} og:image tags`);
+  }
+  
+  // 3. Try meta description as fallback
+  if (!data.description) {
+    const metaDesc = html.match(/<meta[^>]*name=["']description["'][^>]*content=["']([^"']+)["']/i);
+    if (metaDesc) {
+      data.description = metaDesc[1];
+      console.log('[Generic Parser] ✓ Description from meta description');
+    }
+  }
+  
+  // 4. Try common price patterns
+  if (!data.price) {
+    const pricePatterns = [
+      /["']price["']\s*:\s*["']?(\d+\.?\d*)["']?/i,
+      /\$\s*(\d+\.?\d{0,2})/,
+      /₹\s*(\d+\.?\d{0,2})/,
+      /£\s*(\d+\.?\d{0,2})/,
+      /€\s*(\d+\.?\d{0,2})/,
+      /price[^>]*>.*?(\d+\.?\d{0,2})/i,
+    ];
+    
+    for (const pattern of pricePatterns) {
+      const match = html.match(pattern);
+      if (match) {
+        data.price = match[1];
+        console.log('[Generic Parser] ✓ Price from pattern:', data.price);
+        break;
+      }
+    }
+  }
+  
+  // 5. Try to find more images using common patterns
+  if (data.images.length < 3) {
+    const imgPatterns = [
+      /<img[^>]*src=["']([^"']*product[^"']+)["']/gi,
+      /<img[^>]*data-src=["']([^"']+)["']/gi,
+      /["']image["']\s*:\s*["']([^"']+)["']/gi,
+    ];
+    
+    for (const pattern of imgPatterns) {
+      const matches = html.matchAll(pattern);
+      for (const match of matches) {
+        const imgUrl = match[1];
+        if (imgUrl && (imgUrl.startsWith('http') || imgUrl.startsWith('//'))) {
+          const fullUrl = imgUrl.startsWith('//') ? 'https:' + imgUrl : imgUrl;
+          if (!data.images.includes(fullUrl)) {
+            data.images.push(fullUrl);
+          }
+        }
+      }
+    }
+    console.log(`[Generic Parser] Total images found: ${data.images.length}`);
+  }
+  
+  // Clean up images (remove duplicates, invalid URLs)
+  data.images = Array.from(new Set(data.images))
+    .filter(img => img && img.startsWith('http'))
+    .slice(0, 10); // Max 10 images
+  
+  // Ensure compare at price
+  data.compareAtPrice = ensureCompareAtPrice(data.price, data.compareAtPrice);
+  
+  // Estimate weight if not found
+  if (!data.weight) {
+    const weightParsed = estimateWeight(data.productName);
+    data.weight = weightParsed.value;
+    data.weightUnit = weightParsed.unit;
+  }
+  
+  console.log('[Generic Parser] Final result:', {
+    name: data.productName.substring(0, 50),
+    price: data.price,
+    images: data.images.length,
+    description: data.description.substring(0, 100)
+  });
+  
+  return data;
+}
+
+/**
+ * Parse HTML using Google Gemini AI
+ */
+async function parseWithGemini(html: string, url: string): Promise<ScrapedProductData> {
+  console.log('[Generic Scraper] Using Gemini AI to parse HTML...');
+  
+  try {
+    // Get Gemini API key from environment
+    const apiKey = process.env.GOOGLE_GEMINI_API_KEY;
+    if (!apiKey) {
+      throw new Error('GOOGLE_GEMINI_API_KEY not configured');
+    }
+    
+    // Truncate HTML to avoid token limits (keep first 50k chars)
+    const truncatedHtml = html.substring(0, 50000);
+    
+    const prompt = `Extract product information from this e-commerce webpage HTML and return ONLY a valid JSON object with this exact structure:
+
+{
+  "productName": "product title",
+  "description": "product description in HTML format with <p> tags",
+  "price": "numeric price without currency symbol",
+  "compareAtPrice": "original/MSRP price if available, otherwise empty string",
+  "images": ["array", "of", "full", "image", "URLs"],
+  "vendor": "brand or store name",
+  "productType": "product category",
+  "sku": "SKU if available",
+  "weight": "weight value",
+  "weightUnit": "kg or lb or g"
+}
+
+Rules:
+- Return ONLY the JSON object, no markdown, no explanations
+- Extract ALL product images you can find (full URLs)
+- Keep prices as numbers only (no currency symbols)
+- If compareAtPrice is not found, calculate it as 20% higher than price
+- Description should include key features in HTML format
+- If weight not found, estimate based on product type
+
+HTML:
+${truncatedHtml}`;
+
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          contents: [{
+            parts: [{
+              text: prompt
+            }]
+          }],
+          generationConfig: {
+            temperature: 0.1,
+            maxOutputTokens: 2048,
+          }
+        }),
+      }
+    );
+    
+    if (!response.ok) {
+      throw new Error(`Gemini API error: ${response.status}`);
+    }
+    
+    const result = await response.json();
+    const generatedText = result.candidates?.[0]?.content?.parts?.[0]?.text || "";
+    
+    console.log('[Generic Scraper] Gemini response length:', generatedText.length);
+    
+    // Extract JSON from response (remove markdown code blocks if present)
+    let jsonText = generatedText.trim();
+    if (jsonText.startsWith('```')) {
+      jsonText = jsonText.replace(/```json?\n?/g, '').replace(/```\n?$/g, '');
+    }
+    
+    const parsedData = JSON.parse(jsonText);
+    console.log('[Generic Scraper] ✓ Gemini parsing successful');
+    
+    // Ensure all required fields exist
+    const data: ScrapedProductData = {
+      productName: cleanProductName(parsedData.productName || ""),
+      description: parsedData.description || "",
+      price: parsedData.price || "",
+      images: Array.isArray(parsedData.images) ? parsedData.images.filter((img: string) => img.startsWith('http')) : [],
+      vendor: parsedData.vendor || extractDomain(url),
+      productType: parsedData.productType || "",
+      tags: parsedData.tags || "",
+      compareAtPrice: parsedData.compareAtPrice || ensureCompareAtPrice(parsedData.price, ""),
+      costPerItem: parsedData.costPerItem || "",
+      sku: parsedData.sku || "",
+      barcode: parsedData.barcode || "",
+      weight: parsedData.weight || "",
+      weightUnit: parsedData.weightUnit || "kg",
+      options: parsedData.options || [],
+      variants: parsedData.variants || [],
+    };
+    
+    // Estimate weight if not found
+    if (!data.weight) {
+      const weightParsed = estimateWeight(data.productName);
+      data.weight = weightParsed.value;
+      data.weightUnit = weightParsed.unit;
+    }
+    
+    return data;
+    
+  } catch (error) {
+    console.error('[Generic Scraper] Gemini AI parsing failed:', error);
+    
+    // Return minimal data to indicate failure
+    return {
+      productName: "",
+      description: "",
+      price: "",
+      images: [],
+      vendor: extractDomain(url),
+      productType: "",
+      tags: "",
+      compareAtPrice: "",
+      costPerItem: "",
+      sku: "",
+      barcode: "",
+      weight: "",
+      weightUnit: "kg",
+      options: [],
+      variants: [],
+    };
+  }
+}
+
+/**
+ * Extract domain name from URL for vendor
+ */
+function extractDomain(url: string): string {
+  try {
+    const urlObj = new URL(url);
+    return urlObj.hostname.replace('www.', '').split('.')[0];
+  } catch {
+    return "Unknown";
+  }
+}

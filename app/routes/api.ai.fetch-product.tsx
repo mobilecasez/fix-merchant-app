@@ -1,7 +1,7 @@
 import { json, ActionFunctionArgs } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
 import { JSDOM } from "jsdom";
-import { getScraper } from "../utils/scrapers.server";
+import { getScraper, MANUAL_HTML_REQUIRED } from "../utils/scrapers.server";
 import { ensureCompareAtPrice } from "../utils/scrapers/helpers";
 import fs from "fs";
 import path from "path";
@@ -169,65 +169,85 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
   const formData = await request.formData();
   const url = formData.get("url") as string;
+  const manualHtml = formData.get("manualHtml") as string | null; // New field for manual HTML paste
 
   if (!url) {
     return json({ error: "URL is required" }, { status: 400 });
   }
 
   try {
-    let html = "";
-    let fetchSuccess = false;
+    let html = manualHtml || ""; // Use manual HTML if provided
+    let fetchSuccess = !!manualHtml; // If manual HTML provided, skip auto-fetch
     
-    // Try to fetch HTML with proven headers that bypass Amazon's anti-scraping
-    try {
-      console.log("Attempting to fetch:", url);
-      
-      // Add random delay to mimic human behavior
-      await new Promise(resolve => setTimeout(resolve, Math.random() * 1000 + 500));
-      
-      const response = await fetch(url, {
-        headers: {
-          'accept-language': 'en-US,en;q=0.9',
-          'accept-encoding': 'gzip, deflate, br',
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36',
-          'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-        },
-      });
-      
-      if (response.ok) {
-        html = await response.text();
+    // Only try auto-fetch if no manual HTML was provided
+    if (!manualHtml) {
+      try {
+        console.log("Attempting to fetch:", url);
         
-        // Check if we got a CAPTCHA or bot detection page
-        if (html.includes('Type the characters you see in this picture') || 
-            html.includes('Enter the characters you see below') ||
-            html.includes('To discuss automated access to Amazon data please contact') ||
-            html.toLowerCase().includes('robot check') ||
-            html.length < 10000) {
-          console.log(`Got CAPTCHA/bot detection page (size: ${html.length}), clearing HTML`);
-          fetchSuccess = false;
-          html = ""; // Clear the CAPTCHA HTML so scraper doesn't use it
+        // Add random delay to mimic human behavior
+        await new Promise(resolve => setTimeout(resolve, Math.random() * 1000 + 500));
+        
+        const response = await fetch(url, {
+          headers: {
+            'accept-language': 'en-US,en;q=0.9',
+            'accept-encoding': 'gzip, deflate, br',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36',
+            'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+          },
+        });
+        
+        if (response.ok) {
+          html = await response.text();
+          
+          // Check if we got a CAPTCHA or bot detection page
+          if (html.includes('Type the characters you see in this picture') || 
+              html.includes('Enter the characters you see below') ||
+              html.includes('To discuss automated access to Amazon data please contact') ||
+              html.toLowerCase().includes('robot check') ||
+              html.length < 10000) {
+            console.log(`Got CAPTCHA/bot detection page (size: ${html.length}), clearing HTML`);
+            fetchSuccess = false;
+            html = ""; // Clear the CAPTCHA HTML so scraper doesn't use it
+          } else {
+            fetchSuccess = true;
+            console.log(`Successfully fetched page, HTML length: ${html.length}`);
+          }
         } else {
-          fetchSuccess = true;
-          console.log(`Successfully fetched page, HTML length: ${html.length}`);
+          console.log(`Initial fetch failed with status ${response.status}, will try with scraper`);
         }
-      } else {
-        console.log(`Initial fetch failed with status ${response.status}, will try with scraper`);
+      } catch (fetchError) {
+        console.log("Initial fetch failed, will try with scraper:", fetchError);
       }
-    } catch (fetchError) {
-      console.log("Initial fetch failed, will try with scraper:", fetchError);
     }
 
     const scraper = getScraper(url);
 
     let productData;
     if (scraper) {
-      console.log("Using local scraper.");
+      console.log("Using specialized scraper.");
       try {
         // Log HTML to help with debugging (first 2000 chars)
         console.log("[SCRAPER HTML] First 2000 characters:");
         console.log(html.substring(0, 2000));
         
+        // Call scraper with manual HTML override if provided
         productData = await scraper(html, url);
+        
+        // Check if scraper returned MANUAL_HTML_REQUIRED flag
+        if (typeof productData === 'string' && productData === MANUAL_HTML_REQUIRED) {
+          console.log("[SCRAPER] Manual HTML required - auto-fetch blocked");
+          return json({
+            manualHtmlRequired: true,
+            message: "The website is blocking automated access. Please manually copy the HTML:",
+            instructions: [
+              "1. Open the product URL in your browser",
+              "2. Right-click on the page and select 'View Page Source' (or press Ctrl+U / Cmd+Option+U)",
+              "3. Select all the HTML (Ctrl+A / Cmd+A) and copy it",
+              "4. Paste the HTML in the text box below and click Import again"
+            ]
+          });
+        }
+        
         console.log("[SCRAPER] ========================================");
         console.log("[SCRAPER] Extracted images:", JSON.stringify(productData.images, null, 2));
         console.log("[SCRAPER] Total images:", productData.images?.length || 0);
@@ -271,7 +291,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         }
       }
     } else {
-      console.log("Using AI scraper.");
+      console.log("No specialized scraper found, using AI.");
       if (!fetchSuccess) {
         throw new Error("Cannot fetch URL - website may be blocking requests");
       }

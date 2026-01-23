@@ -10,7 +10,7 @@ import { scrapeMercadoLibre } from "./mercadolibre";
 import { scrapeJD } from "./jd";
 import { scrapeTaobao } from "./taobao";
 import { scrapeFlipkart } from "./flipkart";
-import { scrapeMyntra } from "./myntra";
+import { scrapeGeneric, MANUAL_HTML_REQUIRED } from "./generic";
 
 // Timeout wrapper to prevent hanging scrapers
 async function withTimeout<T>(
@@ -110,11 +110,17 @@ export function getScraper(url: string): ScraperFunction | null {
     return createTimeoutScraper(scrapeFlipkart, 60000);
   }
   
-  // Myntra - with 60s timeout
-  if (urlLower.includes("myntra.com")) {
-    return createTimeoutScraper(scrapeMyntra, 60000);
+  // Alibaba
+  if (urlLower.includes("alibaba.com")) {
+    // Note: Alibaba doesn't have a specific scraper yet, will use generic
+    return createTimeoutScraper(scrapeGeneric as ScraperFunction, 60000);
   }
   
-  // No matching scraper found
-  return null;
+  // Generic scraper for all other URLs (with 60s timeout)
+  // This handles any e-commerce site not explicitly supported above
+  console.log('[Scraper Router] Using generic scraper for:', url);
+  return createTimeoutScraper(scrapeGeneric as ScraperFunction, 60000);
 }
+
+// Export MANUAL_HTML_REQUIRED flag for use in routes
+export { MANUAL_HTML_REQUIRED };

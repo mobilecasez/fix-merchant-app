@@ -101,6 +101,8 @@ export default function AddProductReplica() {
   const [loadingStep, setLoadingStep] = useState('');
   const [showLoader, setShowLoader] = useState(false);
   const [productSource, setProductSource] = useState('the product source');
+  const [showManualHtmlInput, setShowManualHtmlInput] = useState(false);
+  const [manualHtml, setManualHtml] = useState('');
   const progressIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const targetProgressRef = useRef(0);
   
@@ -110,7 +112,7 @@ export default function AddProductReplica() {
       const hostname = new URL(url).hostname.toLowerCase();
       if (hostname.includes('amazon')) return 'Amazon';
       if (hostname.includes('flipkart')) return 'Flipkart';
-      if (hostname.includes('myntra')) return 'Myntra';
+      if (hostname.includes('alibaba')) return 'Alibaba';
       if (hostname.includes('ajio')) return 'Ajio';
       if (hostname.includes('meesho')) return 'Meesho';
       if (hostname.includes('snapdeal')) return 'Snapdeal';
@@ -193,6 +195,20 @@ export default function AddProductReplica() {
         console.log("📄 RAW HTML FROM SCRAPER (first 3000 chars):");
         console.log(scrapedData.debugHtml.substring(0, 3000));
         console.log("📄 HTML length:", scrapedData.debugHtml.length);
+      }
+      
+      // Handle manual HTML required response
+      if (scrapedData.manualHtmlRequired) {
+        if (progressIntervalRef.current) {
+          clearInterval(progressIntervalRef.current);
+          progressIntervalRef.current = null;
+        }
+        setShowLoader(false);
+        setShowManualHtmlInput(true);
+        setToastMessage(scrapedData.message || "Manual HTML input required");
+        setToastError(false);
+        setToastActive(true);
+        return;
       }
       
       if (scrapedData.error) {
@@ -559,6 +575,13 @@ export default function AddProductReplica() {
     
     const formData = new FormData();
     formData.append("url", productUrl);
+    
+    // If manual HTML is provided, include it
+    if (manualHtml && manualHtml.trim()) {
+      formData.append("manualHtml", manualHtml);
+      console.log("Including manual HTML, length:", manualHtml.length);
+    }
+    
     fetcher.submit(formData, {
       method: "post",
       action: "/api/ai/fetch-product",
@@ -614,7 +637,7 @@ export default function AddProductReplica() {
                   onChange={setProductUrl}
                   autoComplete="off"
                   placeholder="https://example.com/product/..."
-                  helpText="Supports Amazon, Flipkart, eBay, Walmart, AliExpress, and more"
+                  helpText="Supports Amazon, Flipkart, eBay, and most e-commerce websites"
                   connectedRight={
                     <Button 
                       onClick={handleFetchProduct} 
@@ -626,6 +649,50 @@ export default function AddProductReplica() {
                     </Button>
                   }
                 />
+                
+                {/* Manual HTML Input - shown when auto-fetch is blocked */}
+                {showManualHtmlInput && (
+                  <BlockStack gap="300">
+                    <Box 
+                      borderWidth="025" 
+                      borderRadius="200" 
+                      borderColor="border"
+                      padding="400"
+                      background="bg-surface-warning"
+                    >
+                      <BlockStack gap="200">
+                        <Text variant="headingSm" as="h3">
+                          🔒 Website Blocking Detected
+                        </Text>
+                        <Text variant="bodySm" as="p">
+                          The website is blocking automated access. Follow these steps to manually import:
+                        </Text>
+                        <Box paddingBlockStart="200">
+                          <BlockStack gap="100">
+                            <Text variant="bodyXs" as="p">1. Open the product URL in your browser</Text>
+                            <Text variant="bodyXs" as="p">2. Right-click → "View Page Source" (Ctrl+U / Cmd+Option+U)</Text>
+                            <Text variant="bodyXs" as="p">3. Select all HTML (Ctrl+A / Cmd+A) and copy it</Text>
+                            <Text variant="bodyXs" as="p">4. Paste the HTML below and click Import again</Text>
+                          </BlockStack>
+                        </Box>
+                      </BlockStack>
+                    </Box>
+                    <TextField
+                      label="Paste HTML Source Code"
+                      value={manualHtml}
+                      onChange={(value) => {
+                        setManualHtml(value);
+                        if (value.trim()) {
+                          setShowManualHtmlInput(false); // Hide warning once HTML is pasted
+                        }
+                      }}
+                      multiline={8}
+                      autoComplete="off"
+                      placeholder="Paste the complete HTML source code here..."
+                      helpText="Our AI will extract product information from the HTML"
+                    />
+                  </BlockStack>
+                )}
               </FormLayout>
             </BlockStack>
           </Card>
