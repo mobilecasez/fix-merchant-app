@@ -591,12 +591,11 @@ export default function AddProductReplica() {
 
   // Top Import button - clears manual HTML and starts fresh
   const handleFetchProductFromUrl = () => {
-    // Clear any pasted HTML
+    // Clear any pasted HTML content
     setManualHtml('');
-    setShowManualHtmlInput(false);
     setHtmlPanelOpen(false);
     
-    // Then call the normal fetch
+    // Then call the normal fetch (don't clear showManualHtmlInput - let the server response control it)
     handleFetchProduct();
   };
 
