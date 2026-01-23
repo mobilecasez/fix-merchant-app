@@ -697,9 +697,8 @@ export default function AddProductReplica() {
                           <Button 
                             onClick={() => setHtmlPanelOpen(!htmlPanelOpen)}
                             size="slim"
-                            icon={htmlPanelOpen ? 'ChevronUpIcon' : 'ChevronDownIcon'}
                           >
-                            {htmlPanelOpen ? 'Collapse' : 'Expand'}
+                            {htmlPanelOpen ? '▲ Collapse' : '▼ Expand'}
                           </Button>
                         </InlineStack>
                       </Box>
