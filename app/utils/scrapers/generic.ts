@@ -179,11 +179,51 @@ function parseGenericHTML(html: string, url: string): ScrapedProductData {
     }
   }
   
-  // 2. Try Open Graph meta tags
-  const ogTitle = html.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)["']/i);
-  if (ogTitle && !data.productName) {
-    data.productName = ogTitle[1];
-    console.log('[Generic Parser] ✓ Title from og:title');
+  // 2. Extract product title using multiple strategies
+  if (!data.productName) {
+    // Strategy 1: Look for product-specific meta tags and elements
+    const productNamePatterns = [
+      /<meta[^>]*property=["']product:name["'][^>]*content=["']([^"']+)["']/i,
+      /<meta[^>]*name=["']product["'][^>]*content=["']([^"']+)["']/i,
+      /<h1[^>]*class=["'][^"']*product[^"']*["'][^>]*>([^<]+)<\/h1>/i,
+      /<h1[^>]*class=["'][^"']*title[^"']*["'][^>]*>([^<]+)<\/h1>/i,
+      /<span[^>]*class=["'][^"']*product[^"']*title[^"']*["'][^>]*>([^<]+)<\/span>/i,
+      /<div[^>]*class=["'][^"']*product[^"']*title[^"']*["'][^>]*>([^<]+)<\/div>/i,
+    ];
+    
+    for (const pattern of productNamePatterns) {
+      const match = html.match(pattern);
+      if (match && match[1] && match[1].trim().length > 5) {
+        data.productName = match[1].trim().replace(/<[^>]*>/g, '');
+        console.log('[Generic Parser] ✓ Title from product-specific pattern');
+        break;
+      }
+    }
+    
+    // Strategy 2: Open Graph title (but clean it up)
+    if (!data.productName) {
+      const ogTitle = html.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)["']/i);
+      if (ogTitle && ogTitle[1]) {
+        // Clean og:title by removing common suffixes like " | Brand Name" or " - Website"
+        let title = ogTitle[1];
+        title = title.replace(/\s*[|\-–]\s*.*(Buy|Shop|Store|Online|Website|India).*$/i, '');
+        title = title.replace(/\s*[|\-–]\s*[A-Z][a-z]+\s*$/i, ''); // Remove trailing brand names
+        data.productName = title.trim();
+        console.log('[Generic Parser] ✓ Title from og:title (cleaned)');
+      }
+    }
+    
+    // Strategy 3: Page title as last fallback
+    if (!data.productName) {
+      const pageTitle = html.match(/<title>([^<]+)<\/title>/i);
+      if (pageTitle && pageTitle[1]) {
+        let title = pageTitle[1];
+        title = title.replace(/\s*[|\-–]\s*.*(Buy|Shop|Store|Online|Website|India).*$/i, '');
+        title = title.replace(/\s*[|\-–]\s*[A-Z][a-z]+\s*$/i, '');
+        data.productName = title.trim();
+        console.log('[Generic Parser] ✓ Title from page title (cleaned)');
+      }
+    }
   }
   
   const ogDescription = html.match(/<meta[^>]*property=["']og:description["'][^>]*content=["']([^"']+)["']/i);
@@ -216,19 +256,48 @@ function parseGenericHTML(html: string, url: string): ScrapedProductData {
   if (!data.price) {
     const pricePatterns = [
       /["']price["']\s*:\s*["']?(\d+\.?\d*)["']?/i,
-      /\$\s*(\d+\.?\d{0,2})/,
-      /₹\s*(\d+\.?\d{0,2})/,
-      /£\s*(\d+\.?\d{0,2})/,
-      /€\s*(\d+\.?\d{0,2})/,
-      /price[^>]*>.*?(\d+\.?\d{0,2})/i,
+      /₹\s*(\d+[,\s]*\d*\.?\d{0,2})/,
+      /\$\s*(\d+[,\s]*\d*\.?\d{0,2})/,
+      /£\s*(\d+[,\s]*\d*\.?\d{0,2})/,
+      /€\s*(\d+[,\s]*\d*\.?\d{0,2})/,
+      /price[^>]*>.*?(\d+[,\s]*\d*\.?\d{0,2})/i,
     ];
     
     for (const pattern of pricePatterns) {
       const match = html.match(pattern);
       if (match) {
-        data.price = match[1];
+        data.price = match[1].replace(/[,\s]/g, ''); // Remove commas and spaces
         console.log('[Generic Parser] ✓ Price from pattern:', data.price);
         break;
+      }
+    }
+  }
+  
+  // 4.5. Extract MRP/Compare-at-Price (strikethrough prices, "Was:", "MRP:", etc.)
+  if (!data.compareAtPrice) {
+    const mrpPatterns = [
+      // Look for strikethrough/deleted prices
+      /<(?:del|s|strike)[^>]*>.*?₹\s*(\d+[,\s]*\d*\.?\d{0,2})/i,
+      /<(?:del|s|strike)[^>]*>.*?\$\s*(\d+[,\s]*\d*\.?\d{0,2})/i,
+      // Look for "MRP", "Was", "Original Price" labels
+      /(?:MRP|M\.R\.P\.|Was|Original Price|List Price)[^>]*:?[^>]*₹\s*(\d+[,\s]*\d*\.?\d{0,2})/i,
+      /(?:MRP|M\.R\.P\.|Was|Original Price|List Price)[^>]*:?[^>]*\$\s*(\d+[,\s]*\d*\.?\d{0,2})/i,
+      // Look for data attributes
+      /data-(?:mrp|compare|original)[^>]*=["'](\d+[,\s]*\d*\.?\d{0,2})["']/i,
+      // Look for class names with strikethrough/original
+      /<span[^>]*class=["'][^"']*(?:strike|cross|mrp|original)[^"']*["'][^>]*>.*?₹\s*(\d+[,\s]*\d*\.?\d{0,2})/i,
+    ];
+    
+    for (const pattern of mrpPatterns) {
+      const match = html.match(pattern);
+      if (match && match[1]) {
+        const mrpPrice = match[1].replace(/[,\s]/g, '');
+        // Only use if MRP is higher than selling price
+        if (data.price && parseFloat(mrpPrice) > parseFloat(data.price)) {
+          data.compareAtPrice = mrpPrice;
+          console.log('[Generic Parser] ✓ MRP/Compare-at-Price from pattern:', data.compareAtPrice);
+          break;
+        }
       }
     }
   }
@@ -297,28 +366,40 @@ async function parseWithGemini(html: string, url: string): Promise<ScrapedProduc
     // Truncate HTML to avoid token limits (keep first 50k chars)
     const truncatedHtml = html.substring(0, 50000);
     
-    const prompt = `Extract product information from this e-commerce webpage HTML and return ONLY a valid JSON object with this exact structure:
+    const prompt = `You are an expert at extracting product data from e-commerce websites. Analyze this HTML and extract product information with EXTREME ACCURACY.
+
+Return ONLY a valid JSON object (no markdown, no explanations) with this exact structure:
 
 {
-  "productName": "product title",
-  "description": "product description in HTML format with <p> tags",
-  "price": "numeric price without currency symbol",
-  "compareAtPrice": "original/MSRP price if available, otherwise empty string",
-  "images": ["array", "of", "full", "image", "URLs"],
-  "vendor": "brand or store name",
-  "productType": "product category",
-  "sku": "SKU if available",
+  "productName": "exact product name",
+  "description": "product description in HTML format",
+  "price": "current selling price (numeric only)",
+  "compareAtPrice": "MRP/original price if shown",
+  "images": ["array of full image URLs"],
+  "vendor": "brand name",
+  "productType": "category",
+  "sku": "SKU",
   "weight": "weight value",
-  "weightUnit": "kg or lb or g"
+  "weightUnit": "unit"
 }
 
-Rules:
-- Return ONLY the JSON object, no markdown, no explanations
-- Extract ALL product images you can find (full URLs)
-- Keep prices as numbers only (no currency symbols)
-- If compareAtPrice is not found, calculate it as 20% higher than price
-- Description should include key features in HTML format
-- If weight not found, estimate based on product type
+CRITICAL INSTRUCTIONS:
+1. PRODUCT NAME: Extract the EXACT product name/title. DO NOT use meta og:title if it contains website name. Look for:
+   - Product-specific headings (h1 with product/title class)
+   - JSON-LD product name
+   - Clean page title (remove website name/brand suffixes after | or -)
+
+2. PRICE: Current selling price (after discount). Remove currency symbols (₹, $, etc.). Just the number.
+
+3. COMPARE AT PRICE (MRP): This is CRITICAL for Indian sites. Look for:
+   - Strikethrough/crossed-out prices (<del>, <s>, <strike> tags)
+   - Labels: "MRP", "M.R.P.", "Was:", "Original Price:", "List Price:"
+   - Should be HIGHER than selling price
+   - If not found, leave as empty string (don't calculate)
+
+4. IMAGES: Extract ALL product image URLs (not logos/icons). Must start with http/https.
+
+5. DESCRIPTION: Key product features and details in HTML format.
 
 HTML:
 ${truncatedHtml}`;
