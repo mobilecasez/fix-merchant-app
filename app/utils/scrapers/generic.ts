@@ -394,14 +394,14 @@ EXTRACTION RULES (FOLLOW EXACTLY):
 **CRITICAL: Always start by finding the product title first, then use it to identify the brand**
 
 1. PRODUCT NAME - Extract the ACTUAL product title shown to customers:
-   • Look for main product heading (usually h1 tag or prominent title)
-   • This is THE PRIMARY source of information - the brand name is usually at the START of the title
-   • DO NOT use website name, store name, or meta og:title if it includes brand suffixes
+   • Look for main product heading (usually h1/h2 tag or prominent title)
+   • This is THE PRIMARY source of information - the brand name is usually at the START of the title or many be included within it. There might be chances that title is broken into multiple divs/spans like brand has another div/span and title remaining details have another div/span. In such cases, combine them to form the complete product title and regenerate it.  • DO NOT use website name, store name, or meta og:title if it includes brand suffixes
    • Remove website name after " | " or " - " characters
    • Example: "Nike Men's Cotton Shirt - Blue" → The brand is "Nike"
    • Example: "Roadster Men's Casual Shirt" → The brand is "Roadster"
+   • Use smartly there might be chances that its broken into multiple divs/spans.
 
-2. VENDOR (BRAND NAME) - CRITICAL - Extract the brand from the PRODUCT TITLE:
+2. VENDOR (BRAND NAME) - CRITICAL - Extract the brand from the PRODUCT TITLE or as i exmplained above:
    • **PRIMARY METHOD**: The brand is usually the FIRST word or first few words in the product title
    • Look at the product title you extracted in step 1 - the brand is typically at the beginning
    • Examples:
@@ -434,10 +434,10 @@ EXTRACTION RULES (FOLLOW EXACTLY):
    • If genuinely not found, use empty string "" (don't make up or calculate)
 
 6. IMAGES - Product photos only:
-   • Extract ALL product image URLs (ignore logos, banners, ads)
+   • Extract ALL product image URLs (ignore logos, banners, ads). Focus on the image gallery/slider section and then extract images from there only. dont duplicate the images or fetch any unnecessary images that are outside the product gallery section or that slider.
    • Must start with http:// or https://
    • Include zoom/high-res versions if available
-   • Minimum 3-5 images preferred
+   • All the images that are there in the product image gallery/slider section only.
 
 7. PRODUCT TYPE - Category/classification:
    • What type of product is this?
