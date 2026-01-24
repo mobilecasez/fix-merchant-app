@@ -136,7 +136,7 @@ You agree to indemnify and hold harmless ShopFlix AI from any claims, damages, o
 The App integrates with:
 - Shopify API and services
 - Google Gemini API (AI analysis)
-- Third-party e-commerce platforms (Amazon, eBay, Walmart, AliExpress, etc.)
+- Third-party e-commerce platforms (Amazon, eBay, Walmart, etc.)
 
 ### 9.2 Third-Party Terms
 - Use of third-party services is governed by their respective terms of service

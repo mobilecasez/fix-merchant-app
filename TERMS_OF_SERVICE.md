@@ -9,7 +9,7 @@ By installing, accessing, or using ShopFlix AI (the "App"), you agree to be boun
 ## 2. Description of Service
 
 ShopFlix AI is a Shopify application that provides:
-- Product import from 11+ e-commerce platforms (Amazon, eBay, Walmart, AliExpress, Shopee, Taobao, JD.com, Temu, Mercado Libre, Coupang, Flipkart)
+- Product import from 10+ e-commerce platforms (Amazon, eBay, Walmart, Shopee, Taobao, JD.com, Temu, Mercado Libre, Coupang, Flipkart)
 - AI-powered product description generation and rewriting
 - Automated GTIN/UPC finder
 - Google Merchant Center compliance checking
