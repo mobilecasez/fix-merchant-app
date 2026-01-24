@@ -21,9 +21,13 @@ shop_deletion_url = "https://shopflixai-production.up.railway.app/webhooks/shop/
   topics = [ "app/uninstalled" ]
   uri = "/webhooks/app/uninstalled"
 
+  [[webhooks.subscriptions]]
+  topics = [ "app_subscriptions/update" ]
+  uri = "/webhooks/app_subscriptions/update"
+
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
-scopes = "read_products,write_products,read_script_tags,write_script_tags"
+scopes = "read_products,write_products"
 
 [auth]
 redirect_urls = [

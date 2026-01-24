@@ -63,7 +63,7 @@ export const loader: LoaderFunction = async ({ request }) => {
 };
 
 export const action: ActionFunction = async ({ request }) => {
-  const { session } = await authenticate.admin(request);
+  const { session, admin } = await authenticate.admin(request);
   const formData = await request.formData();
   const planId = formData.get("planId") as string;
   const actionType = formData.get("action") as string;
@@ -84,7 +84,7 @@ export const action: ActionFunction = async ({ request }) => {
       where: { shop: session.shop },
     });
 
-    // Handle per-plan trial (2 free products)
+    // Handle per-plan trial (2 free products) - FREE, no billing needed
     if (isTrial) {
       const alreadyTried = await hasTriedPlan(session.shop, planId);
       
@@ -98,22 +98,66 @@ export const action: ActionFunction = async ({ request }) => {
       return redirect("/app/subscription-success?planId=" + planId + "&trial=true");
     }
 
-    // Handle plan change (upgrade/downgrade) from active subscription
-    if (currentSubscription?.status === "active" && actionType === "change") {
-      await changePlan(session.shop, planId);
-      return redirect("/app/subscription-success?planId=" + planId + "&action=change");
-    }
-
-    // Handle upgrade from trial to paid plan
-    if (currentSubscription?.status === "trial" && actionType === "upgrade") {
-      await createSubscription(session.shop, planId);
-      return redirect("/app/subscription-success?planId=" + planId + "&action=upgrade");
-    }
-
-    // For new paid plan subscription, create directly
-    await createSubscription(session.shop, planId);
+    // For PAID plans, use Shopify GraphQL API to create recurring charge
+    console.log(`[Billing] Creating Shopify recurring charge for plan: ${plan.name} ($${plan.price})`);
     
-    return redirect("/app/subscription-success?planId=" + planId);
+    const returnUrl = `${process.env.SHOPIFY_APP_URL}/app/billing-callback?planId=${planId}&action=${actionType || 'new'}`;
+    const isTest = process.env.NODE_ENV === "development";
+    
+    const response = await admin.graphql(
+      `#graphql
+      mutation AppSubscriptionCreate($name: String!, $lineItems: [AppSubscriptionLineItemInput!]!, $returnUrl: URL!, $test: Boolean) {
+        appSubscriptionCreate(
+          name: $name
+          returnUrl: $returnUrl
+          test: $test
+          lineItems: $lineItems
+        ) {
+          userErrors {
+            field
+            message
+          }
+          confirmationUrl
+          appSubscription {
+            id
+            status
+          }
+        }
+      }`,
+      {
+        variables: {
+          name: plan.name,
+          returnUrl: returnUrl,
+          test: isTest,
+          lineItems: [
+            {
+              plan: {
+                appRecurringPricingDetails: {
+                  price: { amount: plan.price, currencyCode: "USD" },
+                  interval: "EVERY_30_DAYS"
+                }
+              }
+            }
+          ]
+        }
+      }
+    );
+
+    const responseJson = await response.json();
+    const data = responseJson.data?.appSubscriptionCreate;
+
+    if (!data || data.userErrors?.length > 0) {
+      console.error("[Billing] GraphQL errors:", data?.userErrors);
+      return json({ 
+        error: data?.userErrors?.[0]?.message || "Failed to create billing" 
+      }, { status: 500 });
+    }
+
+    console.log(`[Billing] Shopify charge created successfully:`, data.appSubscription?.id);
+    console.log(`[Billing] Redirecting to confirmation URL:`, data.confirmationUrl);
+    
+    // Redirect merchant to Shopify's billing confirmation page
+    return redirect(data.confirmationUrl);
 
   } catch (error) {
     console.error("Subscription error:", error);

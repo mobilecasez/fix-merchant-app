@@ -50,8 +50,8 @@ api_version = "2024-07"
 # API Access Scopes
 # ====================================
 [access_scopes]
-# Permissions required by the app
-scopes = "read_products,write_products,read_locations"
+# Permissions required by the app - minimal scopes for App Store compliance
+scopes = "read_products,write_products"
 
 # For future features, you might need:
 # scopes = "read_products,write_products,read_locations,read_orders,write_customers"
