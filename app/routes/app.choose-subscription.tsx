@@ -106,74 +106,37 @@ export const action: ActionFunction = async ({ request }) => {
       return redirect("/app/subscription-success?planId=" + planId + "&trial=true");
     }
 
-    // For PAID plans, use Shopify GraphQL API to create recurring charge
-    console.log(`[Billing] Creating Shopify recurring charge for plan: ${plan.name} ($${plan.price})`);
+    // For MANAGED PRICING APPS: Just check current subscription and activate plan
+    console.log(`[Billing] Managed pricing app - activating plan: ${plan.name} ($${plan.price})`);
     
-    const returnUrl = `${process.env.SHOPIFY_APP_URL}/app/billing-callback?planId=${planId}&action=${actionType || 'new'}`;
-    const isTest = process.env.NODE_ENV === "development";
-    
-    const response = await admin.graphql(
-      `#graphql
-      mutation AppSubscriptionCreate($name: String!, $lineItems: [AppSubscriptionLineItemInput!]!, $returnUrl: URL!, $test: Boolean) {
-        appSubscriptionCreate(
-          name: $name
-          returnUrl: $returnUrl
-          test: $test
-          lineItems: $lineItems
-        ) {
-          userErrors {
-            field
-            message
-          }
-          confirmationUrl
-          appSubscription {
+    // Check if there's an active subscription via GraphQL
+    const response = await admin.graphql(`
+      query {
+        currentAppInstallation {
+          activeSubscriptions {
             id
+            name
             status
+            test
           }
-        }
-      }`,
-      {
-        variables: {
-          name: plan.name,
-          returnUrl: returnUrl,
-          test: isTest,
-          lineItems: [
-            {
-              plan: {
-                appRecurringPricingDetails: {
-                  price: { amount: plan.price, currencyCode: "USD" },
-                  interval: "EVERY_30_DAYS"
-                }
-              }
-            }
-          ]
         }
       }
-    );
+    `);
 
     const responseJson = await response.json();
-    console.log('[Billing] GraphQL response:', JSON.stringify(responseJson, null, 2));
-    const data = responseJson.data?.appSubscriptionCreate;
-
-    if (!data || data.userErrors?.length > 0) {
-      console.error("[Billing] GraphQL errors:", data?.userErrors);
-      return json({ 
-        error: data?.userErrors?.[0]?.message || "Failed to create billing" 
-      }, { status: 500 });
-    }
-
-    if (!data.confirmationUrl) {
-      console.error("[Billing] No confirmation URL in response:", data);
-      return json({ 
-        error: "No confirmation URL received from Shopify. Please try again." 
-      }, { status: 500 });
-    }
-
-    console.log(`[Billing] Shopify charge created successfully:`, data.appSubscription?.id);
-    console.log(`[Billing] Redirecting to confirmation URL:`, data.confirmationUrl);
+    console.log('[Billing] Current subscriptions:', JSON.stringify(responseJson, null, 2));
     
-    // Redirect merchant to Shopify's billing confirmation page
-    return redirect(data.confirmationUrl);
+    // For managed pricing, merchant selects plan in Shopify App Store
+    // We just need to activate it in our database
+    if (currentSubscription) {
+      await changePlan(session.shop, planId);
+      console.log(`[Billing] Updated to plan: ${plan.name}`);
+    } else {
+      await createSubscription(session.shop, planId);
+      console.log(`[Billing] Created subscription for plan: ${plan.name}`);
+    }
+    
+    return redirect(`/app/subscription-success?planId=${planId}&managed=true`);
 
   } catch (error) {
     console.error("Subscription error:", error);
