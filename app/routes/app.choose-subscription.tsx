@@ -1,6 +1,6 @@
 import type { LoaderFunction, ActionFunction } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
-import { useLoaderData, useSubmit, useNavigation } from "@remix-run/react";
+import { useLoaderData, useSubmit, useNavigation, useActionData } from "@remix-run/react";
 import {
   Page,
   Layout,
@@ -63,11 +63,16 @@ export const loader: LoaderFunction = async ({ request }) => {
 };
 
 export const action: ActionFunction = async ({ request }) => {
+  console.log('[Choose Subscription Action] Starting...');
   const { session, admin } = await authenticate.admin(request);
+  console.log('[Choose Subscription Action] Authenticated for shop:', session.shop);
+  
   const formData = await request.formData();
   const planId = formData.get("planId") as string;
   const actionType = formData.get("action") as string;
   const isTrial = formData.get("isTrial") === "true";
+
+  console.log('[Choose Subscription Action] Form data:', { planId, actionType, isTrial });
 
   try {
     // Get plan details
@@ -75,7 +80,10 @@ export const action: ActionFunction = async ({ request }) => {
       where: { id: planId },
     });
 
+    console.log('[Choose Subscription Action] Plan found:', plan?.name);
+
     if (!plan || !plan.isActive) {
+      console.error('[Choose Subscription Action] Invalid plan');
       return json({ error: "Invalid plan" }, { status: 400 });
     }
 
@@ -144,12 +152,20 @@ export const action: ActionFunction = async ({ request }) => {
     );
 
     const responseJson = await response.json();
+    console.log('[Billing] GraphQL response:', JSON.stringify(responseJson, null, 2));
     const data = responseJson.data?.appSubscriptionCreate;
 
     if (!data || data.userErrors?.length > 0) {
       console.error("[Billing] GraphQL errors:", data?.userErrors);
       return json({ 
         error: data?.userErrors?.[0]?.message || "Failed to create billing" 
+      }, { status: 500 });
+    }
+
+    if (!data.confirmationUrl) {
+      console.error("[Billing] No confirmation URL in response:", data);
+      return json({ 
+        error: "No confirmation URL received from Shopify. Please try again." 
       }, { status: 500 });
     }
 
@@ -171,12 +187,14 @@ export default function ChooseSubscription() {
   const { plans, currentSubscription, shop, triedPlanIds } = useLoaderData<typeof loader>();
   const submit = useSubmit();
   const navigation = useNavigation();
+  const actionData = useActionData<typeof action>();
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
   const [selectedAction, setSelectedAction] = useState<'trial' | 'purchase' | 'change' | null>(null);
 
   const isLoading = navigation.state === "submitting";
 
   const handleSelectPlan = useCallback((planId: string, actionType: 'trial' | 'purchase' | 'change') => {
+    console.log('[Choose Subscription] User clicked plan:', { planId, actionType });
     setSelectedPlanId(planId);
     setSelectedAction(actionType);
     const formData = new FormData();
@@ -187,6 +205,7 @@ export default function ChooseSubscription() {
     } else if (currentSubscription?.status === "trial" && actionType === 'purchase') {
       formData.append("action", "upgrade");
     }
+    console.log('[Choose Subscription] Submitting form with data:', Object.fromEntries(formData));
     submit(formData, { method: "post" });
   }, [submit, currentSubscription]);
 
@@ -198,6 +217,14 @@ export default function ChooseSubscription() {
         backAction={{ content: "Dashboard", url: "/app" }}
       >
         <Layout>
+          {actionData?.error && (
+            <Layout.Section>
+              <Banner tone="critical">
+                <Text as="p">{actionData.error}</Text>
+              </Banner>
+            </Layout.Section>
+          )}
+
           {currentSubscription && currentSubscription.status === "active" && (
             <Layout.Section>
               <Banner tone="info">
