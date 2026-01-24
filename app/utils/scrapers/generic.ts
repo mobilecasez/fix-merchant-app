@@ -391,40 +391,53 @@ Return ONLY a valid JSON object (no markdown code blocks, no explanations, no ex
 
 EXTRACTION RULES (FOLLOW EXACTLY):
 
+**CRITICAL: Always start by finding the product title first, then use it to identify the brand**
+
 1. PRODUCT NAME - Extract the ACTUAL product title shown to customers:
    • Look for main product heading (usually h1 tag or prominent title)
+   • This is THE PRIMARY source of information - the brand name is usually at the START of the title
    • DO NOT use website name, store name, or meta og:title if it includes brand suffixes
    • Remove website name after " | " or " - " characters
-   • Example: "Men's Cotton Shirt - Blue" NOT "Men's Cotton Shirt - Blue | AJIO"
+   • Example: "Nike Men's Cotton Shirt - Blue" → The brand is "Nike"
+   • Example: "Roadster Men's Casual Shirt" → The brand is "Roadster"
 
-2. DESCRIPTION - Extract comprehensive product details:
+2. VENDOR (BRAND NAME) - CRITICAL - Extract the brand from the PRODUCT TITLE:
+   • **PRIMARY METHOD**: The brand is usually the FIRST word or first few words in the product title
+   • Look at the product title you extracted in step 1 - the brand is typically at the beginning
+   • Examples:
+     - "Nike Air Max Shoes" → Brand: "Nike"
+     - "Roadster Men's Casual Shirt" → Brand: "Roadster"
+     - "Levi's 511 Slim Fit Jeans" → Brand: "Levi's"
+     - "H&M Cotton T-Shirt" → Brand: "H&M"
+   • **DO NOT use "Manufactured by", "Seller", "Sold by", or "Marketed by" fields**
+   • **DO NOT use the website/store name** (myntra.com, ajio.com, etc.)
+   • If brand is not clear from title, look for brand meta tags or schema.org brand field
+   • The brand should match what customers recognize the product by
+
+3. DESCRIPTION - Extract comprehensive product details:
    • Include features, specifications, material, care instructions
    • Format in clean HTML with <p>, <ul>, <li> tags
    • Include size guide, fit info if available
    • At least 100-200 words of meaningful content
+   • Use the brand name from step 2 naturally in the description
 
-3. PRICE - Current selling price (customer pays this):
+4. PRICE - Current selling price (customer pays this):
    • Extract the LOWEST visible price
    • Remove ALL currency symbols (₹, Rs, $, etc.)
    • Remove commas, spaces
    • Just the numeric value: "1499" NOT "₹1,499"
 
-4. COMPARE AT PRICE (MRP) - CRITICAL for showing discounts:
+5. COMPARE AT PRICE (MRP) - CRITICAL for showing discounts:
    • Find strikethrough/crossed prices (<del>, <s>, <strike> tags)
    • Look for "MRP:", "M.R.P.:", "Was:", "Original Price:", "List Price:"
    • MUST be HIGHER than selling price
    • If genuinely not found, use empty string "" (don't make up or calculate)
 
-5. IMAGES - Product photos only:
+6. IMAGES - Product photos only:
    • Extract ALL product image URLs (ignore logos, banners, ads)
    • Must start with http:// or https://
    • Include zoom/high-res versions if available
    • Minimum 3-5 images preferred
-
-6. VENDOR - Brand/manufacturer name:
-   • Extract brand name from product page
-   • NOT the store/website name
-   • Example: "Nike" NOT "myntra.com"
 
 7. PRODUCT TYPE - Category/classification:
    • What type of product is this?
