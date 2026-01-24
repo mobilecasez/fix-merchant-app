@@ -433,11 +433,44 @@ EXTRACTION RULES (FOLLOW EXACTLY):
    • MUST be HIGHER than selling price
    • If genuinely not found, use empty string "" (don't make up or calculate)
 
-6. IMAGES - Product photos only:
-   • Extract ALL product image URLs (ignore logos, banners, ads). Focus on the image gallery/slider section and then extract images from there only. dont duplicate the images or fetch any unnecessary images that are outside the product gallery section or that slider.
-   • Must start with http:// or https://
-   • Include zoom/high-res versions if available
-   • All the images that are there in the product image gallery/slider section only.
+6. IMAGES - HIGH-DEFINITION Product Gallery Images ONLY:
+   **CRITICAL: Focus ONLY on the product image gallery/slider section**
+   
+   • **PRIMARY SOURCE**: Look for the main product image gallery or slider:
+     - Usually has classes/IDs like: "gallery", "slider", "carousel", "product-images", "image-viewer", "thumbnails"
+     - Often contains <img> tags within gallery containers or data attributes like data-src, data-zoom, data-large
+     - May have thumbnail navigation or dots indicating multiple images
+   
+   • **HIGH-DEFINITION Priority** (in order of preference):
+     1. FIRST: Look for zoom/large/high-res versions: data-zoom-image, data-large, data-high-res, data-full
+     2. SECOND: Look for srcset with highest resolution (e.g., "image_1200x1200.jpg 1200w")
+     3. THIRD: Regular src attribute from gallery/slider section
+   
+   • **What to INCLUDE**:
+     - All unique product photos showing different angles (front, back, side, detail shots)
+     - Color/style variations if available in gallery
+     - Lifestyle/model shots if in the same gallery
+     - Look for highest resolution URLs (prefer URLs with dimensions like 1200x1200, 1500x1500 over smaller ones)
+   
+   • **What to EXCLUDE**:
+     - Logo images, brand watermarks
+     - Banner images, promotional ads
+     - Related/recommended product images (outside main gallery)
+     - Icon images (cart, wishlist, share buttons)
+     - Images smaller than 500x500 if possible
+   
+   • **Technical Requirements**:
+     - Must start with http:// or https://
+     - Remove duplicate URLs (same image different parameters)
+     - Return 5-10 high-quality images minimum if available
+     - If URL has size parameters (like /w_400/), try to maximize them (like /w_1500/)
+   
+   • **Common Gallery HTML Patterns to Look For**:
+     - <div class="product-gallery"> ... </div>
+     - <div class="image-carousel"> ... </div>
+     - <ul class="product-thumbnails"> ... </ul>
+     - data-image-gallery="..." or data-images="[...]"
+     - JSON arrays in script tags containing image URLs
 
 7. PRODUCT TYPE - Category/classification:
    • What type of product is this?
