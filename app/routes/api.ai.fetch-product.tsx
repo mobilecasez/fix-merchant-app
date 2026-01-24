@@ -249,41 +249,29 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           });
         }
         
-        // Type guard to ensure productData is ScrapedProductData
-        // Special case: MANUAL_HTML_REQUIRED should flow through to be detected
-        if (typeof productData === 'string' && productData !== 'MANUAL_HTML_REQUIRED') {
-          throw new Error(productData);
+        // Check if manual HTML is required (string response)
+        if (typeof productData === 'string' && productData === MANUAL_HTML_REQUIRED) {
+          // This is already handled above, should not reach here
+          console.log("[SCRAPER] Manual HTML required detected");
         }
         
-        // If MANUAL_HTML_REQUIRED, return early to trigger manual HTML flow
-        if (productData === 'MANUAL_HTML_REQUIRED') {
-          return json({ 
-            manualHtmlRequired: true,
-            instructions: [
-              "This website is blocking automated requests. Please follow these steps:",
-              "1. Open the product page in your browser",
-              "2. Right-click anywhere on the page and select 'View Page Source' or 'Inspect'",
-              "   (If right-click is disabled, use keyboard shortcut)",
-              "3. Select all the HTML (Ctrl+A / Cmd+A) and copy it",
-              "4. Paste the HTML in the text box below and click Import again"
-            ]
-          });
+        // Type guard: only access properties if it's ScrapedProductData
+        if (typeof productData !== 'string') {
+          console.log("[SCRAPER] ========================================");
+          console.log("[SCRAPER] Extracted images:", JSON.stringify(productData.images, null, 2));
+          console.log("[SCRAPER] Total images:", productData.images?.length || 0);
+          console.log("[SCRAPER] First 3 image URLs:");
+          if (productData.images) {
+            productData.images.slice(0, 3).forEach((img: string, idx: number) => {
+              console.log(`[SCRAPER]   ${idx + 1}. ${img}`);
+            });
+          }
+          console.log("[SCRAPER] ========================================");
         }
-        
-        console.log("[SCRAPER] ========================================");
-        console.log("[SCRAPER] Extracted images:", JSON.stringify(productData.images, null, 2));
-        console.log("[SCRAPER] Total images:", productData.images?.length || 0);
-        console.log("[SCRAPER] First 3 image URLs:");
-        if (productData.images) {
-          productData.images.slice(0, 3).forEach((img: string, idx: number) => {
-            console.log(`[SCRAPER]   ${idx + 1}. ${img}`);
-          });
-        }
-        console.log("[SCRAPER] ========================================");
 
         // Validate that scraper returned valid data
         // If product name is missing but we have images, still use the scraper data
-        if ((!productData.productName || productData.productName.trim() === "") && 
+        if (typeof productData !== 'string' && (!productData.productName || productData.productName.trim() === "") && 
             (!productData.images || productData.images.length === 0)) {
           console.log(
             "Scraper returned empty product name AND no images, falling back to AI if possible",
@@ -300,7 +288,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
             console.log("No HTML available for AI fallback");
             throw new Error("Unable to extract product data. Please try again or add the product manually.");
           }
-        } else if (!productData.productName || productData.productName.trim() === "") {
+        } else if (typeof productData !== 'string' && (!productData.productName || productData.productName.trim() === "")) {
           console.log("[SCRAPER] Product name empty but has images, will proceed with scraper data");
         }
       } catch (scraperError) {

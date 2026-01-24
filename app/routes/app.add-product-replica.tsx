@@ -727,13 +727,14 @@ export default function AddProductReplica() {
                         borderBlockEndWidth={htmlPanelOpen ? "025" : "0"} 
                         borderColor="border"
                       >
-                      <InlineStack align="space-between" blockAlign="center">
+                        <InlineStack align="space-between" blockAlign="center">
                         <Text variant="headingMd" as="h3">
                           🔒 Manual HTML Import {manualHtml.trim() && `(${Math.round(manualHtml.length / 1024)}KB)`}
                         </Text>
                         <Button 
                           variant="plain"
                           onClick={() => {
+                            // Note: Button's onClick doesn't receive event, use div wrapper for stopPropagation
                             setHtmlPanelOpen(!htmlPanelOpen);
                           }}
                         >
