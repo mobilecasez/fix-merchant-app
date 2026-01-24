@@ -250,8 +250,24 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         }
         
         // Type guard to ensure productData is ScrapedProductData
-        if (typeof productData === 'string') {
+        // Special case: MANUAL_HTML_REQUIRED should flow through to be detected
+        if (typeof productData === 'string' && productData !== 'MANUAL_HTML_REQUIRED') {
           throw new Error(productData);
+        }
+        
+        // If MANUAL_HTML_REQUIRED, return early to trigger manual HTML flow
+        if (productData === 'MANUAL_HTML_REQUIRED') {
+          return json({ 
+            manualHtmlRequired: true,
+            instructions: [
+              "This website is blocking automated requests. Please follow these steps:",
+              "1. Open the product page in your browser",
+              "2. Right-click anywhere on the page and select 'View Page Source' or 'Inspect'",
+              "   (If right-click is disabled, use keyboard shortcut)",
+              "3. Select all the HTML (Ctrl+A / Cmd+A) and copy it",
+              "4. Paste the HTML in the text box below and click Import again"
+            ]
+          });
         }
         
         console.log("[SCRAPER] ========================================");
