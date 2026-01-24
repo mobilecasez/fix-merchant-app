@@ -7,6 +7,7 @@ A powerful Shopify application that enables merchants to import products from 11
 ### Multi-Platform Import
 Import products from:
 - Amazon
+- AliExpress  
 - eBay
 - Walmart
 - Flipkart

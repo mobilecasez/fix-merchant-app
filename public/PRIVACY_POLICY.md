@@ -21,7 +21,7 @@ ShopFlix AI ("we," "our," "us," or "Company") is committed to protecting your pr
 
 ### 2.3 Third-Party Data Processing
 - **AI Processing**: Product data is sent to Google Gemini API for AI-powered analysis and recommendations
-- **Web Scraping**: URLs provided by you are scraped to gather product information from various platforms (Amazon, eBay, Walmart, and others)
+- **Web Scraping**: URLs provided by you are scraped to gather product information from various platforms (Amazon, eBay, Walmart, AliExpress, and others)
 
 ## 3. How We Use Your Information
 

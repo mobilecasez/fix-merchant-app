@@ -1,8 +1,7 @@
 import { ScrapedProductData } from "./types";
 import { cleanProductName, ensureCompareAtPrice, parseWeight, estimateWeight } from "./helpers";
-import { MANUAL_HTML_REQUIRED } from "./generic";
 
-export async function scrapeAmazon(html: string, url: string): Promise<ScrapedProductData | typeof MANUAL_HTML_REQUIRED> {
+export async function scrapeAmazon(html: string, url: string): Promise<ScrapedProductData> {
   try {
     console.log('[Amazon Scraper] Starting scrape for:', url);
     
@@ -48,8 +47,7 @@ export async function scrapeAmazon(html: string, url: string): Promise<ScrapedPr
         console.log('[Amazon Scraper] Using provided HTML parameter as fallback');
         htmlContent = html;
       } else {
-        console.log('[Amazon Scraper] Returning MANUAL_HTML_REQUIRED flag');
-        return MANUAL_HTML_REQUIRED;
+        throw new Error('Amazon is showing CAPTCHA. The scraper was detected as a bot.');
       }
     }
 

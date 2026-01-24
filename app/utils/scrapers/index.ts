@@ -2,6 +2,7 @@ import { ScraperFunction, ScrapedProductData } from "./types";
 import { scrapeAmazon } from "./amazon";
 import { scrapeWalmart } from "./walmart";
 import { scrapeEbay } from "./ebay";
+import { scrapeAliExpress } from "./aliexpress";
 import { scrapeTemu } from "./temu";
 import { scrapeShopee } from "./shopee";
 import { scrapeCoupang } from "./coupang";
@@ -97,6 +98,11 @@ export function getScraper(url: string): ScraperFunction | null {
   // Coupang
   if (urlLower.includes("coupang.com")) {
     return scrapeCoupang;
+  }
+  
+  // AliExpress
+  if (urlLower.includes("aliexpress.")) {
+    return scrapeAliExpress;
   }
   
   // Flipkart - with 60s timeout
