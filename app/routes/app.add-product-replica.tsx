@@ -592,7 +592,10 @@ export default function AddProductReplica() {
     // If manual HTML is provided, include it
     if (manualHtml && manualHtml.trim()) {
       formData.append("manualHtml", manualHtml);
-      console.log("Including manual HTML, length:", manualHtml.length);
+      console.log("[FRONTEND] Including manual HTML, length:", manualHtml.length);
+      console.log("[FRONTEND] First 500 chars:", manualHtml.substring(0, 500));
+    } else {
+      console.log("[FRONTEND] No manual HTML, will auto-fetch");
     }
     
     fetcher.submit(formData, {

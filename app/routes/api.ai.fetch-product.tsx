@@ -171,6 +171,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const url = formData.get("url") as string;
   const manualHtml = formData.get("manualHtml") as string | null; // New field for manual HTML paste
 
+  console.log("[FETCH-PRODUCT] URL:", url);
+  console.log("[FETCH-PRODUCT] Manual HTML provided:", !!manualHtml, "Length:", manualHtml?.length || 0);
+
   if (!url) {
     return json({ error: "URL is required" }, { status: 400 });
   }
@@ -178,6 +181,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   try {
     let html = manualHtml || ""; // Use manual HTML if provided
     let fetchSuccess = !!manualHtml; // If manual HTML provided, skip auto-fetch
+    
+    console.log("[FETCH-PRODUCT] Using manual HTML:", fetchSuccess, "HTML length:", html.length);
     
     // Only try auto-fetch if no manual HTML was provided
     if (!manualHtml) {
