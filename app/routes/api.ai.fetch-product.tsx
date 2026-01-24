@@ -249,12 +249,17 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           });
         }
         
+        // Type guard to ensure productData is ScrapedProductData
+        if (typeof productData === 'string') {
+          throw new Error(productData);
+        }
+        
         console.log("[SCRAPER] ========================================");
         console.log("[SCRAPER] Extracted images:", JSON.stringify(productData.images, null, 2));
         console.log("[SCRAPER] Total images:", productData.images?.length || 0);
         console.log("[SCRAPER] First 3 image URLs:");
         if (productData.images) {
-          productData.images.slice(0, 3).forEach((img, idx) => {
+          productData.images.slice(0, 3).forEach((img: string, idx: number) => {
             console.log(`[SCRAPER]   ${idx + 1}. ${img}`);
           });
         }

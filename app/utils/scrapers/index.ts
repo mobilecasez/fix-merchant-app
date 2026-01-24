@@ -39,11 +39,15 @@ async function withTimeout<T>(
 function createTimeoutScraper(scraper: ScraperFunction, timeoutMs: number = 60000): ScraperFunction {
   return async (html: string, url: string): Promise<ScrapedProductData> => {
     try {
-      return await withTimeout(
+      const result = await withTimeout(
         scraper(html, url),
         timeoutMs,
         `Scraper timeout after ${timeoutMs}ms`
       );
+      if (typeof result === 'string') {
+        throw new Error(result);
+      }
+      return result;
     } catch (error) {
       console.error(`[Scraper Timeout] Error: ${error}`);
       throw error;

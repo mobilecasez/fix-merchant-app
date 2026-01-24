@@ -718,28 +718,30 @@ export default function AddProductReplica() {
                     borderColor="border"
                     padding="0"
                   >
-                    <Box 
-                      padding="400" 
-                      borderBlockEndWidth={htmlPanelOpen ? "025" : "0"} 
-                      borderColor="border"
+                    <div 
                       style={{ cursor: 'pointer' }}
                       onClick={() => setHtmlPanelOpen(!htmlPanelOpen)}
                     >
+                      <Box 
+                        padding="400" 
+                        borderBlockEndWidth={htmlPanelOpen ? "025" : "0"} 
+                        borderColor="border"
+                      >
                       <InlineStack align="space-between" blockAlign="center">
                         <Text variant="headingMd" as="h3">
                           🔒 Manual HTML Import {manualHtml.trim() && `(${Math.round(manualHtml.length / 1024)}KB)`}
                         </Text>
                         <Button 
-                          plain
-                          onClick={(e) => {
-                            e.stopPropagation();
+                          variant="plain"
+                          onClick={() => {
                             setHtmlPanelOpen(!htmlPanelOpen);
                           }}
                         >
                           {htmlPanelOpen ? '▲ Collapse' : '▼ Expand'}
                         </Button>
                       </InlineStack>
-                    </Box>
+                      </Box>
+                    </div>
                     
                     <Collapsible open={htmlPanelOpen} id="manual-html-panel">
                       <Box padding="400">
