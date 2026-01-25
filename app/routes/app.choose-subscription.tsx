@@ -230,7 +230,7 @@ export default function ChooseSubscription() {
         backAction={{ content: "Dashboard", url: "/app" }}
       >
         <Layout>
-          {actionData?.error && (
+          {actionData?.error && !actionData?.redirectUrl && (
             <Layout.Section>
               <Banner tone="critical">
                 <Text as="p">{actionData.error}</Text>
