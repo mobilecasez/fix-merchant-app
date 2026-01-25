@@ -203,8 +203,8 @@ export default function ChooseSubscription() {
     if (actionData && 'redirectUrl' in actionData && actionData.redirectUrl) {
       console.log('[Choose Subscription] Redirecting to billing page:', actionData.redirectUrl);
       setIsRedirecting(true);
-      // Use window.open for external redirect (breaks out of iframe)
-      window.open(actionData.redirectUrl, '_top');
+      // Use direct window location for immediate redirect (breaks out of iframe)
+      window.top!.location.href = actionData.redirectUrl;
     }
   }, [actionData]);
 
