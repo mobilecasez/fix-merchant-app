@@ -172,12 +172,12 @@ export const action: ActionFunction = async ({ request }) => {
     console.log(`[Billing] Shopify charge created successfully:`, data.appSubscription?.id);
     console.log(`[Billing] Redirecting to confirmation URL:`, data.confirmationUrl);
     
-    // For embedded apps, we need to redirect using shopify.redirect
-    // This breaks out of the iframe to Shopify's billing page
+    // For embedded apps, return the URL and handle redirect on client side
+    // Return 200 (not error) to avoid flash of error page
     return json({ 
       redirectUrl: data.confirmationUrl,
       success: true 
-    });
+    }, { status: 200 });
 
   } catch (error) {
     console.error("Subscription error:", error);
