@@ -198,13 +198,38 @@ export default function ChooseSubscription() {
 
   const isLoading = navigation.state === "submitting";
 
+  // Log all state changes
+  console.log('[Choose Subscription Component] Render:', {
+    navigationState: navigation.state,
+    hasActionData: !!actionData,
+    actionDataKeys: actionData ? Object.keys(actionData) : [],
+    actionDataError: actionData && 'error' in actionData ? actionData.error : null,
+    actionDataRedirectUrl: actionData && 'redirectUrl' in actionData ? actionData.redirectUrl : null,
+    isRedirecting,
+    isLoading
+  });
+
   // Handle billing redirect using App Bridge
   useEffect(() => {
+    console.log('[Choose Subscription] useEffect triggered:', {
+      hasActionData: !!actionData,
+      actionData: actionData,
+      isRedirecting
+    });
+    
     if (actionData && 'redirectUrl' in actionData && actionData.redirectUrl) {
-      console.log('[Choose Subscription] Redirecting to billing page:', actionData.redirectUrl);
+      console.log('[Choose Subscription] About to redirect:', {
+        redirectUrl: actionData.redirectUrl,
+        currentIsRedirecting: isRedirecting
+      });
+      
       setIsRedirecting(true);
+      console.log('[Choose Subscription] Set isRedirecting to true');
+      
       // Use direct window location for immediate redirect (breaks out of iframe)
+      console.log('[Choose Subscription] Calling window.top.location.href');
       window.top!.location.href = actionData.redirectUrl;
+      console.log('[Choose Subscription] After window.top.location.href call');
     }
   }, [actionData]);
 
@@ -226,6 +251,7 @@ export default function ChooseSubscription() {
 
   // Show loading state during redirect to prevent error flash
   if (isRedirecting) {
+    console.log('[Choose Subscription] Rendering redirect loading state');
     return (
       <Frame>
         <Page title="Redirecting..." narrowWidth>
@@ -243,6 +269,12 @@ export default function ChooseSubscription() {
       </Frame>
     );
   }
+
+  console.log('[Choose Subscription] Rendering main page, checking error banner:', {
+    shouldShowError: actionData?.error && !actionData?.redirectUrl,
+    hasError: !!actionData?.error,
+    hasRedirectUrl: !!actionData?.redirectUrl
+  });
 
   return (
     <Frame>
