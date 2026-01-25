@@ -194,6 +194,7 @@ export default function ChooseSubscription() {
   const actionData = useActionData<typeof action>();
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
   const [selectedAction, setSelectedAction] = useState<'trial' | 'purchase' | 'change' | null>(null);
+  const [isRedirecting, setIsRedirecting] = useState(false);
 
   const isLoading = navigation.state === "submitting";
 
@@ -201,6 +202,7 @@ export default function ChooseSubscription() {
   useEffect(() => {
     if (actionData && 'redirectUrl' in actionData && actionData.redirectUrl) {
       console.log('[Choose Subscription] Redirecting to billing page:', actionData.redirectUrl);
+      setIsRedirecting(true);
       // Use window.open for external redirect (breaks out of iframe)
       window.open(actionData.redirectUrl, '_top');
     }
@@ -221,6 +223,26 @@ export default function ChooseSubscription() {
     console.log('[Choose Subscription] Submitting form with data:', Object.fromEntries(formData));
     submit(formData, { method: "post" });
   }, [submit, currentSubscription]);
+
+  // Show loading state during redirect to prevent error flash
+  if (isRedirecting) {
+    return (
+      <Frame>
+        <Page title="Redirecting..." narrowWidth>
+          <Layout>
+            <Layout.Section>
+              <Card>
+                <BlockStack gap="400">
+                  <Text as="h2" variant="headingMd">Redirecting to Shopify billing page...</Text>
+                  <Text as="p" tone="subdued">Please wait while we redirect you to complete your subscription.</Text>
+                </BlockStack>
+              </Card>
+            </Layout.Section>
+          </Layout>
+        </Page>
+      </Frame>
+    );
+  }
 
   return (
     <Frame>
