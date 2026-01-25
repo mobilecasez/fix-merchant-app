@@ -250,7 +250,8 @@ export default function ChooseSubscription() {
   }, [submit, currentSubscription]);
 
   // Show loading state during redirect to prevent error flash
-  if (isRedirecting) {
+  // Check actionData.redirectUrl FIRST before checking isRedirecting state
+  if (isRedirecting || (actionData && 'redirectUrl' in actionData && actionData.redirectUrl)) {
     console.log('[Choose Subscription] Rendering redirect loading state');
     return (
       <Frame>
