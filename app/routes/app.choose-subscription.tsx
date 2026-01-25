@@ -15,7 +15,7 @@ import {
   Box,
   Divider,
 } from "@shopify/polaris";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { 
@@ -172,8 +172,12 @@ export const action: ActionFunction = async ({ request }) => {
     console.log(`[Billing] Shopify charge created successfully:`, data.appSubscription?.id);
     console.log(`[Billing] Redirecting to confirmation URL:`, data.confirmationUrl);
     
-    // Redirect merchant to Shopify's billing confirmation page
-    return redirect(data.confirmationUrl);
+    // For embedded apps, we need to redirect using shopify.redirect
+    // This breaks out of the iframe to Shopify's billing page
+    return json({ 
+      redirectUrl: data.confirmationUrl,
+      success: true 
+    });
 
   } catch (error) {
     console.error("Subscription error:", error);
@@ -192,6 +196,15 @@ export default function ChooseSubscription() {
   const [selectedAction, setSelectedAction] = useState<'trial' | 'purchase' | 'change' | null>(null);
 
   const isLoading = navigation.state === "submitting";
+
+  // Handle billing redirect using App Bridge
+  useEffect(() => {
+    if (actionData && 'redirectUrl' in actionData && actionData.redirectUrl) {
+      console.log('[Choose Subscription] Redirecting to billing page:', actionData.redirectUrl);
+      // Use window.open for external redirect (breaks out of iframe)
+      window.open(actionData.redirectUrl, '_top');
+    }
+  }, [actionData]);
 
   const handleSelectPlan = useCallback((planId: string, actionType: 'trial' | 'purchase' | 'change') => {
     console.log('[Choose Subscription] User clicked plan:', { planId, actionType });
