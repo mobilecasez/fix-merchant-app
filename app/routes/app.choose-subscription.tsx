@@ -493,8 +493,12 @@ export function ErrorBoundary() {
   const error = useRouteError();
   
   // Suppress "Load failed" errors - these are expected when redirecting
-  if (error instanceof TypeError && error.message === "Load failed") {
-    console.log('[Choose Subscription] Suppressing expected "Load failed" error during redirect');
+  // Check for TypeError and common load failure messages
+  if (error instanceof TypeError && 
+      (error.message === "Load failed" || 
+       error.message.includes("Load failed") ||
+       error.message.includes("Failed to fetch"))) {
+    console.log('[Choose Subscription] Suppressing expected load error during redirect:', error.message);
     return (
       <Frame>
         <Page title="Redirecting..." narrowWidth>
