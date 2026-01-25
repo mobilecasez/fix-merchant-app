@@ -1,6 +1,6 @@
 import type { LoaderFunction, ActionFunction } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
-import { useLoaderData, useSubmit, useNavigation, useActionData } from "@remix-run/react";
+import { useLoaderData, useSubmit, useNavigation, useActionData, useRouteError, isRouteErrorResponse } from "@remix-run/react";
 import {
   Page,
   Layout,
@@ -481,6 +481,54 @@ export default function ChooseSubscription() {
                 </Text>
               </BlockStack>
             </Card>
+          </Layout.Section>
+        </Layout>
+      </Page>
+    </Frame>
+  );
+}
+
+// Error boundary to suppress "Load failed" errors during billing redirect
+export function ErrorBoundary() {
+  const error = useRouteError();
+  
+  // Suppress "Load failed" errors - these are expected when redirecting
+  if (error instanceof TypeError && error.message === "Load failed") {
+    console.log('[Choose Subscription] Suppressing expected "Load failed" error during redirect');
+    return (
+      <Frame>
+        <Page title="Redirecting..." narrowWidth>
+          <Layout>
+            <Layout.Section>
+              <Card>
+                <BlockStack gap="400">
+                  <Text as="h2" variant="headingMd">Redirecting to Shopify billing page...</Text>
+                  <Text as="p" tone="subdued">Please wait...</Text>
+                </BlockStack>
+              </Card>
+            </Layout.Section>
+          </Layout>
+        </Page>
+      </Frame>
+    );
+  }
+  
+  // For other errors, show error message
+  let errorMessage = "An error occurred";
+  if (isRouteErrorResponse(error)) {
+    errorMessage = error.data?.message || error.statusText;
+  } else if (error instanceof Error) {
+    errorMessage = error.message;
+  }
+  
+  return (
+    <Frame>
+      <Page title="Error" narrowWidth>
+        <Layout>
+          <Layout.Section>
+            <Banner tone="critical">
+              <Text as="p">{errorMessage}</Text>
+            </Banner>
           </Layout.Section>
         </Layout>
       </Page>
