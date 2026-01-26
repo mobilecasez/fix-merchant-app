@@ -1,6 +1,6 @@
 import type { LoaderFunction, ActionFunction } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
-import { useLoaderData, useRouteError, isRouteErrorResponse } from "@remix-run/react";
+import { useLoaderData, useSubmit, useActionData, useNavigation, useRouteError, isRouteErrorResponse } from "@remix-run/react";
 import {
   Page,
   Layout,
@@ -15,7 +15,7 @@ import {
   Box,
   Divider,
 } from "@shopify/polaris";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { 
@@ -190,73 +190,67 @@ export const action: ActionFunction = async ({ request }) => {
 export default function ChooseSubscription() {
   // ALL HOOKS AT THE TOP - NEVER CONDITIONALLY CALLED
   const { plans, currentSubscription, shop, triedPlanIds } = useLoaderData<typeof loader>();
+  const submit = useSubmit();
+  const navigation = useNavigation();
+  const actionData = useActionData<typeof action>();
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
   const [selectedAction, setSelectedAction] = useState<'trial' | 'purchase' | 'change' | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
-  // NATIVE FETCH HANDLER - Bypasses Remix/React Router entirely
-  const handleSelectPlan = useCallback(async (planId: string, actionType: 'trial' | 'purchase' | 'change') => {
-    console.log('[Choose Subscription] User clicked plan (native fetch):', { planId, actionType });
+  const isLoading = navigation.state === "submitting";
+
+  // Handle billing redirect - watch for confirmationUrl in actionData
+  useEffect(() => {
+    if (actionData && 'redirectUrl' in actionData && actionData.redirectUrl) {
+      const redirectUrl = actionData.redirectUrl;
+      
+      console.log('[Choose Subscription] Redirect URL received:', redirectUrl);
+      
+      // Validate URL before redirecting to prevent "string did not match pattern" error
+      if (typeof redirectUrl === 'string' && redirectUrl.startsWith('https://')) {
+        console.log('[Choose Subscription] ✓ Valid HTTPS URL, redirecting to:', redirectUrl);
+        
+        // Set flag in sessionStorage for ErrorBoundary
+        sessionStorage.setItem('isRedirectingToBilling', 'true');
+        
+        // HARD REDIRECT - Break out of iframe to Shopify billing page
+        window.top!.location.href = redirectUrl;
+      } else {
+        console.error('[Choose Subscription] ✗ Invalid redirect URL:', redirectUrl);
+      }
+    }
+  }, [actionData]);
+
+  // SUBMIT HANDLER - Uses Remix useSubmit with navigate: false
+  // This prevents React Router from trying to navigate, eliminating the "Load failed" error
+  const handleSelectPlan = useCallback((planId: string, actionType: 'trial' | 'purchase' | 'change') => {
+    console.log('[Choose Subscription] User clicked plan:', { planId, actionType });
     
     setSelectedPlanId(planId);
     setSelectedAction(actionType);
-    setIsLoading(true);
-    setError(null);
     
-    try {
-      // Build form data
-      const formData = new FormData();
-      formData.append("planId", planId);
-      formData.append("isTrial", actionType === 'trial' ? "true" : "false");
-      if (actionType === 'change') {
-        formData.append("action", "change");
-      } else if (currentSubscription?.status === "trial" && actionType === 'purchase') {
-        formData.append("action", "upgrade");
-      }
-      
-      console.log('[Choose Subscription] Sending native fetch to billing action');
-      
-      // Native fetch - React Router won't intercept this
-      const response = await fetch('/app/choose-subscription', {
-        method: 'POST',
-        body: formData,
-      });
-      
-      const data = await response.json();
-      
-      console.log('[Choose Subscription] Received response:', data);
-      
-      if (data.error) {
-        setError(data.error);
-        setIsLoading(false);
-        return;
-      }
-      
-      if (data.redirectUrl) {
-        console.log('[Choose Subscription] Performing hard redirect to:', data.redirectUrl);
-        // HARD REDIRECT - React Router is completely bypassed
-        window.top!.location.href = data.redirectUrl;
-        // Keep loading state true since we're navigating away
-      } else if (data.success) {
-        // For trial or other successful actions without redirect
-        console.log('[Choose Subscription] Action successful, reloading page');
-        window.location.reload();
-      }
-    } catch (err) {
-      console.error('[Choose Subscription] Fetch error:', err);
-      setError(err instanceof Error ? err.message : 'An error occurred');
-      setIsLoading(false);
+    const formData = new FormData();
+    formData.append("planId", planId);
+    formData.append("isTrial", actionType === 'trial' ? "true" : "false");
+    if (actionType === 'change') {
+      formData.append("action", "change");
+    } else if (currentSubscription?.status === "trial" && actionType === 'purchase') {
+      formData.append("action", "upgrade");
     }
-  }, [currentSubscription]);
+    
+    console.log('[Choose Subscription] Submitting with navigate: false to prevent React Router interference');
+    
+    // navigate: false = Get data but don't change route (prevents "Load failed" error)
+    submit(formData, { method: "post", navigate: false });
+  }, [submit, currentSubscription]);
 
-  // Simple loading screen during redirect
-  if (isLoading) {
+  // Early return for redirect - AFTER all hooks to maintain consistent hook order
+  // Use simple JSX to prevent complex component rendering during redirect
+  if (actionData && 'redirectUrl' in actionData && actionData.redirectUrl) {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
         <div style={{ textAlign: 'center' }}>
-          <h2>Processing...</h2>
-          <p>Please wait while we process your request.</p>
+          <h2>Redirecting to Shopify...</h2>
+          <p>Please wait while we redirect you to complete your subscription.</p>
         </div>
       </div>
     );
@@ -270,10 +264,10 @@ export default function ChooseSubscription() {
         backAction={{ content: "Dashboard", url: "/app" }}
       >
         <Layout>
-          {error && (
+          {actionData && 'error' in actionData && actionData.error && (
             <Layout.Section>
               <Banner tone="critical">
-                <Text as="p">{error}</Text>
+                <Text as="p">{actionData.error}</Text>
               </Banner>
             </Layout.Section>
           )}
