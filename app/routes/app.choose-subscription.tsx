@@ -15,7 +15,7 @@ import {
   Box,
   Divider,
 } from "@shopify/polaris";
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback } from "react";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { 
@@ -209,29 +209,19 @@ export default function ChooseSubscription() {
     isLoading
   });
 
-  // Handle billing redirect using App Bridge
-  useEffect(() => {
-    console.log('[Choose Subscription] useEffect triggered:', {
-      hasActionData: !!actionData,
-      actionData: actionData,
-      isRedirecting
-    });
-    
-    if (actionData && 'redirectUrl' in actionData && actionData.redirectUrl) {
-      console.log('[Choose Subscription] About to redirect:', {
-        redirectUrl: actionData.redirectUrl,
-        currentIsRedirecting: isRedirecting
-      });
-      
-      setIsRedirecting(true);
-      console.log('[Choose Subscription] Set isRedirecting to true');
-      
-      // Use direct window location for immediate redirect (breaks out of iframe)
-      console.log('[Choose Subscription] Calling window.top.location.href');
-      window.top!.location.href = actionData.redirectUrl;
-      console.log('[Choose Subscription] After window.top.location.href call');
-    }
-  }, [actionData]);
+  // Handle billing redirect immediately - do it in render phase before React can show errors
+  if (actionData && 'redirectUrl' in actionData && actionData.redirectUrl && !isRedirecting) {
+    console.log('[Choose Subscription] Redirecting immediately:', actionData.redirectUrl);
+    // Store in sessionStorage so ErrorBoundary can check it
+    sessionStorage.setItem('isRedirectingToBilling', 'true');
+    // Redirect immediately - this will cause React Router to throw errors but we catch them
+    window.top!.location.href = actionData.redirectUrl;
+    // Mark as redirecting to show loading screen
+    setIsRedirecting(true);
+  }
+  
+  // Check if we're in the middle of a redirect (persists across error boundaries)
+  const isCurrentlyRedirecting = isRedirecting || sessionStorage.getItem('isRedirectingToBilling') === 'true';
 
   const handleSelectPlan = useCallback((planId: string, actionType: 'trial' | 'purchase' | 'change') => {
     console.log('[Choose Subscription] User clicked plan:', { planId, actionType });
@@ -250,8 +240,7 @@ export default function ChooseSubscription() {
   }, [submit, currentSubscription]);
 
   // Show loading state during redirect to prevent error flash
-  // Check actionData.redirectUrl FIRST before checking isRedirecting state
-  if (isRedirecting || (actionData && 'redirectUrl' in actionData && actionData.redirectUrl)) {
+  if (isCurrentlyRedirecting) {
     console.log('[Choose Subscription] Rendering redirect loading state');
     return (
       <Frame>
@@ -489,17 +478,22 @@ export default function ChooseSubscription() {
 }
 
 // Error boundary to suppress "Load failed" errors during billing redirect
+export function ErrorBoundary(ALL errors during billing redirect
 export function ErrorBoundary() {
   const error = useRouteError();
   
-  // Suppress "Load failed" errors - these are expected when redirecting
-  // Check for TypeError and common load failure messages
-  if (error instanceof TypeError && 
-      (error.message === "Load failed" || 
-       error.message.includes("Load failed") ||
-       error.message.includes("Failed to fetch"))) {
-    console.log('[Choose Subscription] Suppressing expected load error during redirect:', error.message);
-    return (
+  // If we're redirecting to billing, suppress ALL errors (they're expected)
+  const isRedirecting = typeof window !== 'undefined' && sessionStorage.getItem('isRedirectingToBilling') === 'true';
+  
+  console.log('[Choose Subscription ErrorBoundary] Error caught:', {
+    error,
+    errorType: error?.constructor?.name,
+    errorMessage: error instanceof Error ? error.message : 'Unknown',
+    isRedirecting
+  });
+  
+  if (isRedirecting) {
+    console.log('[Choose Subscription] Suppressing error during redirect'
       <Frame>
         <Page title="Redirecting..." narrowWidth>
           <Layout>
