@@ -477,8 +477,7 @@ export default function ChooseSubscription() {
   );
 }
 
-// Error boundary to suppress "Load failed" errors during billing redirect
-export function ErrorBoundary(ALL errors during billing redirect
+// Error boundary to suppress ALL errors during billing redirect
 export function ErrorBoundary() {
   const error = useRouteError();
   
@@ -493,7 +492,8 @@ export function ErrorBoundary() {
   });
   
   if (isRedirecting) {
-    console.log('[Choose Subscription] Suppressing error during redirect'
+    console.log('[Choose Subscription] Suppressing error during redirect');
+    return (
       <Frame>
         <Page title="Redirecting..." narrowWidth>
           <Layout>
