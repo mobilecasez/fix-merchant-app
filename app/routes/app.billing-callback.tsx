@@ -8,7 +8,8 @@ import { createSubscription, changePlan } from "../utils/billing.server";
  * This route handles the callback from Shopify after billing confirmation
  */
 export const loader: LoaderFunction = async ({ request }) => {
-  const { session, admin } = await authenticate.admin(request);
+  // Use billing authentication which handles OAuth bounce properly
+  const { session, admin, billing } = await authenticate.admin(request);
   
   const url = new URL(request.url);
   const planId = url.searchParams.get("planId");
