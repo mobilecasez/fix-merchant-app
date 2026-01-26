@@ -110,7 +110,8 @@ export const action: ActionFunction = async ({ request }) => {
     console.log(`[Billing] Creating Shopify recurring charge for plan: ${plan.name} ($${plan.price})`);
     
     const returnUrl = `${process.env.SHOPIFY_APP_URL}/app/billing-callback?planId=${planId}&action=${actionType || 'new'}`;
-    const isTest = process.env.NODE_ENV !== "production";
+    // Always use test mode for now (set to false only when ready for production billing)
+    const isTest = true;
     
     const response = await admin.graphql(
       `#graphql
