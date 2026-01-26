@@ -188,6 +188,7 @@ export const action: ActionFunction = async ({ request }) => {
 };
 
 export default function ChooseSubscription() {
+  // ALL HOOKS AT THE TOP - NEVER CONDITIONALLY CALLED
   const { plans, currentSubscription, shop, triedPlanIds } = useLoaderData<typeof loader>();
   const submit = useSubmit();
   const navigation = useNavigation();
@@ -197,17 +198,6 @@ export default function ChooseSubscription() {
   const [isRedirecting, setIsRedirecting] = useState(false);
 
   const isLoading = navigation.state === "submitting" || isRedirecting;
-
-  // Log all state changes
-  console.log('[Choose Subscription Component] Render:', {
-    navigationState: navigation.state,
-    hasActionData: !!actionData,
-    actionDataKeys: actionData ? Object.keys(actionData) : [],
-    actionDataError: actionData && 'error' in actionData ? actionData.error : null,
-    actionDataRedirectUrl: actionData && 'redirectUrl' in actionData ? actionData.redirectUrl : null,
-    isRedirecting,
-    isLoading
-  });
 
   // Handle billing redirect using useEffect - watch for confirmationUrl in actionData
   useEffect(() => {
@@ -228,41 +218,16 @@ export default function ChooseSubscription() {
       setIsRedirecting(true);
       
       // Perform immediate full-frame redirect to break out of iframe
-      // This MUST be window.top to redirect the parent frame, not just the iframe
       console.log('[Choose Subscription] Executing immediate redirect to parent frame');
       
-      // Use a small timeout to ensure state updates complete before redirect
+      // Direct redirect - browser will navigate away
       setTimeout(() => {
         window.top!.location.href = actionData.redirectUrl;
       }, 0);
     }
   }, [actionData]);
-  
-  // Check if we're in the middle of a redirect (persists across renders and error boundaries)
-  const isCurrentlyRedirecting = isRedirecting || 
-    (typeof window !== 'undefined' && sessionStorage.getItem('isRedirectingToBilling') === 'true');
-  
-  // IMMEDIATELY return loading screen if redirectUrl is present - prevent any other rendering
-  if (actionData && 'redirectUrl' in actionData && actionData.redirectUrl) {
-    console.log('[Choose Subscription] Rendering redirect screen immediately due to redirectUrl presence');
-    return (
-      <Frame>
-        <Page title="Redirecting..." narrowWidth>
-          <Layout>
-            <Layout.Section>
-              <Card>
-                <BlockStack gap="400">
-                  <Text as="h2" variant="headingMd">Redirecting to Shopify billing page...</Text>
-                  <Text as="p" tone="subdued">Please wait while we redirect you...</Text>
-                </BlockStack>
-              </Card>
-            </Layout.Section>
-          </Layout>
-        </Page>
-      </Frame>
-    );
-  }
 
+  // Define callback BEFORE any early returns to maintain hook order
   const handleSelectPlan = useCallback((planId: string, actionType: 'trial' | 'purchase' | 'change') => {
     console.log('[Choose Subscription] User clicked plan:', { planId, actionType });
     setSelectedPlanId(planId);
@@ -279,11 +244,18 @@ export default function ChooseSubscription() {
     submit(formData, { method: "post" });
   }, [submit, currentSubscription]);
 
-  console.log('[Choose Subscription] Rendering main page, checking error banner:', {
-    shouldShowError: actionData?.error && !actionData?.redirectUrl,
-    hasError: !!actionData?.error,
-    hasRedirectUrl: !!actionData?.redirectUrl
-  });
+  // Early return for redirect - AFTER all hooks to maintain consistent hook order
+  // Use simple JSX to prevent complex component rendering during redirect
+  if (actionData && 'redirectUrl' in actionData && actionData.redirectUrl) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
+        <div style={{ textAlign: 'center' }}>
+          <h2>Redirecting to Shopify...</h2>
+          <p>Please wait while we redirect you to complete your subscription.</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <Frame>
