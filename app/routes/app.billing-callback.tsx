@@ -8,28 +8,28 @@ import { createSubscription, changePlan } from "../utils/billing.server";
  * This route handles the callback from Shopify after billing confirmation  
  */
 export const loader: LoaderFunction = async ({ request }) => {
+  // Authenticate - this will throw a redirect if auth is needed (don't catch it)
+  const { session, admin } = await authenticate.admin(request);
+  
+  const url = new URL(request.url);
+  const planId = url.searchParams.get("planId");
+  const actionType = url.searchParams.get("action");
+  const chargeId = url.searchParams.get("charge_id");
+
+  console.log(`[Billing Callback] Authenticated for shop: ${session.shop}`);
+  console.log(`[Billing Callback] Plan ID: ${planId}, Charge ID: ${chargeId}, Action: ${actionType}`);
+
+  if (!planId) {
+    console.error("[Billing Callback] Missing planId parameter");
+    return redirect("/app/choose-subscription?error=missing_plan");
+  }
+
+  if (!chargeId) {
+    console.log("[Billing Callback] No charge_id - user cancelled");
+    return redirect("/app/choose-subscription?error=billing_cancelled");
+  }
+
   try {
-    // Try to authenticate - this will trigger OAuth flow if needed
-    const { session, admin } = await authenticate.admin(request);
-    
-    const url = new URL(request.url);
-    const planId = url.searchParams.get("planId");
-    const actionType = url.searchParams.get("action");
-    const chargeId = url.searchParams.get("charge_id");
-
-    console.log(`[Billing Callback] Authenticated for shop: ${session.shop}`);
-    console.log(`[Billing Callback] Plan ID: ${planId}, Charge ID: ${chargeId}, Action: ${actionType}`);
-
-    if (!planId) {
-      console.error("[Billing Callback] Missing planId parameter");
-      return redirect("/app/choose-subscription?error=missing_plan");
-    }
-
-    if (!chargeId) {
-      console.log("[Billing Callback] No charge_id - user cancelled");
-      return redirect("/app/choose-subscription?error=billing_cancelled");
-    }
-
     // Get plan details
     const plan = await prisma.subscriptionPlan.findUnique({
       where: { id: planId },
@@ -110,10 +110,6 @@ export const loader: LoaderFunction = async ({ request }) => {
 
   } catch (error) {
     console.error("[Billing Callback] Error processing billing:", error);
-    // If it's an auth error, re-throw to trigger OAuth
-    if (error instanceof Error && error.message.includes('auth')) {
-      throw error;
-    }
     return redirect("/app/choose-subscription?error=billing_failed");
   }
 };
