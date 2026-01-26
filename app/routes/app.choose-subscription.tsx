@@ -15,7 +15,7 @@ import {
   Box,
   Divider,
 } from "@shopify/polaris";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { 
@@ -196,7 +196,7 @@ export default function ChooseSubscription() {
   const [selectedAction, setSelectedAction] = useState<'trial' | 'purchase' | 'change' | null>(null);
   const [isRedirecting, setIsRedirecting] = useState(false);
 
-  const isLoading = navigation.state === "submitting";
+  const isLoading = navigation.state === "submitting" || isRedirecting;
 
   // Log all state changes
   console.log('[Choose Subscription Component] Render:', {
@@ -209,19 +209,33 @@ export default function ChooseSubscription() {
     isLoading
   });
 
-  // Handle billing redirect immediately - do it in render phase before React can show errors
-  if (actionData && 'redirectUrl' in actionData && actionData.redirectUrl && !isRedirecting) {
-    console.log('[Choose Subscription] Redirecting immediately:', actionData.redirectUrl);
-    // Store in sessionStorage so ErrorBoundary can check it
-    sessionStorage.setItem('isRedirectingToBilling', 'true');
-    // Redirect immediately - this will cause React Router to throw errors but we catch them
-    window.top!.location.href = actionData.redirectUrl;
-    // Mark as redirecting to show loading screen
-    setIsRedirecting(true);
-  }
+  // Handle billing redirect using useEffect - watch for confirmationUrl in actionData
+  useEffect(() => {
+    // Clear redirect flag when component mounts (in case of back navigation)
+    if (!actionData) {
+      sessionStorage.removeItem('isRedirectingToBilling');
+    }
+    
+    // If we receive a redirectUrl (confirmationUrl), perform full-frame redirect
+    if (actionData && 'redirectUrl' in actionData && actionData.redirectUrl) {
+      console.log('[Choose Subscription] Detected redirectUrl in actionData:', actionData.redirectUrl);
+      
+      // Set flag in sessionStorage to suppress errors during redirect
+      sessionStorage.setItem('isRedirectingToBilling', 'true');
+      
+      // Mark as redirecting to show loading screen
+      setIsRedirecting(true);
+      
+      // Perform full-frame redirect to break out of iframe and go to Shopify billing page
+      // This MUST be window.top to redirect the parent frame, not just the iframe
+      console.log('[Choose Subscription] Redirecting parent frame to:', actionData.redirectUrl);
+      window.top!.location.href = actionData.redirectUrl;
+    }
+  }, [actionData]);
   
-  // Check if we're in the middle of a redirect (persists across error boundaries)
-  const isCurrentlyRedirecting = isRedirecting || sessionStorage.getItem('isRedirectingToBilling') === 'true';
+  // Check if we're in the middle of a redirect (persists across renders and error boundaries)
+  const isCurrentlyRedirecting = isRedirecting || 
+    (typeof window !== 'undefined' && sessionStorage.getItem('isRedirectingToBilling') === 'true');
 
   const handleSelectPlan = useCallback((planId: string, actionType: 'trial' | 'purchase' | 'change') => {
     console.log('[Choose Subscription] User clicked plan:', { planId, actionType });
