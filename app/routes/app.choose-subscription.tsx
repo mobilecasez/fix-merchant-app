@@ -214,28 +214,54 @@ export default function ChooseSubscription() {
     // Clear redirect flag when component mounts (in case of back navigation)
     if (!actionData) {
       sessionStorage.removeItem('isRedirectingToBilling');
+      return;
     }
     
     // If we receive a redirectUrl (confirmationUrl), perform full-frame redirect
     if (actionData && 'redirectUrl' in actionData && actionData.redirectUrl) {
       console.log('[Choose Subscription] Detected redirectUrl in actionData:', actionData.redirectUrl);
       
-      // Set flag in sessionStorage to suppress errors during redirect
+      // Set flag FIRST in sessionStorage to suppress errors during redirect
       sessionStorage.setItem('isRedirectingToBilling', 'true');
       
       // Mark as redirecting to show loading screen
       setIsRedirecting(true);
       
-      // Perform full-frame redirect to break out of iframe and go to Shopify billing page
+      // Perform immediate full-frame redirect to break out of iframe
       // This MUST be window.top to redirect the parent frame, not just the iframe
-      console.log('[Choose Subscription] Redirecting parent frame to:', actionData.redirectUrl);
-      window.top!.location.href = actionData.redirectUrl;
+      console.log('[Choose Subscription] Executing immediate redirect to parent frame');
+      
+      // Use a small timeout to ensure state updates complete before redirect
+      setTimeout(() => {
+        window.top!.location.href = actionData.redirectUrl;
+      }, 0);
     }
   }, [actionData]);
   
   // Check if we're in the middle of a redirect (persists across renders and error boundaries)
   const isCurrentlyRedirecting = isRedirecting || 
     (typeof window !== 'undefined' && sessionStorage.getItem('isRedirectingToBilling') === 'true');
+  
+  // IMMEDIATELY return loading screen if redirectUrl is present - prevent any other rendering
+  if (actionData && 'redirectUrl' in actionData && actionData.redirectUrl) {
+    console.log('[Choose Subscription] Rendering redirect screen immediately due to redirectUrl presence');
+    return (
+      <Frame>
+        <Page title="Redirecting..." narrowWidth>
+          <Layout>
+            <Layout.Section>
+              <Card>
+                <BlockStack gap="400">
+                  <Text as="h2" variant="headingMd">Redirecting to Shopify billing page...</Text>
+                  <Text as="p" tone="subdued">Please wait while we redirect you...</Text>
+                </BlockStack>
+              </Card>
+            </Layout.Section>
+          </Layout>
+        </Page>
+      </Frame>
+    );
+  }
 
   const handleSelectPlan = useCallback((planId: string, actionType: 'trial' | 'purchase' | 'change') => {
     console.log('[Choose Subscription] User clicked plan:', { planId, actionType });
@@ -252,27 +278,6 @@ export default function ChooseSubscription() {
     console.log('[Choose Subscription] Submitting form with data:', Object.fromEntries(formData));
     submit(formData, { method: "post" });
   }, [submit, currentSubscription]);
-
-  // Show loading state during redirect to prevent error flash
-  if (isCurrentlyRedirecting) {
-    console.log('[Choose Subscription] Rendering redirect loading state');
-    return (
-      <Frame>
-        <Page title="Redirecting..." narrowWidth>
-          <Layout>
-            <Layout.Section>
-              <Card>
-                <BlockStack gap="400">
-                  <Text as="h2" variant="headingMd">Redirecting to Shopify billing page...</Text>
-                  <Text as="p" tone="subdued">Please wait while we redirect you to complete your subscription.</Text>
-                </BlockStack>
-              </Card>
-            </Layout.Section>
-          </Layout>
-        </Page>
-      </Frame>
-    );
-  }
 
   console.log('[Choose Subscription] Rendering main page, checking error banner:', {
     shouldShowError: actionData?.error && !actionData?.redirectUrl,
