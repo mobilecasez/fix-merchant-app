@@ -20,17 +20,16 @@ export const loader: LoaderFunction = async ({ request }) => {
     console.log(`[Billing Callback] Authenticated for shop: ${session.shop}`);
     console.log(`[Billing Callback] Plan ID: ${planId}, Charge ID: ${chargeId}, Action: ${actionType}`);
 
-  if (!planId) {
-    console.error("[Billing Callback] Missing planId parameter");
-    return redirect("/app/choose-subscription?error=missing_plan");
-  }
+    if (!planId) {
+      console.error("[Billing Callback] Missing planId parameter");
+      return redirect("/app/choose-subscription?error=missing_plan");
+    }
 
-  if (!chargeId) {
-    console.log("[Billing Callback] No charge_id - user cancelled");
-    return redirect("/app/choose-subscription?error=billing_cancelled");
-  }
+    if (!chargeId) {
+      console.log("[Billing Callback] No charge_id - user cancelled");
+      return redirect("/app/choose-subscription?error=billing_cancelled");
+    }
 
-  try {
     // Get plan details
     const plan = await prisma.subscriptionPlan.findUnique({
       where: { id: planId },
@@ -110,12 +109,12 @@ export const loader: LoaderFunction = async ({ request }) => {
     return redirect(`/app/subscription-success?planId=${planId}`);
 
   } catch (error) {
-    console.error("[Billing Callback] Error:", error);
+    console.error("[Billing Callback] Error processing billing:", error);
+    // If it's an auth error, re-throw to trigger OAuth
+    if (error instanceof Error && error.message.includes('auth')) {
+      throw error;
+    }
     return redirect("/app/choose-subscription?error=billing_failed");
-  } catch (authError) {
-    // If authentication fails, it means we need to bounce through OAuth
-    console.log("[Billing Callback] Authentication required, will bounce through OAuth");
-    throw authError;
   }
 };
 
