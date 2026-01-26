@@ -287,10 +287,10 @@ export default function ChooseSubscription() {
         backAction={{ content: "Dashboard", url: "/app" }}
       >
         <Layout>
-          {actionData && 'error' in actionData && actionData.error && (
+          {fetcher.data && 'error' in fetcher.data && fetcher.data.error && (
             <Layout.Section>
               <Banner tone="critical">
-                <Text as="p">{actionData.error}</Text>
+                <Text as="p">{fetcher.data.error}</Text>
               </Banner>
             </Layout.Section>
           )}
