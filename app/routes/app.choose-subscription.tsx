@@ -1,6 +1,6 @@
 import type { LoaderFunction, ActionFunction } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
-import { useLoaderData, useSubmit, useActionData, useNavigation, useRouteError, isRouteErrorResponse } from "@remix-run/react";
+import { useLoaderData, useFetcher, useRouteError, isRouteErrorResponse } from "@remix-run/react";
 import {
   Page,
   Layout,
@@ -190,48 +190,62 @@ export const action: ActionFunction = async ({ request }) => {
 export default function ChooseSubscription() {
   // ALL HOOKS AT THE TOP - NEVER CONDITIONALLY CALLED
   const { plans, currentSubscription, shop, triedPlanIds } = useLoaderData<typeof loader>();
-  const submit = useSubmit();
-  const navigation = useNavigation();
-  const actionData = useActionData<typeof action>();
+  const fetcher = useFetcher<typeof action>();
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
   const [selectedAction, setSelectedAction] = useState<'trial' | 'purchase' | 'change' | null>(null);
 
-  const isLoading = navigation.state === "submitting";
+  // useFetcher manages its own loading state
+  const isLoading = fetcher.state !== "idle";
 
-  // DEBUG: Log what we receive from the action
-  console.log('[Choose Subscription] Action Data Received:', actionData);
+  // DEBUG: Log what we receive from the fetcher
+  console.log('[Choose Subscription] Fetcher State:', fetcher.state);
+  console.log('[Choose Subscription] Fetcher Data:', fetcher.data);
 
-  // Handle billing redirect - THE GATEKEEPER with strict validation
+  // THE CLEAN BREAK - Watch for the billing URL and redirect
   useEffect(() => {
-    // Strict validation to prevent "string did not match pattern" error
-    if (actionData?.redirectUrl && 
-        typeof actionData.redirectUrl === 'string' && 
-        actionData.redirectUrl.startsWith('https://') &&
-        actionData.redirectUrl.includes('shopify.com')) {
+    // Only process when fetcher is idle (request complete) and has data
+    if (fetcher.state === "idle" && fetcher.data) {
+      const data = fetcher.data;
       
-      console.log('[Choose Subscription] ✓ Valid Shopify URL detected, redirecting to:', actionData.redirectUrl);
+      // Check if we got a success status and a valid redirectUrl
+      if ('redirectUrl' in data && data.redirectUrl) {
+        const url = data.redirectUrl;
+        
+        console.log('[Choose Subscription] Billing URL received:', url);
+        
+        // STRICT VALIDATION to prevent "string did not match pattern" error
+        if (typeof url === 'string' && 
+            url.startsWith('https://') && 
+            url.includes('shopify.com')) {
+          
+          console.log('[Choose Subscription] ✓ Valid Shopify URL, redirecting to:', url);
+          
+          // Set flag in sessionStorage for ErrorBoundary
+          sessionStorage.setItem('isRedirectingToBilling', 'true');
+          
+          // THE CLEAN BREAK: Force top-level window navigation
+          // This breaks out of iframe and bypasses React Router completely
+          window.top!.location.href = url;
+          
+        } else {
+          console.error('[Choose Subscription] ✗ Invalid URL received:', {
+            url,
+            type: typeof url,
+            isString: typeof url === 'string',
+            startsWithHttps: typeof url === 'string' ? url.startsWith('https://') : false,
+            includesShopify: typeof url === 'string' ? url.includes('shopify.com') : false
+          });
+        }
+      }
       
-      // Set flag in sessionStorage for ErrorBoundary
-      sessionStorage.setItem('isRedirectingToBilling', 'true');
-      
-      // HARD REDIRECT - Break out of iframe to Shopify billing page
-      // This is the final step that causes the browser to navigate away
-      window.top!.location.href = actionData.redirectUrl;
-      
-    } else if (actionData?.redirectUrl) {
-      // If redirectUrl exists but doesn't pass validation, log the problem
-      console.error('[Choose Subscription] ✗ Invalid redirect URL:', {
-        url: actionData.redirectUrl,
-        type: typeof actionData.redirectUrl,
-        isString: typeof actionData.redirectUrl === 'string',
-        startsWithHttps: typeof actionData.redirectUrl === 'string' ? actionData.redirectUrl.startsWith('https://') : false,
-        includesShopify: typeof actionData.redirectUrl === 'string' ? actionData.redirectUrl.includes('shopify.com') : false
-      });
+      // Handle errors from server
+      if ('error' in data && data.error) {
+        console.error('[Choose Subscription] Server error:', data.error);
+      }
     }
-  }, [actionData]);
+  }, [fetcher.state, fetcher.data]);
 
-  // SUBMIT HANDLER - Uses Remix useSubmit with navigate: false
-  // This prevents React Router from trying to navigate, eliminating the "Load failed" error
+  // SUBMIT HANDLER - Uses fetcher.submit for non-navigational request
   const handleSelectPlan = useCallback((planId: string, actionType: 'trial' | 'purchase' | 'change') => {
     console.log('[Choose Subscription] User clicked plan:', { planId, actionType });
     
@@ -247,15 +261,14 @@ export default function ChooseSubscription() {
       formData.append("action", "upgrade");
     }
     
-    console.log('[Choose Subscription] Submitting with navigate: false');
+    console.log('[Choose Subscription] Submitting with useFetcher (non-navigational)');
     
-    // CRITICAL: navigate: false prevents React Router from trying to handle the response as a route change
-    submit(formData, { method: "post", navigate: false });
-  }, [submit, currentSubscription]);
+    // useFetcher.submit automatically includes auth headers and doesn't trigger navigation
+    fetcher.submit(formData, { method: "post" });
+  }, [fetcher, currentSubscription]);
 
   // Early return for redirect - AFTER all hooks to maintain consistent hook order
-  // Use simple JSX to prevent complex component rendering during redirect
-  if (actionData && 'redirectUrl' in actionData && actionData.redirectUrl) {
+  if (fetcher.data && 'redirectUrl' in fetcher.data && fetcher.data.redirectUrl) {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
         <div style={{ textAlign: 'center' }}>
