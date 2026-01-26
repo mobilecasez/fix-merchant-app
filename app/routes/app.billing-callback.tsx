@@ -116,3 +116,15 @@ export const loader: LoaderFunction = async ({ request }) => {
     return redirect("/app/choose-subscription?error=billing_failed");
   }
 };
+
+// Default component to show while processing
+export default function BillingCallback() {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
+      <div style={{ textAlign: 'center' }}>
+        <h2>Processing your subscription...</h2>
+        <p>Please wait while we complete your purchase.</p>
+      </div>
+    </div>
+  );
+}
