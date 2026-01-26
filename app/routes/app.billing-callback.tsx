@@ -5,45 +5,32 @@ import prisma from "../db.server";
 import { createSubscription, changePlan } from "../utils/billing.server";
 
 /**
- * This route handles the callback from Shopify after billing confirmation
+ * This route handles the callback from Shopify after billing confirmation  
  */
 export const loader: LoaderFunction = async ({ request }) => {
-  const url = new URL(request.url);
-  const shop = url.searchParams.get("shop");
-  const host = url.searchParams.get("host");
-  const planId = url.searchParams.get("planId");
-  const actionType = url.searchParams.get("action");
-  const chargeId = url.searchParams.get("charge_id");
+  try {
+    // Try to authenticate - this will trigger OAuth flow if needed
+    const { session, admin } = await authenticate.admin(request);
+    
+    const url = new URL(request.url);
+    const planId = url.searchParams.get("planId");
+    const actionType = url.searchParams.get("action");
+    const chargeId = url.searchParams.get("charge_id");
 
-  console.log(`[Billing Callback] Received callback - Shop: ${shop}, Host: ${host}, Plan: ${planId}, Charge: ${chargeId}`);
-
-  // If coming from Shopify billing (no embedded context), redirect to embedded app
-  if (shop && !host) {
-    console.log("[Billing Callback] No host param - redirecting to embedded app context");
-    const redirectUrl = `https://${shop}/admin/apps/${process.env.SHOPIFY_API_KEY}/billing-callback?${url.searchParams.toString()}`;
-    return redirect(redirectUrl);
-  }
-
-  // Now authenticate with full context
-  const { session, admin, billing } = await authenticate.admin(request);
-
-  console.log(`[Billing Callback] Received callback for shop: ${session.shop}`);
-  console.log(`[Billing Callback] Plan ID: ${planId}, Charge ID: ${chargeId}, Action: ${actionType}`);
+    console.log(`[Billing Callback] Authenticated for shop: ${session.shop}`);
+    console.log(`[Billing Callback] Plan ID: ${planId}, Charge ID: ${chargeId}, Action: ${actionType}`);
 
   if (!planId) {
     console.error("[Billing Callback] Missing planId parameter");
     return redirect("/app/choose-subscription?error=missing_plan");
   }
 
-  try {
-    // Check if the billing was approved
-    // Shopify redirects back with charge_id in URL if approved
-    if (!chargeId) {
-      // User cancelled billing
-      console.log("[Billing Callback] No charge_id - user cancelled");
-      return redirect("/app/choose-subscription?error=billing_cancelled");
-    }
+  if (!chargeId) {
+    console.log("[Billing Callback] No charge_id - user cancelled");
+    return redirect("/app/choose-subscription?error=billing_cancelled");
+  }
 
+  try {
     // Get plan details
     const plan = await prisma.subscriptionPlan.findUnique({
       where: { id: planId },
@@ -125,6 +112,10 @@ export const loader: LoaderFunction = async ({ request }) => {
   } catch (error) {
     console.error("[Billing Callback] Error:", error);
     return redirect("/app/choose-subscription?error=billing_failed");
+  } catch (authError) {
+    // If authentication fails, it means we need to bounce through OAuth
+    console.log("[Billing Callback] Authentication required, will bounce through OAuth");
+    throw authError;
   }
 };
 
