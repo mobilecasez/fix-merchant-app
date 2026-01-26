@@ -198,25 +198,35 @@ export default function ChooseSubscription() {
 
   const isLoading = navigation.state === "submitting";
 
-  // Handle billing redirect - watch for confirmationUrl in actionData
+  // DEBUG: Log what we receive from the action
+  console.log('[Choose Subscription] Action Data Received:', actionData);
+
+  // Handle billing redirect - THE GATEKEEPER with strict validation
   useEffect(() => {
-    if (actionData && 'redirectUrl' in actionData && actionData.redirectUrl) {
-      const redirectUrl = actionData.redirectUrl;
+    // Strict validation to prevent "string did not match pattern" error
+    if (actionData?.redirectUrl && 
+        typeof actionData.redirectUrl === 'string' && 
+        actionData.redirectUrl.startsWith('https://') &&
+        actionData.redirectUrl.includes('shopify.com')) {
       
-      console.log('[Choose Subscription] Redirect URL received:', redirectUrl);
+      console.log('[Choose Subscription] ✓ Valid Shopify URL detected, redirecting to:', actionData.redirectUrl);
       
-      // Validate URL before redirecting to prevent "string did not match pattern" error
-      if (typeof redirectUrl === 'string' && redirectUrl.startsWith('https://')) {
-        console.log('[Choose Subscription] ✓ Valid HTTPS URL, redirecting to:', redirectUrl);
-        
-        // Set flag in sessionStorage for ErrorBoundary
-        sessionStorage.setItem('isRedirectingToBilling', 'true');
-        
-        // HARD REDIRECT - Break out of iframe to Shopify billing page
-        window.top!.location.href = redirectUrl;
-      } else {
-        console.error('[Choose Subscription] ✗ Invalid redirect URL:', redirectUrl);
-      }
+      // Set flag in sessionStorage for ErrorBoundary
+      sessionStorage.setItem('isRedirectingToBilling', 'true');
+      
+      // HARD REDIRECT - Break out of iframe to Shopify billing page
+      // This is the final step that causes the browser to navigate away
+      window.top!.location.href = actionData.redirectUrl;
+      
+    } else if (actionData?.redirectUrl) {
+      // If redirectUrl exists but doesn't pass validation, log the problem
+      console.error('[Choose Subscription] ✗ Invalid redirect URL:', {
+        url: actionData.redirectUrl,
+        type: typeof actionData.redirectUrl,
+        isString: typeof actionData.redirectUrl === 'string',
+        startsWithHttps: typeof actionData.redirectUrl === 'string' ? actionData.redirectUrl.startsWith('https://') : false,
+        includesShopify: typeof actionData.redirectUrl === 'string' ? actionData.redirectUrl.includes('shopify.com') : false
+      });
     }
   }, [actionData]);
 
@@ -237,9 +247,9 @@ export default function ChooseSubscription() {
       formData.append("action", "upgrade");
     }
     
-    console.log('[Choose Subscription] Submitting with navigate: false to prevent React Router interference');
+    console.log('[Choose Subscription] Submitting with navigate: false');
     
-    // navigate: false = Get data but don't change route (prevents "Load failed" error)
+    // CRITICAL: navigate: false prevents React Router from trying to handle the response as a route change
     submit(formData, { method: "post", navigate: false });
   }, [submit, currentSubscription]);
 
