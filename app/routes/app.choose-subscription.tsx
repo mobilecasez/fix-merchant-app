@@ -109,7 +109,8 @@ export const action: ActionFunction = async ({ request }) => {
     // For PAID plans, create Shopify recurring charge via GraphQL
     console.log(`[Billing] Creating Shopify recurring charge for plan: ${plan.name} ($${plan.price})`);
     
-    const returnUrl = `${process.env.SHOPIFY_APP_URL}/app/billing-callback?planId=${planId}&action=${actionType || 'new'}`;
+    // Include shop in returnUrl to help with authentication after redirect
+    const returnUrl = `${process.env.SHOPIFY_APP_URL}/app/billing-callback?planId=${planId}&action=${actionType || 'new'}&shop=${session.shop}&host=${encodeURIComponent(new URL(request.url).searchParams.get('host') || '')}`;
     // Always use test mode for now (set to false only when ready for production billing)
     const isTest = true;
     
