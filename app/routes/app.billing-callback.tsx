@@ -18,7 +18,7 @@ export const loader: LoaderFunction = async ({ request }) => {
 
   if (!shop || !planId || !chargeId) {
     console.error("[Billing Callback] Missing required parameters");
-    return redirect(`https://${shop}/admin/apps/${process.env.SHOPIFY_API_KEY}/choose-subscription?error=missing_params`);
+    return redirect("/app/choose-subscription?error=missing_params");
   }
 
   try {
@@ -96,17 +96,17 @@ export const loader: LoaderFunction = async ({ request }) => {
         data: { chargeId: shopifyChargeId },
       });
       
-      return redirect(`https://${shop}/admin/apps/${process.env.SHOPIFY_API_KEY}/subscription-success?planId=${planId}&changed=true`);
+      return redirect(`/app/subscription-success?planId=${planId}&changed=true`);
     }
 
     // Create new subscription
     console.log(`[Billing Callback] Creating new subscription for plan: ${plan.name}`);
     await createSubscription(shop, planId, shopifyChargeId);
-    return redirect(`https://${shop}/admin/apps/${process.env.SHOPIFY_API_KEY}/subscription-success?planId=${planId}`);
+    return redirect(`/app/subscription-success?planId=${planId}`);
 
   } catch (error) {
     console.error("[Billing Callback] Error processing billing:", error);
-    return redirect(`https://${shop}/admin/apps/${process.env.SHOPIFY_API_KEY}/choose-subscription?error=billing_failed`);
+    return redirect("/app/choose-subscription?error=billing_failed");
   }
 };
 
