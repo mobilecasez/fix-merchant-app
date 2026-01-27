@@ -3,30 +3,46 @@ import { redirect } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { createSubscription, changePlan } from "../utils/billing.server";
+import shopify from "../shopify.server";
 
 /**
  * This route handles the callback from Shopify after billing confirmation  
  */
 export const loader: LoaderFunction = async ({ request }) => {
-  // Authenticate - Shopify's auth will handle re-embedding automatically
-  const { session, admin } = await authenticate.admin(request);
-  
   const url = new URL(request.url);
+  const shop = url.searchParams.get("shop");
   const planId = url.searchParams.get("planId");
   const actionType = url.searchParams.get("action");
   const chargeId = url.searchParams.get("charge_id");
 
-  console.log(`[Billing Callback] Authenticated for shop: ${session.shop}`);
-  console.log(`[Billing Callback] Plan ID: ${planId}, Charge ID: ${chargeId}, Action: ${actionType}`);
+  console.log(`[Billing Callback] Received callback - Shop: ${shop}, Plan: ${planId}, Charge: ${chargeId}`);
+
+  if (!shop || !planId || !chargeId) {
+    console.error("[Billing Callback] Missing required parameters");
+    return redirect("/app/choose-subscription?error=missing_params");
+  }
+
+  try {
+    // Get offline session for the shop to make API calls
+    const sessionId = shopify.sessionStorage.getOfflineSessionId(shop);
+    const session = await shopify.sessionStorage.loadSession(sessionId);
+    
+    if (!session) {
+      console.error("[Billing Callback] No session found for shop");
+      // Redirect to embedded app which will trigger re-auth
+      return redirect(`https://${shop}/admin/apps/${process.env.SHOPIFY_API_KEY}/choose-subscription?error=session_expired`);
+    }
+
+    const admin = new shopify.clients.Graphql({ session });
 
   if (!planId) {
     console.error("[Billing Callback] Missing planId parameter");
-    return redirect("/app/choose-subscription?error=missing_plan");
+    return redirect(`https://${shop}/admin/apps/${process.env.SHOPIFY_API_KEY}/choose-subscription?error=missing_plan`);
   }
 
   if (!chargeId) {
     console.log("[Billing Callback] No charge_id - user cancelled");
-    return redirect("/app/choose-subscription?error=billing_cancelled");
+    return redirect(`https://${shop}/admin/apps/${process.env.SHOPIFY_API_KEY}/choose-subscription?error=billing_cancelled`);
   }
 
   try {
@@ -92,25 +108,25 @@ export const loader: LoaderFunction = async ({ request }) => {
     if (actionType === "change" || actionType === "upgrade") {
       // Update existing subscription to new plan
       console.log(`[Billing Callback] Updating subscription to new plan: ${plan.name}`);
-      await changePlan(session.shop, planId);
+      await changePlan(shop, planId);
       
       // Store the Shopify charge ID
       await prisma.shopSubscription.update({
-        where: { shop: session.shop },
+        where: { shop: shop },
         data: { chargeId: shopifyChargeId },
       });
       
-      return redirect(`/app/subscription-success?planId=${planId}&changed=true`);
+      return redirect(`https://${shop}/admin/apps/${process.env.SHOPIFY_API_KEY}/subscription-success?planId=${planId}&changed=true`);
     }
 
     // Create new subscription
     console.log(`[Billing Callback] Creating new subscription for plan: ${plan.name}`);
-    await createSubscription(session.shop, planId, shopifyChargeId);
-    return redirect(`/app/subscription-success?planId=${planId}`);
+    await createSubscription(shop, planId, shopifyChargeId);
+    return redirect(`https://${shop}/admin/apps/${process.env.SHOPIFY_API_KEY}/subscription-success?planId=${planId}`);
 
   } catch (error) {
     console.error("[Billing Callback] Error processing billing:", error);
-    return redirect("/app/choose-subscription?error=billing_failed");
+    return redirect(`https://${shop}/admin/apps/${process.env.SHOPIFY_API_KEY}/choose-subscription?error=billing_failed`);
   }
 };
 
