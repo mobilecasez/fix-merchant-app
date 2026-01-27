@@ -109,8 +109,9 @@ export const action: ActionFunction = async ({ request }) => {
     // For PAID plans, create Shopify recurring charge via GraphQL
     console.log(`[Billing] Creating Shopify recurring charge for plan: ${plan.name} ($${plan.price})`);
     
-    // Use direct URL - Shopify will add charge_id param when redirecting back after approval
-    const returnUrl = `${process.env.SHOPIFY_APP_URL}/app/billing-callback?planId=${planId}&action=${actionType || 'new'}&shop=${session.shop}`;
+    // ✅ CRITICAL: Use Shopify Admin embedding URL so user returns INSIDE the iframe
+    // This prevents the blank {} page issue by ensuring proper authentication context
+    const returnUrl = `https://${session.shop}/admin/apps/${process.env.SHOPIFY_API_KEY}/app/billing-callback?planId=${planId}&action=${actionType || 'new'}`;
     // Always use test mode for now (set to false only when ready for production billing)
     const isTest = true;
     
