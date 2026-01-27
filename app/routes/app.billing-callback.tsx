@@ -84,6 +84,13 @@ export const loader: LoaderFunction = async ({ request }) => {
     // Extract Shopify charge ID from the subscription ID
     const shopifyChargeId = activeSubscription.id.split("/").pop();
 
+    // Get API key for constructing admin URL
+    const apiKey = process.env.SHOPIFY_API_KEY;
+    if (!apiKey) {
+      console.error("❌ CRITICAL ERROR: SHOPIFY_API_KEY is missing!");
+      return redirect("/app/choose-subscription?error=config_error");
+    }
+
     // Handle different action types
     if (actionType === "change" || actionType === "upgrade") {
       // Update existing subscription to new plan
@@ -96,16 +103,29 @@ export const loader: LoaderFunction = async ({ request }) => {
         data: { chargeId: shopifyChargeId },
       });
       
-      return redirect(`/app/subscription-success?planId=${planId}&changed=true`);
+      // ✅ Redirect to Shopify Admin to re-embed app properly
+      const adminUrl = `https://${shop}/admin/apps/${apiKey}/app?success=true&planId=${planId}&changed=true`;
+      console.log("✅ [Billing Callback] Redirecting to Shopify Admin:", adminUrl);
+      return redirect(adminUrl);
     }
 
     // Create new subscription
     console.log(`[Billing Callback] Creating new subscription for plan: ${plan.name}`);
     await createSubscription(shop, planId, shopifyChargeId);
-    return redirect(`/app/subscription-success?planId=${planId}`);
+    
+    // ✅ Redirect to Shopify Admin to re-embed app properly
+    const adminUrl = `https://${shop}/admin/apps/${apiKey}/app?success=true&planId=${planId}`;
+    console.log("✅ [Billing Callback] Redirecting to Shopify Admin:", adminUrl);
+    return redirect(adminUrl);
 
   } catch (error) {
     console.error("[Billing Callback] Error processing billing:", error);
+    // For error cases, also redirect to Shopify Admin with error param
+    const apiKey = process.env.SHOPIFY_API_KEY;
+    if (apiKey && shop) {
+      const adminUrl = `https://${shop}/admin/apps/${apiKey}/app/choose-subscription?error=billing_failed`;
+      return redirect(adminUrl);
+    }
     return redirect("/app/choose-subscription?error=billing_failed");
   }
 };

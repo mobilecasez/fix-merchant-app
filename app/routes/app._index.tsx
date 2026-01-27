@@ -1,7 +1,7 @@
 import { useState, useCallback, useMemo, useEffect } from "react";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
-import { useFetcher, useSubmit, useLoaderData, Link } from "@remix-run/react";
+import { useFetcher, useSubmit, useLoaderData, Link, useSearchParams } from "@remix-run/react";
 import {
   Page,
   Layout,
@@ -18,6 +18,7 @@ import {
   DataTable,
   Badge,
   Icon,
+  Banner,
 } from "@shopify/polaris";
 import { TitleBar } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
@@ -193,6 +194,11 @@ export default function Index() {
   const initialReview = loaderData?.review;
   const productsUsed = loaderData?.productsUsed ?? 0;
   
+  // Get success parameter from URL (set by billing callback)
+  const [searchParams, setSearchParams] = useSearchParams();
+  const showSuccessBanner = searchParams.get("success") === "true";
+  const planChanged = searchParams.get("changed") === "true";
+  
   const [products, setProducts] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -225,6 +231,15 @@ export default function Index() {
   const submit = useSubmit();
   const updateFetcher = useFetcher<typeof action>();
   const isUpdating = updateFetcher.state !== "idle";
+  
+  // Handle success banner dismissal
+  const handleSuccessBannerDismiss = useCallback(() => {
+    // Remove success params from URL
+    searchParams.delete("success");
+    searchParams.delete("changed");
+    searchParams.delete("planId");
+    setSearchParams(searchParams, { replace: true });
+  }, [searchParams, setSearchParams]);
 
   // Handle rating submission
   const handleRating = useCallback(async (rating: number) => {
@@ -437,6 +452,23 @@ export default function Index() {
     <div className="landing-page">
     <Page fullWidth>
       <div className="landing-container">
+        {/* Success Banner for Billing */}
+        {showSuccessBanner && (
+          <div style={{ marginBottom: '1rem' }}>
+            <Banner
+              title={planChanged ? "Plan upgraded successfully!" : "Subscription activated!"}
+              status="success"
+              onDismiss={handleSuccessBannerDismiss}
+            >
+              <p>
+                {planChanged 
+                  ? "Your subscription plan has been updated. You now have access to your new plan features."
+                  : "Your subscription is now active. Thank you for subscribing!"}
+              </p>
+            </Banner>
+          </div>
+        )}
+        
         {/* 1. App Header & Branding */}
         <div className="header-section">
           <div className="header-content">
