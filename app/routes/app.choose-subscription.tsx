@@ -109,9 +109,8 @@ export const action: ActionFunction = async ({ request }) => {
     // For PAID plans, create Shopify recurring charge via GraphQL
     console.log(`[Billing] Creating Shopify recurring charge for plan: ${plan.name} ($${plan.price})`);
     
-    // Shopify will add the charge_id param when redirecting back after approval
-    // We use the embedded app URL format which will properly re-embed the app
-    const returnUrl = `https://${session.shop}/admin/apps/${process.env.SHOPIFY_API_KEY}/billing-callback?planId=${planId}&action=${actionType || 'new'}`;
+    // Use direct URL - Shopify will add charge_id param when redirecting back after approval
+    const returnUrl = `${process.env.SHOPIFY_APP_URL}/app/billing-callback?planId=${planId}&action=${actionType || 'new'}&shop=${session.shop}`;
     // Always use test mode for now (set to false only when ready for production billing)
     const isTest = true;
     
