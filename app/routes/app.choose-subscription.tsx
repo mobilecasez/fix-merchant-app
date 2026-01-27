@@ -109,21 +109,9 @@ export const action: ActionFunction = async ({ request }) => {
     // For PAID plans, create Shopify recurring charge via GraphQL
     console.log(`[Billing] Creating Shopify recurring charge for plan: ${plan.name} ($${plan.price})`);
     
-    // ✅ CRITICAL: Ensure SHOPIFY_API_KEY is loaded from environment
-    const apiKey = process.env.SHOPIFY_API_KEY;
-    
-    if (!apiKey) {
-      console.error("❌ CRITICAL ERROR: SHOPIFY_API_KEY is missing in server environment!");
-      return json({ 
-        success: false, 
-        error: "Server configuration error: API key not found" 
-      });
-    }
-    
-    // ✅ CRITICAL: Use Shopify Admin embedding URL so user returns INSIDE the iframe
-    // This prevents the blank {} page issue by ensuring proper authentication context
-    // IMPORTANT: Include shop parameter so billing-callback can use unauthenticated.admin()
-    const returnUrl = `https://${session.shop}/admin/apps/${apiKey}/app/billing-callback?planId=${planId}&action=${actionType || 'new'}&shop=${session.shop}`;
+    // ✅ FIX: Point to Railway App URL (Top Level)
+    // This ensures we land outside the iframe first, preventing X-Frame-Options errors
+    const returnUrl = `${process.env.SHOPIFY_APP_URL}/app/billing-callback?planId=${planId}&action=${actionType || 'new'}&shop=${session.shop}`;
     
     // Log the URL to verify it's correct
     console.log("👉 BILLING RETURN URL:", returnUrl);

@@ -104,6 +104,7 @@ export const loader: LoaderFunction = async ({ request }) => {
       });
       
       // ✅ Redirect to Shopify Admin to re-embed app properly
+      // Since we're at the top level (Railway URL), this redirect is allowed
       const adminUrl = `https://${shop}/admin/apps/${apiKey}/app?success=true&planId=${planId}&changed=true`;
       console.log("✅ [Billing Callback] Redirecting to Shopify Admin:", adminUrl);
       return redirect(adminUrl);
@@ -114,6 +115,7 @@ export const loader: LoaderFunction = async ({ request }) => {
     await createSubscription(shop, planId, shopifyChargeId);
     
     // ✅ Redirect to Shopify Admin to re-embed app properly
+    // Since we're at the top level (Railway URL), this redirect is allowed
     const adminUrl = `https://${shop}/admin/apps/${apiKey}/app?success=true&planId=${planId}`;
     console.log("✅ [Billing Callback] Redirecting to Shopify Admin:", adminUrl);
     return redirect(adminUrl);
