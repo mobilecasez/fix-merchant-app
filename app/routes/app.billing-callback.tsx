@@ -3,57 +3,15 @@ import { redirect } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { createSubscription, changePlan } from "../utils/billing.server";
-import { AppProvider } from "@shopify/shopify-app-remix/react";
 
 /**
  * This route handles the callback from Shopify after billing confirmation  
  */
 export const loader: LoaderFunction = async ({ request }) => {
-  const url = new URL(request.url);
-  const shop = url.searchParams.get("shop");
-  
-  // If shop param exists but we're not embedded, use exitIframe to re-embed
-  if (shop && !url.searchParams.get("embedded")) {
-    // Return HTML that uses App Bridge to exit iframe and reload in embedded context
-    return new Response(`
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <script src="https://cdn.shopify.com/shopifycloud/app-bridge.js"></script>
-          <script>
-            document.addEventListener('DOMContentLoaded', function() {
-              if (window.top !== window.self) {
-                // Already in iframe, redirect normally
-                window.location.href = window.location.href;
-              } else {
-                // Not in iframe, use App Bridge to redirect into embedded context
-                var AppBridge = window['app-bridge'];
-                var createApp = AppBridge.default;
-                var Redirect = AppBridge.actions.Redirect;
-                
-                var app = createApp({
-                  apiKey: '${process.env.SHOPIFY_API_KEY}',
-                  host: btoa('${shop}/admin'),
-                });
-                
-                var redirect = Redirect.create(app);
-                redirect.dispatch(Redirect.Action.ADMIN_PATH, '/apps/${process.env.SHOPIFY_API_KEY}' + window.location.pathname + window.location.search);
-              }
-            });
-          </script>
-        </head>
-        <body>
-          <p>Redirecting...</p>
-        </body>
-      </html>
-    `, {
-      headers: { 'Content-Type': 'text/html' }
-    });
-  }
-  
-  // Now proceed with normal authentication
+  // Authenticate - Shopify's auth will handle re-embedding automatically
   const { session, admin } = await authenticate.admin(request);
   
+  const url = new URL(request.url);
   const planId = url.searchParams.get("planId");
   const actionType = url.searchParams.get("action");
   const chargeId = url.searchParams.get("charge_id");
