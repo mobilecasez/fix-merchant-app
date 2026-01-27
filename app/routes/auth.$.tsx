@@ -1,5 +1,6 @@
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
+import { useLoaderData } from "@remix-run/react";
 import { authenticate, login } from "../shopify.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
@@ -37,29 +38,75 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 // 4. Ensure there is a Default Export (Component)
 // If the loader returns JSON, this ensures we see a Form, not "{}"
 export default function AuthLogin() {
-  // Simple HTML-only component to avoid any client-side hydration issues
+  const data = useLoaderData<typeof loader>();
+
   return (
-    <html>
-      <head>
-        <meta charSet="utf-8" />
-        <title>Sign In</title>
-      </head>
-      <body style={{ padding: "50px", textAlign: "center", fontFamily: "system-ui" }}>
-        <h1>Sign In</h1>
-        <p>Please enter your shop domain to continue.</p>
-        <form method="post" action="/auth/login">
-          <input 
-            type="text" 
-            name="shop" 
-            placeholder="my-shop.myshopify.com" 
-            style={{ padding: "10px", marginRight: "10px" }} 
-          />
-          <button type="submit" style={{ padding: "10px 20px" }}>
+    <div style={{ 
+      display: "flex", 
+      justifyContent: "center", 
+      alignItems: "center", 
+      height: "100vh", 
+      fontFamily: "system-ui, -apple-system, sans-serif" 
+    }}>
+      {/* 🔥 THE CRASH FIX 🔥 
+         This script runs before Remix hydration. If history.state is missing
+         (which happens after a hard redirect), it creates a fake one. 
+         This stops the "null is not an object" error.
+      */}
+      <script
+        dangerouslySetInnerHTML={{
+          __html: `
+            if (!window.history.state) {
+              window.history.replaceState({ key: "default" }, "");
+            }
+          `,
+        }}
+      />
+
+      <div style={{ width: "300px", textAlign: "center" }}>
+        <h1 style={{ fontSize: "20px", marginBottom: "20px" }}>Welcome Back</h1>
+        
+        {/* We use a standard HTML <form> instead of Remix <Form> to avoid client-side routing issues here */}
+        <form method="post">
+          <label style={{ display: "block", marginBottom: "10px", textAlign: "left" }}>
+            Shop Domain
+            <input 
+              type="text" 
+              name="shop" 
+              placeholder="example.myshopify.com"
+              required
+              style={{ 
+                width: "100%", 
+                padding: "8px", 
+                marginTop: "5px",
+                border: "1px solid #ccc",
+                borderRadius: "4px"
+              }}
+            />
+          </label>
+          
+          <button 
+            type="submit"
+            style={{
+              width: "100%",
+              padding: "10px",
+              backgroundColor: "#008060",
+              color: "white",
+              border: "none",
+              borderRadius: "4px",
+              cursor: "pointer",
+              fontWeight: "bold"
+            }}
+          >
             Log In
           </button>
         </form>
-      </body>
-    </html>
+
+        {data && 'error' in data && (
+           <p style={{ color: "red", marginTop: "10px" }}>{data.error}</p>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -67,10 +114,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const formData = await request.formData();
   const shop = formData.get("shop") as string;
   
-  // Simple validation to ensure 'myshopify.com' is present
-  const cleanShop = shop?.replace("https://", "").replace("http://", "");
-  
-  if (cleanShop) {
+  if (typeof shop === "string" && shop.length > 0) {
     return await login(request); 
   }
   

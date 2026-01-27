@@ -114,6 +114,21 @@ export const loader: LoaderFunction = async ({ request }) => {
 export default function BillingCallback() {
   return (
     <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
+      {/* 🔥 THE CRASH FIX 🔥 
+         This script runs before Remix hydration. If history.state is missing
+         (which happens after a hard redirect), it creates a fake one. 
+         This stops the "null is not an object" error.
+      */}
+      <script
+        dangerouslySetInnerHTML={{
+          __html: `
+            if (!window.history.state) {
+              window.history.replaceState({ key: "default" }, "");
+            }
+          `,
+        }}
+      />
+      
       <div style={{ textAlign: 'center' }}>
         <h2>Processing your subscription...</h2>
         <p>Please wait while we complete your purchase.</p>
