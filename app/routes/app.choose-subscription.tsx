@@ -111,7 +111,8 @@ export const action: ActionFunction = async ({ request }) => {
     
     // ✅ CRITICAL: Use Shopify Admin embedding URL so user returns INSIDE the iframe
     // This prevents the blank {} page issue by ensuring proper authentication context
-    const returnUrl = `https://${session.shop}/admin/apps/${process.env.SHOPIFY_API_KEY}/app/billing-callback?planId=${planId}&action=${actionType || 'new'}`;
+    // IMPORTANT: Include shop parameter so auth.login can auto-authenticate without showing form
+    const returnUrl = `https://${session.shop}/admin/apps/${process.env.SHOPIFY_API_KEY}/app/billing-callback?planId=${planId}&action=${actionType || 'new'}&shop=${session.shop}`;
     // Always use test mode for now (set to false only when ready for production billing)
     const isTest = true;
     
