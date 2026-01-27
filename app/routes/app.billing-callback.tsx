@@ -1,9 +1,8 @@
 import type { LoaderFunction } from "@remix-run/node";
 import { redirect } from "@remix-run/node";
-import { authenticate } from "../shopify.server";
+import { unauthenticated } from "../shopify.server";
 import prisma from "../db.server";
 import { createSubscription, changePlan } from "../utils/billing.server";
-import shopify from "../shopify.server";
 
 /**
  * This route handles the callback from Shopify after billing confirmation  
@@ -19,33 +18,14 @@ export const loader: LoaderFunction = async ({ request }) => {
 
   if (!shop || !planId || !chargeId) {
     console.error("[Billing Callback] Missing required parameters");
-    return redirect("/app/choose-subscription?error=missing_params");
+    return redirect(`https://${shop}/admin/apps/${process.env.SHOPIFY_API_KEY}/choose-subscription?error=missing_params`);
   }
 
   try {
-    // Get offline session for the shop to make API calls
-    const sessionId = shopify.sessionStorage.getOfflineSessionId(shop);
-    const session = await shopify.sessionStorage.loadSession(sessionId);
-    
-    if (!session) {
-      console.error("[Billing Callback] No session found for shop");
-      // Redirect to embedded app which will trigger re-auth
-      return redirect(`https://${shop}/admin/apps/${process.env.SHOPIFY_API_KEY}/choose-subscription?error=session_expired`);
-    }
+    // Use unauthenticated.admin to get admin API access with the shop parameter
+    // This allows us to make API calls without requiring embedded context
+    const { admin } = await unauthenticated.admin(shop);
 
-    const admin = new shopify.clients.Graphql({ session });
-
-  if (!planId) {
-    console.error("[Billing Callback] Missing planId parameter");
-    return redirect(`https://${shop}/admin/apps/${process.env.SHOPIFY_API_KEY}/choose-subscription?error=missing_plan`);
-  }
-
-  if (!chargeId) {
-    console.log("[Billing Callback] No charge_id - user cancelled");
-    return redirect(`https://${shop}/admin/apps/${process.env.SHOPIFY_API_KEY}/choose-subscription?error=billing_cancelled`);
-  }
-
-  try {
     // Get plan details
     const plan = await prisma.subscriptionPlan.findUnique({
       where: { id: planId },
