@@ -1,6 +1,8 @@
+import { useEffect } from "react";
 import type { LoaderFunction } from "@remix-run/node";
-import { redirect } from "@remix-run/node";
-import { unauthenticated } from "../shopify.server";
+import { json } from "@remix-run/node";
+import { useLoaderData, useNavigate } from "@remix-run/react";
+import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { createSubscription, changePlan } from "../utils/billing.server";
 
@@ -9,22 +11,26 @@ import { createSubscription, changePlan } from "../utils/billing.server";
  */
 export const loader: LoaderFunction = async ({ request }) => {
   const url = new URL(request.url);
-  const shop = url.searchParams.get("shop");
   const planId = url.searchParams.get("planId");
   const actionType = url.searchParams.get("action");
   const chargeId = url.searchParams.get("charge_id");
 
+  // ✅ Use authenticate.admin - we're in the iframe so session cookies work
+  const { session, admin } = await authenticate.admin(request);
+  const shop = session.shop;
+
   console.log(`[Billing Callback] Received callback - Shop: ${shop}, Plan: ${planId}, Charge: ${chargeId}`);
 
-  if (!shop || !planId || !chargeId) {
+  if (!planId || !chargeId) {
     console.error("[Billing Callback] Missing required parameters");
-    return redirect("/app/choose-subscription?error=missing_params");
+    return json({ 
+      success: false, 
+      error: "missing_params",
+      message: "Missing required billing parameters" 
+    });
   }
 
   try {
-    // Use unauthenticated.admin to get admin API access with the shop parameter
-    // This allows us to make API calls without requiring embedded context
-    const { admin } = await unauthenticated.admin(shop);
 
     // Get plan details
     const plan = await prisma.subscriptionPlan.findUnique({
@@ -84,13 +90,6 @@ export const loader: LoaderFunction = async ({ request }) => {
     // Extract Shopify charge ID from the subscription ID
     const shopifyChargeId = activeSubscription.id.split("/").pop();
 
-    // Get API key for constructing admin URL
-    const apiKey = process.env.SHOPIFY_API_KEY;
-    if (!apiKey) {
-      console.error("❌ CRITICAL ERROR: SHOPIFY_API_KEY is missing!");
-      return redirect("/app/choose-subscription?error=config_error");
-    }
-
     // Handle different action types
     if (actionType === "change" || actionType === "upgrade") {
       // Update existing subscription to new plan
@@ -103,58 +102,99 @@ export const loader: LoaderFunction = async ({ request }) => {
         data: { chargeId: shopifyChargeId },
       });
       
-      // ✅ Redirect to Shopify Admin to re-embed app properly
-      // Since we're at the top level (Railway URL), this redirect is allowed
-      const adminUrl = `https://${shop}/admin/apps/${apiKey}/app?success=true&planId=${planId}&changed=true`;
-      console.log("✅ [Billing Callback] Redirecting to Shopify Admin:", adminUrl);
-      return redirect(adminUrl);
+      console.log("✅ [Billing Callback] Plan updated successfully");
+      // ✅ Return JSON - client will handle navigation
+      return json({ 
+        success: true, 
+        shop,
+        planId,
+        changed: true,
+        message: "Plan upgraded successfully!"
+      });
     }
 
     // Create new subscription
     console.log(`[Billing Callback] Creating new subscription for plan: ${plan.name}`);
     await createSubscription(shop, planId, shopifyChargeId);
     
-    // ✅ Redirect to Shopify Admin to re-embed app properly
-    // Since we're at the top level (Railway URL), this redirect is allowed
-    const adminUrl = `https://${shop}/admin/apps/${apiKey}/app?success=true&planId=${planId}`;
-    console.log("✅ [Billing Callback] Redirecting to Shopify Admin:", adminUrl);
-    return redirect(adminUrl);
+    console.log("✅ [Billing Callback] Subscription created successfully");
+    // ✅ Return JSON - client will handle navigation
+    return json({ 
+      success: true, 
+      shop,
+      planId,
+      changed: false,
+      message: "Subscription activated successfully!"
+    });
 
   } catch (error) {
     console.error("[Billing Callback] Error processing billing:", error);
-    // For error cases, also redirect to Shopify Admin with error param
-    const apiKey = process.env.SHOPIFY_API_KEY;
-    if (apiKey && shop) {
-      const adminUrl = `https://${shop}/admin/apps/${apiKey}/app/choose-subscription?error=billing_failed`;
-      return redirect(adminUrl);
-    }
-    return redirect("/app/choose-subscription?error=billing_failed");
+    return json({ 
+      success: false, 
+      error: "billing_failed",
+      message: "Failed to process billing. Please try again."
+    });
   }
 };
 
-// Default component to show while processing
+// Component with client-side navigation
 export default function BillingCallback() {
-  return (
-    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
-      {/* 🔥 THE CRASH FIX 🔥 
-         This script runs before Remix hydration. If history.state is missing
-         (which happens after a hard redirect), it creates a fake one. 
-         This stops the "null is not an object" error.
-      */}
-      <script
-        dangerouslySetInnerHTML={{
-          __html: `
-            if (!window.history.state) {
-              window.history.replaceState({ key: "default" }, "");
-            }
-          `,
-        }}
-      />
+  const navigate = useNavigate();
+  const data = useLoaderData<typeof loader>();
+
+  useEffect(() => {
+    // ✅ Client-Side Redirect after success
+    // Since we're already inside the iframe, React Router handles this smoothly
+    if (data.success) {
+      const timer = setTimeout(() => {
+        // Navigate with success params so dashboard can show banner
+        navigate(`/app?success=true&planId=${data.planId}&changed=${data.changed}`);
+      }, 1500);
       
-      <div style={{ textAlign: 'center' }}>
-        <h2>Processing your subscription...</h2>
-        <p>Please wait while we complete your purchase.</p>
-      </div>
+      return () => clearTimeout(timer);
+    } else if (data.error) {
+      // Navigate to subscription page with error
+      const timer = setTimeout(() => {
+        navigate(`/app/choose-subscription?error=${data.error}`);
+      }, 2000);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [data, navigate]);
+
+  return (
+    <div style={{ 
+      display: "flex", 
+      flexDirection: "column",
+      alignItems: "center", 
+      justifyContent: "center", 
+      height: "100vh",
+      fontFamily: "system-ui, -apple-system, sans-serif",
+      backgroundColor: "#f6f6f7"
+    }}>
+      {data.success ? (
+        <>
+          {/* Success UI */}
+          <div style={{ fontSize: "60px", marginBottom: "20px" }}>🎉</div>
+          <h1 style={{ fontSize: "24px", fontWeight: "bold", marginBottom: "10px", color: "#202223" }}>
+            Payment Approved!
+          </h1>
+          <p style={{ color: "#6d7175", fontSize: "16px" }}>
+            {data.message || "Updating your account..."}
+          </p>
+        </>
+      ) : (
+        <>
+          {/* Error UI */}
+          <div style={{ fontSize: "60px", marginBottom: "20px" }}>⚠️</div>
+          <h1 style={{ fontSize: "24px", fontWeight: "bold", marginBottom: "10px", color: "#202223" }}>
+            Something went wrong
+          </h1>
+          <p style={{ color: "#6d7175", fontSize: "16px" }}>
+            {data.message || "Redirecting you back..."}
+          </p>
+        </>
+      )}
     </div>
   );
 }
