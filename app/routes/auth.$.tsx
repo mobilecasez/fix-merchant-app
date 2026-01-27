@@ -37,22 +37,29 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 // 4. Ensure there is a Default Export (Component)
 // If the loader returns JSON, this ensures we see a Form, not "{}"
 export default function AuthLogin() {
+  // Simple HTML-only component to avoid any client-side hydration issues
   return (
-    <div style={{ padding: "50px", textAlign: "center", fontFamily: "system-ui" }}>
-      <h1>Sign In</h1>
-      <p>Please enter your shop domain to continue.</p>
-      <form method="post" action="/auth/login">
-        <input 
-          type="text" 
-          name="shop" 
-          placeholder="my-shop.myshopify.com" 
-          style={{ padding: "10px", marginRight: "10px" }} 
-        />
-        <button type="submit" style={{ padding: "10px 20px" }}>
-          Log In
-        </button>
-      </form>
-    </div>
+    <html>
+      <head>
+        <meta charSet="utf-8" />
+        <title>Sign In</title>
+      </head>
+      <body style={{ padding: "50px", textAlign: "center", fontFamily: "system-ui" }}>
+        <h1>Sign In</h1>
+        <p>Please enter your shop domain to continue.</p>
+        <form method="post" action="/auth/login">
+          <input 
+            type="text" 
+            name="shop" 
+            placeholder="my-shop.myshopify.com" 
+            style={{ padding: "10px", marginRight: "10px" }} 
+          />
+          <button type="submit" style={{ padding: "10px 20px" }}>
+            Log In
+          </button>
+        </form>
+      </body>
+    </html>
   );
 }
 
