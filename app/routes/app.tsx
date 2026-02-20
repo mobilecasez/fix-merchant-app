@@ -12,53 +12,43 @@ import prisma from "../db.server";
 export const links = () => [{ rel: "stylesheet", href: polarisStyles }];
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  try {
-    console.log('[app.tsx loader] Starting authentication...');
-    const { session } = await authenticate.admin(request);
-    console.log('[app.tsx loader] Authentication successful for shop:', session.shop);
+  const { session } = await authenticate.admin(request);
 
-    // Check if user is account owner
-    const sessionData = await prisma.session.findFirst({
-      where: { shop: session.shop },
+  // Check if user is account owner
+  const sessionData = await prisma.session.findFirst({
+    where: { shop: session.shop },
+  });
+
+  // Get or create app settings for this shop
+  let settings = await prisma.appSettings.findUnique({
+    where: { shop: session.shop },
+  });
+
+  if (!settings) {
+    settings = await prisma.appSettings.create({
+      data: {
+        shop: session.shop,
+        addProductReplicaEnabled: true,
+        dashboardEnabled: false,
+        additionalEnabled: false,
+        reportEnabled: false,
+        storeErrorReportEnabled: false,
+      },
     });
-    console.log('[app.tsx loader] Session data found:', !!sessionData);
-
-    // Get or create app settings for this shop
-    let settings = await prisma.appSettings.findUnique({
-      where: { shop: session.shop },
-    });
-
-    if (!settings) {
-      console.log('[app.tsx loader] Creating new settings for shop');
-      settings = await prisma.appSettings.create({
-        data: {
-          shop: session.shop,
-          addProductReplicaEnabled: true,
-          dashboardEnabled: false,
-          additionalEnabled: false,
-          reportEnabled: false,
-          storeErrorReportEnabled: false,
-        },
-      });
-    }
-
-    // Get subscription info
-    const subscription = await prisma.shopSubscription.findUnique({
-      where: { shop: session.shop },
-      include: { plan: true },
-    });
-    console.log('[app.tsx loader] Subscription found:', !!subscription);
-
-    return json({
-      apiKey: process.env.SHOPIFY_API_KEY || "",
-      settings,
-      isAccountOwner: sessionData?.accountOwner || false,
-      subscription,
-    });
-  } catch (error) {
-    console.error('[app.tsx loader] ERROR:', error);
-    throw error;
   }
+
+  // Get subscription info
+  const subscription = await prisma.shopSubscription.findUnique({
+    where: { shop: session.shop },
+    include: { plan: true },
+  });
+
+  return json({
+    apiKey: process.env.SHOPIFY_API_KEY || "",
+    settings,
+    isAccountOwner: sessionData?.accountOwner || false,
+    subscription,
+  });
 };
 
 export default function App() {
