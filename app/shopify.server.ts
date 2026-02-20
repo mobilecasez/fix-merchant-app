@@ -23,6 +23,7 @@ const shopify = shopifyApp({
   future: {
     // REQUIRED for embedded apps - uses session tokens instead of cookies
     // This prevents the iframe breakout loop and ErrorResponseImpl issues
+    // Force deploy: 2026-02-21
     unstable_newEmbeddedAuthStrategy: true,
     removeRest: true,
   },
