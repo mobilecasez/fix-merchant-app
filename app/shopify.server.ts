@@ -21,9 +21,9 @@ const shopify = shopifyApp({
   // This config tells Shopify that the app requires billing
   billing: undefined, // Manual billing via GraphQL appSubscriptionCreate
   future: {
-    // Disabled - causes blank screen in production with session token mismatch
-    // Will re-enable after clearing all sessions and reinstalling app
-    // unstable_newEmbeddedAuthStrategy: true,
+    // REQUIRED for embedded apps - uses session tokens instead of cookies
+    // This prevents the iframe breakout loop and ErrorResponseImpl issues
+    unstable_newEmbeddedAuthStrategy: true,
     removeRest: true,
   },
   ...(process.env.SHOP_CUSTOM_DOMAIN
