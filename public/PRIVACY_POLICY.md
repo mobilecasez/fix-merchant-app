@@ -36,10 +36,10 @@ We use collected information to:
 
 ## 4. Data Retention
 
-- **Account Data**: Retained as long as your subscription is active, then deleted within 90 days of cancellation
-- **Product Data**: Deleted upon user request or 30 days after account termination
-- **Usage Data**: Retained for 12 months for analytics and improvement purposes
-- **Backup Data**: May be retained in backups for up to 90 days
+- **Account Data**: Retained as long as your subscription is active, then automatically deleted within 48 hours of uninstall (via Shopify GDPR webhooks)
+- **Product Data**: Deleted upon user request or when you uninstall the app (within 48 hours)
+- **Usage Data**: Deleted when you uninstall the app (within 48 hours)
+- **Backup Data**: May be retained in backups for up to 90 days for disaster recovery, then permanently deleted
 
 ## 5. Data Security
 

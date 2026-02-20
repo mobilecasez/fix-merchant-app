@@ -3,6 +3,7 @@ import {
   ApiVersion,
   AppDistribution,
   shopifyApp,
+  BillingInterval,
 } from "@shopify/shopify-app-remix/server";
 import { PrismaSessionStorage } from "@shopify/shopify-app-session-storage-prisma";
 import prisma from "./db.server";
@@ -16,9 +17,9 @@ const shopify = shopifyApp({
   authPathPrefix: "/auth",
   sessionStorage: new PrismaSessionStorage(prisma),
   distribution: AppDistribution.AppStore,
-  billing: {
-    required: false, // We handle billing manually
-  },
+  // Billing configuration - handled via manual GraphQL mutations in choose-subscription route
+  // This config tells Shopify that the app requires billing
+  billing: undefined, // Manual billing via GraphQL appSubscriptionCreate
   future: {
     unstable_newEmbeddedAuthStrategy: true,
     removeRest: true,

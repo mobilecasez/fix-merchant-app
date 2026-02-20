@@ -28,6 +28,7 @@ import {
   LegacyStack,
   Collapsible,
   Spinner,
+  Banner,
 } from "@shopify/polaris";
 import { useDropzone } from "react-dropzone";
 import RichTextEditor from "../components/RichTextEditor";
@@ -104,6 +105,7 @@ export default function AddProductReplica() {
   const [showManualHtmlInput, setShowManualHtmlInput] = useState(false);
   const [manualHtml, setManualHtml] = useState('');
   const [htmlPanelOpen, setHtmlPanelOpen] = useState(true);
+  const [authorizedToImport, setAuthorizedToImport] = useState(false);
   const progressIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const targetProgressRef = useRef(0);
   const prevFetcherState = useRef(fetcher.state);
@@ -689,10 +691,28 @@ export default function AddProductReplica() {
                     Import from URL
                   </Text>
                   <Text variant="bodySm" as="p" tone="subdued">
-                    Automatically fetch product details from any e-commerce platform
+                    Import product details from supported e-commerce platforms
                   </Text>
                 </BlockStack>
               </InlineStack>
+              
+              {/* Authorization Disclaimer */}
+              <Banner tone="warning">
+                <BlockStack gap="300">
+                  <Text as="p" variant="bodyMd" fontWeight="semibold">
+                    Important: Only import products you are authorized to use
+                  </Text>
+                  <BlockStack gap="150">
+                    <Text as="p" variant="bodySm">✓ Your own products</Text>
+                    <Text as="p" variant="bodySm">✓ Officially licensed products</Text>
+                    <Text as="p" variant="bodySm">✓ Dropshipped products from authorized suppliers</Text>
+                  </BlockStack>
+                  <Text as="p" variant="bodySm" tone="subdued">
+                    Do not import products from other stores without explicit permission. Unauthorized use may violate intellectual property rights and Shopify's policies.
+                  </Text>
+                </BlockStack>
+              </Banner>
+              
               <FormLayout>
                 <TextField
                   label="Product URL"
@@ -700,18 +720,33 @@ export default function AddProductReplica() {
                   onChange={setProductUrl}
                   autoComplete="off"
                   placeholder="https://example.com/product/..."
-                  helpText="Supports Amazon, Flipkart, eBay, and most e-commerce websites"
-                  connectedRight={
-                    <Button 
-                      onClick={handleFetchProductFromUrl} 
-                      loading={isFetchingProduct} 
-                      disabled={isFetchingProduct || !productUrl}
-                      variant="primary"
-                    >
-                      {isFetchingProduct ? "Importing..." : "Import"}
-                    </Button>
-                  }
+                  helpText="Enter the product URL from your authorized suppliers or own product catalogs"
                 />
+                
+                <Box 
+                  padding="400" 
+                  background="bg-surface-secondary" 
+                  borderRadius="200"
+                  borderWidth="025"
+                  borderColor="border"
+                >
+                  <Checkbox
+                    label="I confirm I have authorization to import this product"
+                    checked={authorizedToImport}
+                    onChange={setAuthorizedToImport}
+                    helpText="Only import products you own, are licensed to use, or have obtained from authorized suppliers/dropshippers"
+                  />
+                </Box>
+                
+                <Button 
+                  onClick={handleFetchProductFromUrl} 
+                  loading={isFetchingProduct} 
+                  disabled={!productUrl.trim() || !authorizedToImport || isFetchingProduct}
+                  variant="primary"
+                  fullWidth
+                >
+                  {isFetchingProduct ? "Importing..." : "Import Product"}
+                </Button>
                 
                 {/* Manual HTML Input - shown when auto-fetch is blocked */}
                 {(showManualHtmlInput || manualHtml) && (
@@ -830,7 +865,7 @@ export default function AddProductReplica() {
                                 setHtmlPanelOpen(false);
                               }}
                               loading={isFetchingProduct}
-                              disabled={!manualHtml.trim() || isFetchingProduct || !productUrl}
+                              disabled={!productUrl.trim() || !manualHtml.trim() || !authorizedToImport || isFetchingProduct}
                             >
                               {isFetchingProduct ? 'Importing...' : 'Import Product'}
                             </Button>

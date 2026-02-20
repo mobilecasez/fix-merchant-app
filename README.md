@@ -1,22 +1,20 @@
 # Product Import Pro - Shopify App
 
-A powerful Shopify application that enables merchants to import products from 11+ major e-commerce platforms with AI-powered optimization and Google Merchant Center compliance checking.
+A powerful Shopify application that enables merchants to import authorized products from major e-commerce platforms with AI-powered optimization and Google Merchant Center compliance checking.
 
 ## 🌟 Features
 
-### Multi-Platform Import
-Import products from:
-- Amazon
-- AliExpress  
-- eBay
-- Walmart
-- Flipkart
-- Shopee
-- Taobao
-- JD.com
-- Temu
-- Mercado Libre
-- Coupang
+### Multi-Platform Import for Authorized Products
+Import products you're authorized to sell from:
+- Amazon (dropshipping & supplier products)
+- AliExpress (authorized supplier products)  
+- eBay (licensed products)
+- Walmart (supplier products)
+- Flipkart (authorized products)
+- Shopee (supplier products)
+- Plus 5+ more platforms for dropshipping and supplier integration
+
+**Important:** Only import products you have permission to sell - your own products, officially licensed items, or products from authorized suppliers.
 
 ### AI-Powered Optimization
 - Smart product descriptions using GPT-4

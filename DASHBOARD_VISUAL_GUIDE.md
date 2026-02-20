@@ -38,7 +38,7 @@
 ║                                                                           ║
 ║  ┌───────────────────────────────────────────────────────────────────┐  ║
 ║  │ 🌍 SUPPORTED E-COMMERCE PLATFORMS                                │  ║
-║  │ Import products from any of these 11+ global platforms           │  ║
+║  │ Import authorized products from supplier platforms           │  ║
 ║  │                                                                   │  ║
 ║  │  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐             │  ║
 ║  │  │ Amazon  │  │ eBay    │  │Walmart  │  │AliExpr. │  ...        │  ║

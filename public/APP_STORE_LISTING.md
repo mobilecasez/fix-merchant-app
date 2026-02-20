@@ -30,10 +30,12 @@ ShopFlix AI is an intelligent app that transforms your Shopify store's product l
 - AI-recommended improvements
 
 **🔍 Product Research & Enrichment**
-- Search products across 11+ platforms (Amazon, eBay, Walmart, AliExpress, Temu, Shopee, and more)
+- Import authorized products from supplier platforms (Amazon, eBay, Walmart, AliExpress, and more)
 - Auto-fill missing product details
 - GTIN/barcode lookup and validation
-- Import competitor products for reference
+- Perfect for dropshipping and supplier integration
+
+**Important:** Only import products you're authorized to sell - your own products, officially licensed items, or products from authorized suppliers/dropshipping partners.
 
 **✏️ Smart Description Rewriting**
 - AI-generated product descriptions optimized for conversions

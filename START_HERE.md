@@ -122,7 +122,7 @@ shopify app deploy
 
 ✨ **Features:**
 - Dashboard with quota tracking
-- Product import from any URL
+- Authorized product import from supplier platforms
 - AI-powered rewriting
 - Rating system
 - Video tutorial

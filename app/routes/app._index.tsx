@@ -457,7 +457,7 @@ export default function Index() {
           <div style={{ marginBottom: '1rem' }}>
             <Banner
               title={planChanged ? "Plan upgraded successfully!" : "Subscription activated!"}
-              status="success"
+              tone="success"
               onDismiss={handleSuccessBannerDismiss}
             >
               <p>
@@ -514,7 +514,7 @@ export default function Index() {
         <div className="intro-card">
           <h2 className="intro-heading">Streamline Your Product Imports.</h2>
           <p className="intro-paragraph">
-            Instantly extract product details from external e-commerce URLs like Amazon or Flipkart and fill them directly into your store—no messy Excel imports required. Get ready for powerful upcoming features, including automated Google Merchant Center compliance checks and full AI-powered SEO rewriting for titles and descriptions.
+            Import authorized product details from your suppliers and licensed sources. Extract data from e-commerce platforms like Amazon, Flipkart, AliExpress, and more—perfect for dropshipping, your own products, and licensed items. Get ready for powerful upcoming features, including automated Google Merchant Center compliance checks and full AI-powered SEO rewriting for titles and descriptions.
           </p>
         </div>
 
@@ -527,7 +527,7 @@ export default function Index() {
               <h3 className="feature-card-title">Import Products</h3>
             </div>
             <p className="feature-card-description">
-              Copy an external e-commerce URL and we'll extract all data to create a perfect product replica in your store.
+              Import authorized products from your suppliers or licensed sources. Extract product data to create optimized listings in your store.
             </p>
             <Link to="/app/add-product-replica" style={{ textDecoration: 'none' }}>
               <button className="feature-card-button">

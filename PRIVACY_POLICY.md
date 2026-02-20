@@ -94,8 +94,8 @@ We use the following third-party services that may collect, process, or store yo
 
 ### Data Retention
 - **Active Users**: Data retained while you use the App
-- **After Uninstall**: Subscription data deleted within 30 days
-- **Backups**: Retained for up to 90 days for disaster recovery
+- **After Uninstall**: All shop data is automatically deleted within 48 hours (via Shopify's GDPR webhooks)
+- **Backups**: May be retained for up to 90 days for disaster recovery, then permanently deleted
 
 ## Your Rights
 
@@ -207,10 +207,11 @@ For privacy-related questions or concerns:
 
 ### App Uninstall
 When you uninstall the App:
-- We receive an uninstall webhook from Shopify
-- Your subscription data is queued for deletion
-- Complete deletion occurs within 30 days
-- You can request immediate deletion
+- We receive an uninstall webhook from Shopify immediately
+- Your subscription data is marked for deletion
+- Within 48 hours, Shopify sends a shop/redact webhook (GDPR requirement)
+- Upon receiving shop/redact, all your data is immediately and permanently deleted
+- Backups may retain data for up to 90 days for disaster recovery
 
 ### Data Access
 We only access Shopify data that you explicitly grant permissions for during installation.

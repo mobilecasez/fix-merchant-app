@@ -73,7 +73,7 @@ The ShopFlix AI dashboard has been completely redesigned to provide a modern, in
 ```
 ┌─────────────────────────────────────────────┐
 │ 🌍 Supported e-Commerce Platforms           │
-│ Import products from any of these 11+ sites │
+│ Import authorized products from suppliers │
 ├─────────────────────────────────────────────┤
 │                                             │
 │ [Amazon] [eBay] [Walmart] [AliExpress]    │
@@ -131,9 +131,9 @@ The ShopFlix AI dashboard has been completely redesigned to provide a modern, in
 │   Select a plan that fits your needs        │
 │   [View Plans Button]                       │
 ├─────────────────────────────────────────────┤
-│ ② Find a Product You Want to Import        │
-│   Copy the product URL from any of the     │
-│   11+ supported platforms                  │
+│ ② Find an Authorized Product to Import    │
+│   Copy the product URL from your supplier  │
+│   or authorized platform                    │
 ├─────────────────────────────────────────────┤
 │ ③ Let AI Optimize Your Product             │
 │   Auto-generates titles, descriptions,     │

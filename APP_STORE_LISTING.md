@@ -1,22 +1,20 @@
 # ShopFlix AI - Shopify App
 
-Import products from 11+ e-commerce platforms with AI-powered optimization and Google Merchant Center compliance.
+Import authorized products from major e-commerce platforms with AI-powered optimization and Google Merchant Center compliance.
 
 ## 🌟 Features
 
-### Multi-Platform Import
-Import products seamlessly from:
-- Amazon
-- AliExpress
-- eBay
-- Walmart
-- Flipkart
-- Shopee
-- Taobao
-- JD.com
-- Temu
-- Mercado Libre
-- Coupang
+### Multi-Platform Import for Authorized Products
+Import products you're authorized to sell from:
+- Amazon (for dropshipping or your own products)
+- AliExpress (supplier products)
+- eBay (authorized listings)
+- Walmart (supplier products)
+- Flipkart (authorized products)
+- Shopee (supplier products)
+- Plus 5+ more major platforms
+
+**Important:** Only import products you have permission to use - your own products, officially licensed items, or products from authorized suppliers/dropshipping partners.
 
 ### AI-Powered Optimization
 - **Smart Descriptions**: AI rewrites product descriptions for better engagement
@@ -54,10 +52,10 @@ Cancel anytime. Monthly reset on billing date. Upgrade or downgrade at any time.
 
 ## 💡 Use Cases
 
-- **Dropshipping**: Quickly import products from suppliers
-- **Catalog Building**: Build your inventory from multiple sources
-- **Product Research**: Test products with free trials
-- **Market Expansion**: Import international products easily
+- **Dropshipping**: Import products from authorized supplier platforms
+- **Own Product Listings**: Efficiently import your own products from manufacturer sites
+- **Licensed Products**: Import items you have licensing agreements for
+- **Supplier Integration**: Seamlessly add authorized supplier products to your catalog
 
 ## 🔒 Privacy & Security
 
