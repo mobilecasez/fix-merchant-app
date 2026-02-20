@@ -21,8 +21,9 @@ const shopify = shopifyApp({
   // This config tells Shopify that the app requires billing
   billing: undefined, // Manual billing via GraphQL appSubscriptionCreate
   future: {
-    // Disabled newEmbeddedAuthStrategy - was causing blank screen/only App Bridge script rendering
-    // unstable_newEmbeddedAuthStrategy: true,
+    // REQUIRED for embedded apps in production - handles iframe auth escape flow
+    // See: https://shopify.dev/docs/api/shopify-app-remix/authenticate/admin
+    unstable_newEmbeddedAuthStrategy: true,
     removeRest: true,
   },
   ...(process.env.SHOP_CUSTOM_DOMAIN
