@@ -21,7 +21,7 @@ const shopify = shopifyApp({
   // This config tells Shopify that the app requires billing
   billing: undefined, // Manual billing via GraphQL appSubscriptionCreate
   future: {
-    unstable_newEmbeddedAuthStrategy: false,
+    unstable_newEmbeddedAuthStrategy: true,
     removeRest: true,
   },
   ...(process.env.SHOP_CUSTOM_DOMAIN

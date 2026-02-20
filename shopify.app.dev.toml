@@ -1,10 +1,13 @@
 # ShopFlix AI - Local Development Configuration
 # This is for local testing only - separate from the production Railway app
 
-scopes = "read_products,write_products,read_locations"
+client_id = "adbe221d4ee5000b41a21b0117444917"
 name = "ShopFlix AI Dev"
 application_url = "http://localhost:3000"
 embedded = true
+
+[access_scopes]
+scopes = "read_products,write_products"
 
 [build]
 automatically_update_urls_on_dev = true

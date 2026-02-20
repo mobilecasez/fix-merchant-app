@@ -698,21 +698,20 @@ export default function AddProductReplica() {
               
               {/* Authorization Disclaimer */}
               <Banner tone="warning">
-                <BlockStack gap="300">
-                  <Text as="p" variant="bodyMd" fontWeight="semibold">
-                    Important: Only import products you are authorized to use
+                <BlockStack gap="200">
+                  <Text as="p" variant="bodyMd">
+                    <strong>Important:</strong> Only import products you are authorized to use:
                   </Text>
-                  <BlockStack gap="150">
-                    <Text as="p" variant="bodySm">✓ Your own products</Text>
-                    <Text as="p" variant="bodySm">✓ Officially licensed products</Text>
-                    <Text as="p" variant="bodySm">✓ Dropshipped products from authorized suppliers</Text>
+                  <BlockStack gap="100">
+                    <Text as="p" variant="bodySm">• Your own products</Text>
+                    <Text as="p" variant="bodySm">• Officially licensed products</Text>
+                    <Text as="p" variant="bodySm">• Dropshipped products from authorized suppliers</Text>
                   </BlockStack>
                   <Text as="p" variant="bodySm" tone="subdued">
-                    Do not import products from other stores without explicit permission. Unauthorized use may violate intellectual property rights and Shopify's policies.
+                    Do not import products from other stores or websites without explicit permission. Unauthorized use may violate intellectual property rights and Shopify's policies.
                   </Text>
                 </BlockStack>
               </Banner>
-              
               <FormLayout>
                 <TextField
                   label="Product URL"
@@ -723,13 +722,7 @@ export default function AddProductReplica() {
                   helpText="Enter the product URL from your authorized suppliers or own product catalogs"
                 />
                 
-                <Box 
-                  padding="400" 
-                  background="bg-surface-secondary" 
-                  borderRadius="200"
-                  borderWidth="025"
-                  borderColor="border"
-                >
+                <Box paddingBlockStart="200" paddingBlockEnd="200">
                   <Checkbox
                     label="I confirm I have authorization to import this product"
                     checked={authorizedToImport}
