@@ -21,10 +21,7 @@ const shopify = shopifyApp({
   // This config tells Shopify that the app requires billing
   billing: undefined, // Manual billing via GraphQL appSubscriptionCreate
   future: {
-    // REQUIRED for embedded apps - uses session tokens instead of cookies
-    // This prevents the iframe breakout loop and ErrorResponseImpl issues
-    // Force deploy: 2026-02-21
-    unstable_newEmbeddedAuthStrategy: true,
+    unstable_newEmbeddedAuthStrategy: false,
     removeRest: true,
   },
   ...(process.env.SHOP_CUSTOM_DOMAIN
