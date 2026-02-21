@@ -1,96 +1,223 @@
-# Complete Shopify App Deployment Guide to Railway + Shopify Partner
+# ShopFlix AI - Complete Deployment Guide
 
-**Last Updated:** January 4, 2026
-**Deployment Time:** ~30-45 minutes (if no mistakes)
-**Success Rate:** 100% (if following this guide exactly)
+**Last Updated:** February 21, 2026  
+**Version:** 2.0 - Separated Dev & Production Workflows
+
+---
+
+## ⚠️ CRITICAL: Read This First
+
+**This guide has TWO completely separate deployment workflows:**
+
+1. **🟢 DEVELOPMENT (Local Testing)** - Use `shopify.app.dev.toml` and local PostgreSQL
+2. **🔴 PRODUCTION (Railway)** - Use `shopify.app.production.toml` and Railway PostgreSQL
+
+**NEVER mix these configurations!** Each environment has its own:
+- TOML configuration file
+- Shopify Client ID and Secret
+- Database URL
+- App URL
+- Environment variables
+
+**🔐 Note on Credentials:** 
+This guide uses placeholders like `shpss_[your_secret]` and `AIza[your_key]` for sensitive values. To get actual credentials:
+- **Dev API Secret**: Run `shopify app env show` (or check `.env` file)
+- **Production API Secret**: Run `shopify app env show --config shopify.app.production.toml`
+- **Gemini API Key**: Get from [Google AI Studio](https://aistudio.google.com/app/apikey)
 
 ---
 
 ## Table of Contents
-1. [Prerequisites](#prerequisites)
-2. [Phase 1: Setup Shopify Partner App](#phase-1-setup-shopify-partner-app)
-3. [Phase 2: Configure Local Environment](#phase-2-configure-local-environment)
-4. [Phase 3: Deploy to Railway](#phase-3-deploy-to-railway)
-5. [Phase 4: Configure Shopify Partner Dashboard](#phase-4-configure-shopify-partner-dashboard)
-6. [Phase 5: Test & Verify](#phase-5-test--verify)
-7. [Common Mistakes & Solutions](#common-mistakes--solutions)
-8. [Security Best Practices](#security-best-practices)
+
+1. [Environment Overview](#environment-overview)
+2. [🟢 Development Deployment (Local)](#-development-deployment-local)
+3. [🔴 Production Deployment (Railway)](#-production-deployment-railway)
+4. [Common Issues & Solutions](#common-issues--solutions)
+5. [Verification Checklist](#verification-checklist)
 
 ---
 
-## Prerequisites
+## Environment Overview
 
-Before starting, ensure you have:
-- ✅ Shopify Partner account (partners.shopify.com)
-- ✅ Railway account (railway.app) with payment method added
-- ✅ Google Cloud account with Gemini API key
-- ✅ GitHub repository ready
-- ✅ Local Git setup
-- ✅ Shopify CLI installed (`shopify --version`)
-- ✅ npm/Node.js v18+
+### 🟢 Development Environment
 
-**Test CLI tools:**
-```bash
-shopify --version    # Should show v3.84+
-which railway        # Should show /opt/homebrew/bin/railway
-npm --version        # Should show v18+
-git --version        # Should show v2.40+
-```
+| Component | Value |
+|-----------|-------|
+| **TOML File** | `shopify.app.dev.toml` (default when running `shopify app dev`) |
+| **Client ID** | `adbe221d4ee5000b41a21b0117444917` |
+| **App URL** | `http://localhost:3000` (via Cloudflare tunnel) |
+| **Database** | `postgresql://rishisamadhiya@localhost:5432/shopflix_dev` |
+| **Environment File** | `.env` (local) |
+| **Test Store** | `quickstart-8d0b502f.myshopify.com` |
+| **Purpose** | Local testing before production deployment |
 
----
+### 🔴 Production Environment
 
-## Phase 1: Setup Shopify Partner App
-
-### Step 1.1: Create New Blank App in Shopify Partner Dashboard
-
-1. Go to **https://partners.shopify.com**
-2. Click **"Apps and sales channels"** → **"All apps and sales channels"**
-3. Click **"Create an app"** → **"Create an app manually"**
-4. Fill in:
-   - **App name:** ShopFlix AI (or your app name)
-   - **App type:** Select "Custom app" or "Public app"
-5. Click **"Create app"**
-6. **Wait for the app to be created** (usually takes 5-10 seconds)
-
-### Step 1.2: Get API Credentials
-
-1. In the new app dashboard, go to **Configuration** → **API credentials**
-2. You'll see two sections:
-   - **Admin API access scopes** (already configured)
-   - **API credentials** section at bottom
-3. **Copy and save these values SECURELY:**
-   ```
-   Client ID: (alphanumeric string)
-   Client Secret: shpss_xxxxxxxxxxxxxxxxxxxxxxxx
-   ```
-4. **DO NOT commit these to git** - keep them in a secure note
-
-### Step 1.3: Generate Google Gemini API Key
-
-1. Go to **https://aistudio.google.com/app/apikey**
-2. Click **"Create API Key"**
-3. Select your project or create a new one
-4. Copy the API key: **AIza**Sxxxxxxxxxxxxxxxxxxxxxxx
-5. **DO NOT commit this to git** - keep it secure
+| Component | Value |
+|-----------|-------|
+| **TOML File** | `shopify.app.production.toml` (specify with `--config` flag) |
+| **Client ID** | `85d12decc346b5ec3cdfebacdce7f290` |
+| **App URL** | `https://shopflixai-production.up.railway.app` |
+| **Database** | Railway PostgreSQL (internal: `postgres.railway.internal:5432`) |
+| **Environment Variables** | Railway dashboard or CLI |
+| **Test Store** | `zsellr.myshopify.com` |
+| **Purpose** | Live production app for real merchants |
 
 ---
 
-## Phase 2: Configure Local Environment
+## 🟢 Development Deployment (Local)
 
-### Step 2.1: Update shopify.app.toml
+### Step 1: Verify Development Configuration Files
 
-Open `shopify.app.toml` and ensure:
+#### 1.1 Check `shopify.app.dev.toml`
+
+**File:** `shopify.app.dev.toml`
 
 ```toml
-# Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
+# ShopFlix AI - Local Development Configuration
+# This is for local testing only - separate from the production Railway app
 
-client_id = "YOUR_CLIENT_ID_HERE"  # From Phase 1.2
-name = "ShopFlix AI"
-application_url = "PLACEHOLDER_WILL_UPDATE_AFTER_RAILWAY_DEPLOY"
+client_id = "adbe221d4ee5000b41a21b0117444917"
+name = "ShopFlix AI Dev"
+application_url = "http://localhost:3000"
 embedded = true
+
+[access_scopes]
+scopes = "read_products,write_products"
+
+[build]
+automatically_update_urls_on_dev = true
 
 [webhooks]
 api_version = "2024-07"
+
+  [[webhooks.subscriptions]]
+  topics = [ "app/uninstalled" ]
+  uri = "/webhooks/app/uninstalled"
+
+  [[webhooks.subscriptions]]
+  topics = [ "app/scopes_update" ]
+  uri = "/webhooks/app/scopes_update"
+
+[auth]
+redirect_urls = [
+  "http://localhost:3000/auth/callback",
+  "http://localhost:3000/auth/shopify/callback",
+  "http://localhost:3000/api/auth/callback"
+]
+
+[pos]
+embedded = false
+```
+
+**⚠️ DO NOT CHANGE** the `client_id` - it's for development only.
+
+#### 1.2 Check `.env` (Local Environment)
+
+**File:** `.env`
+
+```env
+SHOPIFY_APP_URL="http://localhost:3000"
+SHOPIFY_API_KEY="adbe221d4ee5000b41a21b0117444917"
+SHOPIFY_API_SECRET="shpss_[your_dev_secret_here]"
+SCOPES="write_products,read_products"
+DATABASE_URL="postgresql://rishisamadhiya@localhost:5432/shopflix_dev"
+GOOGLE_GEMINI_API_KEY="AIza[your_gemini_api_key_here]"
+```
+
+**✅ Verify:**
+- `SHOPIFY_API_KEY` matches `client_id` in `shopify.app.dev.toml`
+- `DATABASE_URL` points to local PostgreSQL database
+- `SHOPIFY_APP_URL` is `http://localhost:3000`
+
+### Step 2: Start Local Development Server
+
+#### 2.1 Ensure Local PostgreSQL is Running
+
+```bash
+# Check if PostgreSQL is running
+psql -U rishisamadhiya -d shopflix_dev -c "SELECT 1;"
+
+# If not running, start it:
+brew services start postgresql@16
+```
+
+#### 2.2 Start Shopify Dev Server
+
+```bash
+# Clean any previous dev sessions (optional)
+shopify app dev clean
+
+# Start development server
+shopify app dev
+```
+
+**Expected Output:**
+```
+✅ Ready, watching for changes in your app
+
+Preview URL: https://quickstart-8d0b502f.myshopify.com/admin/oauth/redirect_from_cli?client_id=adbe221d4ee5000b41a21b0117444917
+GraphiQL URL: http://localhost:3457/graphiql
+Tunnel URL: https://[random].trycloudflare.com
+```
+
+### Step 3: Test the Development App
+
+1. **Open Preview URL** from terminal output
+2. **Install app** on `quickstart-8d0b502f.myshopify.com`
+3. **Test features:**
+   - Add product replica
+   - Test AI scraping
+   - Verify billing (if applicable)
+4. **Check logs** in terminal for any errors
+
+### Step 4: Make Changes and Test
+
+**Hot Reload is Enabled:**
+- Edit any `.tsx` file
+- Save the file
+- Refresh browser to see changes
+- Check terminal for build errors
+
+---
+
+## 🔴 Production Deployment (Railway)
+
+### Prerequisites
+
+Before deploying to production:
+
+✅ **App working locally** (test thoroughly in dev first)  
+✅ **Railway CLI installed** (`railway --version`)  
+✅ **Railway account** linked (`railway whoami`)  
+✅ **GitHub repository** up to date  
+✅ **All changes committed** to `main` branch
+
+### Step 1: Verify Production Configuration Files
+
+#### 1.1 Check `shopify.app.production.toml`
+
+**File:** `shopify.app.production.toml`
+
+```toml
+# Production App Configuration - ShopFlix AI
+# Learn more: https://shopify.dev/docs/apps/tools/cli/configuration
+
+client_id = "85d12decc346b5ec3cdfebacdce7f290"
+name = "ShopFlix AI"
+application_url = "https://shopflixai-production.up.railway.app"
+embedded = true
+
+[build]
+automatically_update_urls_on_dev = false
+
+[webhooks]
+api_version = "2024-07"
+
+[webhooks.privacy_compliance]
+customer_deletion_url = "https://shopflixai-production.up.railway.app/webhooks/customers/redact"
+customer_data_request_url = "https://shopflixai-production.up.railway.app/webhooks/customers/data_request"
+shop_deletion_url = "https://shopflixai-production.up.railway.app/webhooks/shop/redact"
 
   [[webhooks.subscriptions]]
   topics = [ "app/scopes_update" ]
@@ -100,518 +227,541 @@ api_version = "2024-07"
   topics = [ "app/uninstalled" ]
   uri = "/webhooks/app/uninstalled"
 
+  [[webhooks.subscriptions]]
+  topics = [ "app_subscriptions/update" ]
+  uri = "/webhooks/app-subscriptions-update"
+
 [access_scopes]
-scopes = "read_products,write_products,read_script_tags,write_script_tags"
+scopes = "read_products,write_products"
 
 [auth]
 redirect_urls = [
-  "PLACEHOLDER_WILL_UPDATE_AFTER_RAILWAY_DEPLOY/auth/callback",
-  "PLACEHOLDER_WILL_UPDATE_AFTER_RAILWAY_DEPLOY/auth/shopify/callback",
-  "PLACEHOLDER_WILL_UPDATE_AFTER_RAILWAY_DEPLOY/api/auth/callback"
+  "https://shopflixai-production.up.railway.app/auth/callback",
+  "https://shopflixai-production.up.railway.app/auth/shopify/callback",
+  "https://shopflixai-production.up.railway.app/api/auth/callback"
 ]
 
 [pos]
 embedded = false
 ```
 
-**IMPORTANT:** Replace `client_id` with your actual Client ID from Phase 1.2
+**⚠️ CRITICAL:** All URLs must be `https://shopflixai-production.up.railway.app`
 
-### Step 2.2: Verify Prisma Database Configuration
+#### 1.2 Verify `app/shopify.server.ts`
 
-Open `prisma/schema.prisma` and ensure it has:
+**File:** `app/shopify.server.ts`
 
-```prisma
-generator client {
-  provider = "prisma-client-js"
-}
-
-datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
-}
+```typescript
+const shopify = shopifyApp({
+  apiKey: process.env.SHOPIFY_API_KEY,
+  apiSecretKey: process.env.SHOPIFY_API_SECRET || "",
+  apiVersion: ApiVersion.July24,
+  scopes: ["read_products", "write_products"],
+  appUrl: process.env.SHOPIFY_APP_URL || "",
+  authPathPrefix: "/auth",
+  sessionStorage: new PrismaSessionStorage(prisma),
+  distribution: AppDistribution.AppStore,
+  billing: undefined, // Manual billing via GraphQL
+  future: {
+    unstable_newEmbeddedAuthStrategy: false, // MUST be false for production
+    removeRest: true,
+  },
+  ...(process.env.SHOP_CUSTOM_DOMAIN
+    ? { customShopDomains: [process.env.SHOP_CUSTOM_DOMAIN] }
+    : {}),
+});
 ```
 
-**✅ MUST be SQLite provider** (not PostgreSQL)
-**✅ Database URL will use persistent volume path** (not file:./dev.db)
+**✅ Verify:**
+- `unstable_newEmbeddedAuthStrategy: false` (traditional OAuth)
+- `distribution: AppDistribution.AppStore`
+- All values come from environment variables
 
-### Step 2.3: Create `.env.production` file (DO NOT COMMIT)
+### Step 2: Get Production Credentials from Shopify
 
-Create `.env.production` in your project root:
+#### 2.1 Get API Secret for Production App
 
 ```bash
-# .env.production
-SHOPIFY_API_KEY=YOUR_CLIENT_ID_HERE
-SHOPIFY_API_SECRET=shpss_xxxxxxxxxxxxxxxxxxxxxxxx
-SHOPIFY_APP_URL=PLACEHOLDER_RAILWAY_URL
-NODE_ENV=production
-DATABASE_URL=file:/data/shopflixai.db
-GOOGLE_GEMINI_API_KEY=AIzaSyxxxxxxxxxxxxxxxxxxxxxxx
-SCOPES=read_products,write_products,read_script_tags,write_script_tags
-SHOPIFY_DEV_STORE=your-store.myshopify.com
+shopify app env show --config shopify.app.production.toml
 ```
 
-**⚠️ CRITICAL:** Add `.env.production` to `.gitignore`:
-```bash
-echo ".env.production" >> .gitignore
-git add .gitignore
-git commit -m "Add .env.production to gitignore"
-git push origin main
+**Expected Output:**
+```
+SHOPIFY_API_KEY=85d12decc346b5ec3cdfebacdce7f290
+SHOPIFY_API_SECRET=shpss_[your_production_secret_here]
+SCOPES=read_products,write_products
 ```
 
-### Step 2.4: Commit Code to GitHub
+**📝 COPY** the `SHOPIFY_API_SECRET` value - you'll need it for Railway.
+
+### Step 3: Configure Railway Environment Variables
+
+#### 3.1 Verify Railway Variables
 
 ```bash
+# Check all Railway environment variables
+railway variables
+```
+
+**Required Variables:**
+
+| Variable | Value | How to Set |
+|----------|-------|------------|
+| `SHOPIFY_API_KEY` | `85d12decc346b5ec3cdfebacdce7f290` | `railway variables --set SHOPIFY_API_KEY=85d12decc346b5ec3cdfebacdce7f290` |
+| `SHOPIFY_API_SECRET` | `shpss_[from_step_2.1]` | `railway variables --set SHOPIFY_API_SECRET=shpss_[value_from_step_2.1]` |
+| `SHOPIFY_APP_URL` | `https://shopflixai-production.up.railway.app` | `railway variables --set SHOPIFY_APP_URL=https://shopflixai-production.up.railway.app` |
+| `DATABASE_URL` | (automatically set by Railway) | No action needed |
+| `GOOGLE_GEMINI_API_KEY` | `AIza[your_gemini_key]` | `railway variables --set GOOGLE_GEMINI_API_KEY=AIza[your_key]` |
+| `NODE_ENV` | `production` | `railway variables --set NODE_ENV=production` |
+
+####3.2 Set Variables (If Missing or Incorrect)
+
+```bash
+# Set production API secret (CRITICAL - must match Shopify Partner Dashboard)
+railway variables --set SHOPIFY_API_SECRET=shpss_[value_from_step_2.1]
+
+# Set production app URL
+railway variables --set SHOPIFY_APP_URL=https://shopflixai-production.up.railway.app
+
+# Set production API key
+railway variables --set SHOPIFY_API_KEY=85d12decc346b5ec3cdfebacdce7f290
+
+# Set Google Gemini API key
+railway variables --set GOOGLE_GEMINI_API_KEY=AIza[your_gemini_key]
+```
+
+**⚠️ CRITICAL:** After setting variables, Railway will automatically redeploy.
+
+### Step 4: Deploy to Shopify Partner Dashboard
+
+#### 4.1 Deploy Configuration
+
+```bash
+# Deploy production configuration to Shopify Partner Dashboard
+shopify app deploy --config shopify.app.production.toml --force
+```
+
+**Expected Output:**
+```
+╭─ info ───────────────────────────────────────────────────────────────────────╮
+│  Using shopify.app.production.toml for default values:                       │
+│    • Org:             zSellr Enterprises LLP                                 │
+│    • App:             ShopFlix AI                                            │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+Releasing a new app version as part of ShopFlix AI
+
+╭─ success ────────────────────────────────────────────────────────────────────╮
+│  New version released to users.                                              │
+│  shopflix-ai-8 (or higher)                                                   │
+╰──────────────────────────────────────────────────────────────────────────────╯
+```
+
+**📝 Note:** The version number (shopflix-ai-8) will increment with each deployment.
+
+### Step 5: Deploy Code to Railway
+
+#### 5.1 Ensure Code is Committed and Pushed
+
+```bash
+# Check for uncommitted changes
+git status
+
+# If there are changes, commit them:
 git add -A
-git commit -m "Prepare app for Railway deployment"
+git commit -m "Production release: [describe changes]"
 git push origin main
 ```
 
----
-
-## Phase 3: Deploy to Railway
-
-### Step 3.1: Create Railway Project
+#### 5.2 Deploy to Railway
 
 ```bash
-cd /path/to/your/app
-railway login  # Login to Railway if not already logged in
-railway init   # Create new Railway project
-```
-
-When prompted:
-- **Project name:** ShopFlixAI
-- **Environment:** production
-
-### Step 3.2: Link to Railway Project (if re-deploying)
-
-```bash
-railway link
-```
-
-Select:
-- Your workspace
-- ShopFlixAI project
-- production environment
-- ShopFlixAI service
-
-### Step 3.3: Set Environment Variables in Railway
-
-```bash
-railway variables --set \
-  SHOPIFY_API_KEY="YOUR_CLIENT_ID" \
-  SHOPIFY_API_SECRET="shpss_xxxxx" \
-  GOOGLE_GEMINI_API_KEY="AIzaSyxxxxx" \
-  NODE_ENV="production" \
-  DATABASE_URL="file:/data/shopflixai.db" \
-  SCOPES="read_products,write_products,read_script_tags,write_script_tags" \
-  SHOPIFY_DEV_STORE="your-store.myshopify.com"
-```
-
-**⚠️ DO THIS CAREFULLY:**
-- Do NOT put quotes around values
-- Do NOT expose keys in git commits
-- Railway variables are encrypted at rest
-
-### Step 3.4: Verify Variables Are Set
-
-```bash
-railway variables --kv
-```
-
-Output should show all 7 variables with correct values.
-
-### Step 3.5: Deploy to Railway
-
-```bash
+# Option 1: Manual upload (recommended for immediate deployment)
 railway up --detach
+
+# Option 2: Let Railway auto-deploy from GitHub (slower)
+# Just push to main, Railway will detect and deploy
 ```
 
-### Step 3.6: Wait for Build & Get Public URL
+**Expected Output:**
+```
+  Indexed
+  Compressed [====================] 100%
+  Uploaded
+  Build Logs: https://railway.com/project/[PROJECT_ID]/service/[SERVICE_ID]?id=[DEPLOYMENT_ID]
+```
+
+#### 5.3 Monitor Deployment
 
 ```bash
-# Wait 60 seconds for build
-sleep 60
+# Wait for build to complete (usually 2-3 minutes)
+sleep 120
 
-# Get your Railway public URL
-railway domain
+# Check if app is running
+railway logs --tail 50
 ```
 
-You'll see:
+**Expected Log Output:**
 ```
-Service Domain created:
-🚀 https://shopflixai-production.up.railway.app
+[shopify-api/INFO] version 11.14.1, environment Remix
+[remix-serve] http://localhost:8080 (http://0.0.0.0:8080)
 ```
 
-**Save this URL** - you'll need it in Phase 4.
+**✅ Good signs:**
+- `remix-serve` started
+- No error messages
+- `200` HTTP status codes
 
-### Step 3.7: Verify App is Running
+**❌ Bad signs:**
+- `401 Unauthorized` on webhooks = Wrong API secret
+- `500 Internal Server Error` = Check app errors
+- App not starting = Check Railway logs for errors
+
+### Step 6: Verify Production Deployment
+
+#### 6.1 Test Direct Access
 
 ```bash
+# Test if Railway app is responding
 curl -I https://shopflixai-production.up.railway.app
 ```
 
-Should return:
+**Expected Response:**
 ```
 HTTP/2 200
 content-type: text/html; charset=utf-8
 ```
 
-### Step 3.8: Check App Logs
+#### 6.2 Test via Shopify Admin
+
+1. **Go to test store**: https://admin.shopify.com/store/zsellr/apps
+2. **Click on ShopFlix AI**
+3. **App should load** without errors
+
+**If you see blank screen or errors:**
+- Check Railway logs: `railway logs --tail 100`
+- Verify environment variables: `railway variables | grep SHOPIFY`
+- Check Shopify Partner Dashboard: App version deployed?
+
+#### 6.3 Test Core Functionality
+
+On the production app:
+
+1. ✅ **Add Product Replica** - Try scraping an Amazon URL
+2. ✅ **AI Fallback** - Test with URL that triggers CAPTCHA
+3. ✅ **Billing** - Verify subscription plans load
+4. ✅ **No Console Errors** - Check browser console (F12)
+
+### Step 7: Monitor Production
+
+#### 7.1 Check Railway Logs
 
 ```bash
-railway logs --lines 50
+# Follow live logs
+railway logs
+
+# Get last 100 lines
+railway logs --tail 100
+
+# Search for errors
+railway logs --tail 500 | grep -i error
 ```
 
-Look for:
-```
-✓ Created subscription plans
-Seeding subscription plans...
-[remix-serve] http://localhost:8080 (http://0.0.0.0:8080)
-```
+#### 7.2 Check Webhook Delivery
 
-**✅ If you see this, the app is running successfully**
+1. Go to **Shopify Partner Dashboard** → **ShopFlix AI** → **Configuration** → **Webhooks**
+2. Scroll to **Webhook subscriptions**
+3. Check **Recent deliveries** - should show `200 OK`
+
+**If webhooks showing 401:**
+- `SHOPIFY_API_SECRET` is incorrect in Railway
+- Run: `shopify app env show --config shopify.app.production.toml`
+- Update Railway: `railway variables --set SHOPIFY_API_SECRET=[correct_value]`
 
 ---
 
-## Phase 4: Configure Shopify Partner Dashboard
+## Common Issues & Solutions
 
-### Step 4.1: Update shopify.app.toml with Railway URL
+### Issue 1: "ErrorResponseImpl { status: 200 }" in Production
 
-Replace all `PLACEHOLDER_WILL_UPDATE_AFTER_RAILWAY_DEPLOY` with your Railway URL:
+**Symptom:** Blank screen, only App Bridge script loads
 
+**Cause:** Authentication configuration mismatch
+
+**Solution:**
 ```bash
-RAILWAY_URL="https://shopflixai-production.up.railway.app"
+# 1. Verify API secret matches
+shopify app env show --config shopify.app.production.toml
 
-# Update the file
-sed -i '' "s|PLACEHOLDER_WILL_UPDATE_AFTER_RAILWAY_DEPLOY|$RAILWAY_URL|g" shopify.app.toml
+# 2. Update Railway if different
+railway variables --set SHOPIFY_API_SECRET=[value_from_step_1]
+
+# 3. Redeploy
+railway redeploy --yes
 ```
 
-Verify the changes:
+### Issue 2: "401 Unauthorized" on Webhooks
+
+**Symptom:** Railway logs show `POST /webhooks/app/uninstalled 401`
+
+**Cause:** `SHOPIFY_API_SECRET` in Railway doesn't match Shopify Partner Dashboard
+
+**Solution:**
 ```bash
-cat shopify.app.toml | head -20
+# Get correct secret
+shopify app env show --config shopify.app.production.toml
+
+# Update Railway
+railway variables --set SHOPIFY_API_SECRET=shpss_[correct_value]
+
+# Railway will auto-redeploy
 ```
 
-Should show:
-```
-application_url = "https://shopflixai-production.up.railway.app"
-```
+### Issue 3: AI Scraping Not Working in Production
 
-### Step 4.2: Commit Updated Configuration
+**Symptom:** "No HTML available for AI fallback" error
 
+**Cause:** Code was clearing HTML when CAPTCHA detected (FIXED in commit e4728de)
+
+**Verification:**
 ```bash
-git add shopify.app.toml
-git commit -m "Update app URL to Railway production deployment"
-git push origin main
-```
+# Check if latest code is deployed
+git log --oneline -1
+# Should show: e4728de fix: Keep HTML for AI fallback even when CAPTCHA detected
 
-### Step 4.3: Deploy App to Shopify Partner Dashboard
-
-```bash
-shopify app deploy --force
-```
-
-**What happens:**
-- Shopify CLI validates configuration
-- Creates a new app version
-- Releases it to your Partner Dashboard
-
-**Expected output:**
-```
-✅ New version released to users.
-   shopflix-ai-2 [1]
-```
-
-### Step 4.4: Verify Deployment
-
-```bash
-shopify app info
-```
-
-Should show:
-```
-Client ID: adbe221d4ee5000b41a21b0117444917
-App name: ShopFlix AI
-Status: Ready
-```
-
-### Step 4.5: Add SHOPIFY_APP_URL to Railway
-
-This is required for OAuth to work:
-
-```bash
-railway variables --set SHOPIFY_APP_URL="https://shopflixai-production.up.railway.app"
-```
-
-### Step 4.6: Trigger Final Redeploy
-
-```bash
+# If not, deploy:
+git pull origin main
 railway up --detach
 ```
 
-Wait 45 seconds for redeploy to complete.
+### Issue 4: Railway Showing 503 Error
 
----
+**Symptom:** `Error 503 error:0A000126:SSL routines::unexpected eof while reading`
 
-## Phase 5: Test & Verify
-
-### Step 5.1: Install App on Test Store
-
-1. Go to **https://partners.shopify.com**
-2. Go to **Development stores** → Select your test store
-3. Click **"Add app"**
-4. Select **"ShopFlix AI"**
-5. Click **"Install"**
-6. Authorize the requested scopes
-7. You should see the dashboard
-
-### Step 5.2: Test Core Features
-
-**Test login flow:**
-- [ ] Dashboard loads without blank screen
-- [ ] No OAuth errors
-- [ ] Can see welcome message
-
-**Test product import:**
-- [ ] Click "Import" button
-- [ ] No "API key leaked" messages
-- [ ] Can import from URL
-- [ ] Product data loads correctly
-
-**Test AI features:**
-- [ ] Click "Rewrite" on a product
-- [ ] AI generates content using Gemini
-- [ ] No API errors
-
-**Test subscription system:**
-- [ ] Can see subscription tier
-- [ ] Usage tracker works
-- [ ] Can rate products
-
-### Step 5.3: Check Railway Logs for Errors
-
-```bash
-railway logs --lines 100 | grep -i "error\|warning"
-```
-
-Should return minimal errors (only version upgrade suggestions are ok).
-
-### Step 5.4: Verify Database
-
-```bash
-railway exec ls -lah /data/
-```
-
-Should show:
-```
-shopflixai.db  (database file exists and has data)
-```
-
----
-
-## Common Mistakes & Solutions
-
-### ❌ Mistake 1: Using Old API Keys
-
-**Symptom:** OAuth error "Could not find Shopify API application"
-
-**Cause:** Using API credentials from old app attempt
+**Cause:** Railway edge cache (Varnish CDN) infrastructure issue - NOT your app
 
 **Solution:**
 ```bash
-# Always use the NEW app's credentials from Phase 1.2
-railway variables --set SHOPIFY_API_KEY="NEW_CLIENT_ID"
-railway up --detach
+# Test if app is actually running
+railway logs --tail 20
+
+# If app is running (you see remix-serve), wait 5-10 minutes
+# Railway edge cache will refresh automatically
+
+# Test multiple times:
+for i in {1..5}; do
+  curl -s -o /dev/null -w "Status: %{http_code}\n" https://shopflixai-production.up.railway.app
+  sleep 5
+done
+
+# If getting mix of 200 and 503, it's edge cache issue
+# Access via Shopify admin will work fine
 ```
 
-### ❌ Mistake 2: Using PostgreSQL Provider Without Database
+### Issue 5: Local Dev Using Production Config
 
-**Symptom:** Prisma validation error "URL must start with postgresql://"
+**Symptom:** `shopify app dev` using wrong client ID
 
-**Cause:** Prisma schema set to PostgreSQL but DATABASE_URL is SQLite format
+**Cause:** Wrong TOML file being used
 
 **Solution:**
 ```bash
-# Ensure prisma/schema.prisma has:
-provider = "sqlite"
-url      = env("DATABASE_URL")
+# Verify shopify.app.toml (symlink or default) points to dev config
+cat shopify.app.toml | grep client_id
+# Should show: adbe221d4ee5000b41a21b0117444917
 
-# And DATABASE_URL in Railway is:
-DATABASE_URL=file:/data/shopflixai.db
+# If showing production ID (85d12de...), you have wrong default
+# Shopify CLI uses shopify.app.toml as default
+
+# Create shopify.app.toml as copy of dev config:
+cp shopify.app.dev.toml shopify.app.toml
+
+# Or always specify config explicitly:
+shopify app dev --config shopify.app.dev.toml
 ```
-
-### ❌ Mistake 3: Database File Not Persistent
-
-**Symptom:** Data disappears after app restart
-
-**Cause:** Using `file:./dev.db` (local path that disappears in containers)
-
-**Solution:**
-```bash
-# Always use persistent path:
-DATABASE_URL=file:/data/shopflixai.db
-
-# Railway automatically manages /data as a persistent volume
-```
-
-### ❌ Mistake 4: Blank Screen on Install
-
-**Symptom:** App installs but shows blank page
-
-**Cause:** Missing SHOPIFY_APP_URL environment variable
-
-**Solution:**
-```bash
-railway variables --set SHOPIFY_APP_URL="https://shopflixai-production.up.railway.app"
-railway up --detach
-```
-
-### ❌ Mistake 5: API Key Exposed in Git
-
-**Symptom:** "Your API key appeared to be leaked" message
-
-**Cause:** Committing .env files or logs with API keys to git
-
-**Solution:**
-```bash
-# Add to .gitignore before deploying:
-echo ".env.production" >> .gitignore
-echo ".env.local" >> .gitignore
-
-# NEVER do:
-git add .env*  # ❌ DO NOT
-echo "API_KEY=..." in logs  # ❌ DO NOT
-```
-
-### ❌ Mistake 6: Forgot to Deploy to Shopify Partner
-
-**Symptom:** Changes on GitHub don't appear in Partner Dashboard
-
-**Cause:** Only pushed to GitHub, didn't run `shopify app deploy`
-
-**Solution:**
-```bash
-# After git push, MUST run:
-shopify app deploy --force
-
-# This creates a new version in Partner Dashboard
-```
-
----
-
-## Security Best Practices
-
-### ✅ DO:
-- ✅ Store API keys ONLY in Railway environment variables
-- ✅ Use `.gitignore` to prevent committing secrets
-- ✅ Regenerate API keys if they appear in logs/git
-- ✅ Rotate API keys every 90 days in production
-- ✅ Use different keys for dev/staging/production
-- ✅ Enable 2FA on Shopify Partner account
-- ✅ Regularly audit Railway environment variables
-
-### ❌ DON'T:
-- ❌ Commit .env files to git
-- ❌ Log API keys in console.log
-- ❌ Share API keys in chat/email
-- ❌ Use same key for multiple apps
-- ❌ Expose keys in error messages shown to users
-- ❌ Keep old/rotated keys in git history
 
 ---
 
 ## Verification Checklist
 
-Before considering deployment complete:
+### 🟢 Development Environment Checklist
 
-- [ ] App installed on test store without errors
-- [ ] Dashboard loads correctly
-- [ ] Login flow works (no OAuth errors)
-- [ ] Product import works (no API key leaked warnings)
-- [ ] AI rewriting works (Gemini API responding)
-- [ ] Subscription system shows correct tier
-- [ ] Usage tracking records data
-- [ ] Rating system works
-- [ ] Database persists data after app restart
-- [ ] No sensitive keys exposed in git or logs
-- [ ] Railway logs show no critical errors
-- [ ] All environment variables set correctly in Railway
+Before starting dev work:
+
+- [ ] `shopify.app.dev.toml` has client_id: `adbe221d4ee5000b41a21b0117444917`
+- [ ] `.env` has `SHOPIFY_API_KEY=adbe221d4ee5000b41a21b0117444917`
+- [ ] `.env` has `DATABASE_URL=postgresql://...localhost:5432/shopflix_dev`
+- [ ] `.env` has `SHOPIFY_APP_URL=http://localhost:3000`
+- [ ] Local PostgreSQL database `shopflix_dev` exists
+- [ ] `shopify app dev` starts successfully
+- [ ] Preview URL contains `client_id=adbe221d4ee5000b41a21b0117444917`
+- [ ] App installs on `quickstart-8d0b502f.myshopify.com`
+- [ ] All features work locally
+
+### 🔴 Production Environment Checklist
+
+Before deploying to production:
+
+**Configuration:**
+- [ ] `shopify.app.production.toml` has client_id: `85d12decc346b5ec3cdfebacdce7f290`
+- [ ] All URLs in production TOML are `https://shopflixai-production.up.railway.app`
+- [ ] `app/shopify.server.ts` has `unstable_newEmbeddedAuthStrategy: false`
+
+**Railway Variables:**
+- [ ] `SHOPIFY_API_KEY=85d12decc346b5ec3cdfebacdce7f290`
+- [ ] `SHOPIFY_API_SECRET=shpss_[from_step_2.1]`
+- [ ] `SHOPIFY_APP_URL=https://shopflixai-production.up.railway.app`
+- [ ] `GOOGLE_GEMINI_API_KEY` is set
+- [ ] `DATABASE_URL` is set by Railway
+
+**Deployment:**
+- [ ] Latest code committed and pushed to GitHub `main` branch
+- [ ] `shopify app deploy --config shopify.app.production.toml --force` successful
+- [ ] New version released (shopflix-ai-X)
+- [ ] `railway up --detach` completed
+- [ ] Railway logs show `remix-serve http://localhost:8080`
+
+**Verification:**
+- [ ] `curl -I https://shopflixai-production.up.railway.app` returns `200 OK`
+- [ ] App loads via Shopify admin: https://admin.shopify.com/store/zsellr/apps
+- [ ] Add product replica works
+- [ ] AI scraping works (test with Amazon URL)
+- [ ] No console errors in browser (F12)
+- [ ] Webhooks showing 200 OK in Partner Dashboard
 
 ---
 
-## Troubleshooting Commands
+## Command Quick Reference
 
-If something goes wrong, use these commands:
+### Development Commands
 
 ```bash
-# Check app info
-shopify app info
+# Start local dev server
+shopify app dev
+
+# Clean dev session and restart
+shopify app dev clean
+shopify app dev
+
+# Check local database
+psql -U rishisamadhiya -d shopflix_dev -c "\dt"
+
+# View dev app configuration
+shopify app env show
+```
+
+### Production Commands
+
+```bash
+# Get production credentials
+shopify app env show --config shopify.app.production.toml
+
+# Deploy to Shopify Partner Dashboard
+shopify app deploy --config shopify.app.production.toml --force
+
+# Deploy code to Railway
+railway up --detach
+
+# Check Railway environment variables
+railway variables
+
+# Set Railway environment variable
+railway variables --set KEY=value
+
+# Check Railway logs
+railway logs --tail 100
+
+# Redeploy on Railway (without code changes)
+railway redeploy --yes
+
+# Check Railway service status
+railway status
+
+# Test production app
+curl -I https://shopflixai-production.up.railway.app
+```
+
+### Git Commands
+
+```bash
+# Check status
+git status
+
+# Commit all changes
+git add -A
+git commit -m "Description of changes"
+
+# Push to GitHub
+git push origin main
+
+# Sync dev branch with main
+git checkout dev
+git merge main
+git push origin dev
+git checkout main
 
 # View recent commits
 git log --oneline -10
-
-# Check Railway status
-railway status
-
-# View complete logs
-railway logs --lines 200
-
-# Check environment variables
-railway variables --kv
-
-# Restart Railway service
-railway service restart
-
-# Check what's deployed
-railway up --help
-
-# Test app is running
-curl https://shopflixai-production.up.railway.app
-
-# SSH into Railway container (advanced)
-railway shell
 ```
 
 ---
 
-## Timeline
+## Environment Variables Reference
 
-- **Phase 1:** 5 minutes (create app, get credentials)
-- **Phase 2:** 5 minutes (update config files)
-- **Phase 3:** 30 minutes (deploy to Railway + wait for build)
-- **Phase 4:** 10 minutes (update Partner Dashboard, deploy)
-- **Phase 5:** 10 minutes (test and verify)
+### Local Development (.env)
 
-**Total:** 60 minutes (includes wait times)
+```env
+SHOPIFY_APP_URL=http://localhost:3000
+SHOPIFY_API_KEY=adbe221d4ee5000b41a21b0117444917
+SHOPIFY_API_SECRET=shpss_[your_dev_secret]
+SCOPES=write_products,read_products
+DATABASE_URL=postgresql://rishisamadhiya@localhost:5432/shopflix_dev
+GOOGLE_GEMINI_API_KEY=AIza[your_gemini_key]
+```
 
----
+### Production (Railway)
 
-## Support & Escalation
-
-If you encounter issues:
-
-1. Check the **Common Mistakes** section
-2. Review **Railway logs** for error messages
-3. Verify **all environment variables** are set
-4. Check **Shopify CLI** is up to date: `shopify upgrade`
-5. Review **Prisma schema** matches database provider
-6. Ensure **database file** path is persistent: `/data/`
-
----
-
-## Final Notes
-
-This guide encapsulates all lessons learned from the 4-day deployment process. Following it exactly will result in:
-- ✅ Zero deployment errors
-- ✅ Working app on first install
-- ✅ Secure credential management
-- ✅ Persistent database
-- ✅ All features functional
-- ✅ No wasted time debugging
-
-**Key Takeaway:** The most critical step is getting the API credentials correct BEFORE deploying. Everything else will work smoothly.
+```env
+SHOPIFY_APP_URL=https://shopflixai-production.up.railway.app
+SHOPIFY_API_KEY=85d12decc346b5ec3cdfebacdce7f290
+SHOPIFY_API_SECRET=shpss_[from_shopify_app_env_show]
+DATABASE_URL=(automatically set by Railway PostgreSQL)
+GOOGLE_GEMINI_API_KEY=AIza[your_gemini_key]
+NODE_ENV=production
+```
 
 ---
 
-**Created:** January 4, 2026
-**By:** GitHub Copilot
-**Status:** Production Ready
+## Important Notes
+
+### DO NOT:
+- ❌ Use production credentials in development
+- ❌ Use development credentials in production
+- ❌ Commit `.env` files to Git
+- ❌ Mix TOML configurations between environments
+- ❌ Deploy to production without testing locally first
+- ❌ Change `unstable_newEmbeddedAuthStrategy` to `true` in production (causes errors)
+
+### ALWAYS:
+- ✅ Test changes in development first
+- ✅ Use `--config shopify.app.production.toml` for production
+- ✅ Verify Railway environment variables before deploying
+- ✅ Check Railway logs after deployment
+- ✅ Commit and push code before deploying to Railway
+- ✅ Keep dev and main Git branches synchronized
+
+---
+
+## Support & Troubleshooting
+
+If you encounter issues not covered in this guide:
+
+1. **Check Railway logs:** `railway logs --tail 200`
+2. **Check Shopify Partner Dashboard:** Configuration → Webhooks → Recent deliveries
+3. **Verify environment variables:** `railway variables | grep SHOPIFY`
+4. **Compare with working config:** Review this guide's checklists
+5. **Test locally first:** `shopify app dev` should always work before production
+
+**Last successful deployment:** February 21, 2026  
+**Current production version:** shopflix-ai-7+  
+**Status:** ✅ All systems operational
