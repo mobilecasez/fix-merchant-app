@@ -210,9 +210,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
               html.includes('To discuss automated access to Amazon data please contact') ||
               html.toLowerCase().includes('robot check') ||
               html.length < 10000) {
-            console.log(`Got CAPTCHA/bot detection page (size: ${html.length}), clearing HTML`);
-            fetchSuccess = false;
-            html = ""; // Clear the CAPTCHA HTML so scraper doesn't use it
+            console.log(`Got CAPTCHA/bot detection page (size: ${html.length}), keeping HTML for AI fallback`);
+            fetchSuccess = true; // Keep HTML available for AI fallback
           } else {
             fetchSuccess = true;
             console.log(`Successfully fetched page, HTML length: ${html.length}`);
