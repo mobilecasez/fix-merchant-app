@@ -4,61 +4,89 @@ import { cleanProductName, ensureCompareAtPrice, parseWeight, estimateWeight } f
 export async function scrapeFlipkart(html: string, url: string): Promise<ScrapedProductData> {
   try {
     console.log('[Flipkart Scraper] Starting scrape for:', url);
-    console.log('[Flipkart Scraper] Attempting fast fetch() first...');
+    console.log('[Flipkart Scraper] HTML parameter provided:', !!html, 'Length:', html?.length || 0);
     
-    // Random delay to mimic human behavior
-    await new Promise(resolve => setTimeout(resolve, Math.random() * 1000 + 500));
+    let htmlContent = html;
     
-    const response = await fetch(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-        'accept-language': 'en-US,en;q=0.9',
-        'accept-encoding': 'gzip, deflate, br',
-        'referer': 'https://www.flipkart.com/',
-        'sec-ch-ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
-        'sec-ch-ua-mobile': '?0',
-        'sec-ch-ua-platform': '"Windows"',
-        'sec-fetch-dest': 'document',
-        'sec-fetch-mode': 'navigate',
-        'sec-fetch-site': 'same-origin',
-        'upgrade-insecure-requests': '1',
-      },
-    });
-    
-    // Check if we hit anti-bot protection (529 or similar errors)
-    if (!response.ok) {
-      console.log(`[Flipkart Scraper] fetch() failed with status ${response.status}`);
+    // Only fetch if HTML parameter is not provided or is too small
+    if (!html || html.length < 10000) {
+      console.log('[Flipkart Scraper] Fetching page with HTTP request...');
       
-      // If 529 or 403 (anti-bot), fall back to Puppeteer
-      if (response.status === 529 || response.status === 403 || response.status === 503) {
-        console.log('[Flipkart Scraper] Anti-bot detected, falling back to Puppeteer...');
-        return await scrapeFlipkartWithPuppeteer(url);
+      // Random delay to mimic human behavior
+      await new Promise(resolve => setTimeout(resolve, Math.random() * 1000 + 500));
+      
+      const response = await fetch(url, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+          'accept-language': 'en-US,en;q=0.9',
+          'accept-encoding': 'gzip, deflate, br',
+          'referer': 'https://www.flipkart.com/',
+          'sec-ch-ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+          'sec-ch-ua-mobile': '?0',
+          'sec-ch-ua-platform': '"Windows"',
+          'sec-fetch-dest': 'document',
+          'sec-fetch-mode': 'navigate',
+          'sec-fetch-site': 'same-origin',
+          'upgrade-insecure-requests': '1',
+        },
+      });
+      
+      // Check if we hit anti-bot protection (529 or similar errors)
+      if (!response.ok) {
+        console.log(`[Flipkart Scraper] HTTP error: ${response.status} ${response.statusText}`);
+        
+        // Try to use the provided HTML parameter as fallback
+        if (html && html.length > 10000) {
+          console.log('[Flipkart Scraper] Using provided HTML as fallback');
+          htmlContent = html;
+        } else if (response.status === 529 || response.status === 403 || response.status === 503) {
+          // If 529 or 403 (anti-bot) and no HTML fallback, try Puppeteer
+          console.log('[Flipkart Scraper] Anti-bot detected, falling back to Puppeteer...');
+          return await scrapeFlipkartWithPuppeteer(url);
+        } else {
+          throw new Error(`Failed to fetch Flipkart page: ${response.status}`);
+        }
+      } else {
+        htmlContent = await response.text();
+        console.log('[Flipkart Scraper] Page fetched successfully, HTML length:', htmlContent.length);
+        
+        // Check if we got a CAPTCHA or error page despite 200 status
+        if (htmlContent.includes('Access Denied') || 
+            htmlContent.includes('Robot or human') || 
+            htmlContent.length < 5000) {
+          console.log('[Flipkart Scraper] CAPTCHA/Bot detection page detected');
+          
+          // Try to use the provided HTML parameter as fallback
+          if (html && html.length > 10000) {
+            console.log('[Flipkart Scraper] Using provided HTML parameter as fallback');
+            htmlContent = html;
+          } else {
+            console.log('[Flipkart Scraper] Falling back to Puppeteer...');
+            return await scrapeFlipkartWithPuppeteer(url);
+          }
+        }
       }
-      
-      // For other errors, try provided HTML
-      if (html && html.length > 10000) {
-        console.log('[Flipkart Scraper] Using provided HTML as fallback');
-        return await parseFlipkartHTML(html, url);
-      }
-      
-      throw new Error(`Failed to fetch Flipkart page: ${response.status}`);
-    }
-    
-    let htmlContent = await response.text();
-    console.log('[Flipkart Scraper] fetch() successful! HTML length:', htmlContent.length);
-    
-    // Check if we got a CAPTCHA or error page despite 200 status
-    if (htmlContent.includes('Access Denied') || htmlContent.includes('Robot or human') || htmlContent.length < 5000) {
-      console.log('[Flipkart Scraper] Detected CAPTCHA/block page, falling back to Puppeteer...');
-      return await scrapeFlipkartWithPuppeteer(url);
+    } else {
+      console.log('[Flipkart Scraper] Using provided HTML parameter (already fetched)');
     }
     
     return await parseFlipkartHTML(htmlContent, url);
   } catch (error) {
     console.error('[Flipkart Scraper] Error:', error);
-    // Last resort: try Puppeteer
-    console.log('[Flipkart Scraper] Attempting Puppeteer as last resort...');
+    
+    // Try to use provided HTML parameter as last resort before Puppeteer
+    if (html && html.length > 10000) {
+      console.log('[Flipkart Scraper] Attempting to parse provided HTML as last resort...');
+      try {
+        return await parseFlipkartHTML(html, url);
+      } catch (parseError) {
+        console.error('[Flipkart Scraper] Parse error:', parseError);
+      }
+    }
+    
+    // Final fallback: try Puppeteer
+    console.log('[Flipkart Scraper] Attempting Puppeteer as final fallback...');
     try {
       return await scrapeFlipkartWithPuppeteer(url);
     } catch (puppeteerError) {
@@ -100,7 +128,7 @@ async function scrapeFlipkartWithPuppeteer(url: string): Promise<ScrapedProductD
         '--disable-accelerated-2d-canvas',
         '--disable-gpu',
         '--window-size=1920x1080',
-        '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 0.0 Safari/537.36'
       ],
     });
     
@@ -127,19 +155,204 @@ async function scrapeFlipkartWithPuppeteer(url: string): Promise<ScrapedProductD
     
     console.log('[Flipkart Puppeteer] Navigating to URL...');
     await page.goto(url, { 
-      waitUntil: 'domcontentloaded',
+      waitUntil: 'networkidle2',
       timeout: 30000 
     });
     
-    // Wait a bit for dynamic content to load
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    // Wait for dynamic content to load
+    await new Promise(resolve => setTimeout(resolve, 3000));
     
-    const htmlContent = await page.content();
-    console.log('[Flipkart Puppeteer] Page loaded successfully, HTML length:', htmlContent.length);
+    console.log('[Flipkart Puppeteer] Extracting product data from DOM...');
+    
+    // Get page title - most reliable source for product name
+    const pageTitle = await page.title();
+    
+    // Extract data directly from the DOM
+    const productData = await page.evaluate((title) => {
+      // Helper to clean text
+      const cleanText = (text: string | null | undefined) => text?.trim().replace(/\s+/g, ' ') || '';
+      
+      // Extract product name from page title (most reliable)
+      let productName = '';
+      
+      // Clean page title - remove Flipkart branding
+      if (title) {
+        productName = title
+          .replace(/\s*\|\s*Flipkart\.com.*$/i, '')
+          .replace(/\s*Online at Best Price in India.*$/i, '')
+          .replace(/\s*Buy\s+/i, '')
+          .replace(/\s*at\s+Flipkart.*$/i, '')
+          .trim();
+      }
+      
+      // Fallback: try breadcrumb/navigation text if title extraction failed
+      if (!productName || productName.length < 10) {
+        const bodyText = document.body.innerText;
+        const lines = bodyText.split('\n').map(l => l.trim());
+        
+        // Look for product-like lines (contains size, specs, brand keywords)
+        for (const line of lines) {
+          if (line.length > 20 && line.length < 200 &&
+              line.match(/\d+\s*(L|ML|KG|G|W|GB|TB|Inch|MM|CM)|Door|Star|Refrigerator|Speaker|Bluetooth|Soundbar/i) &&
+              !line.match(/^(Login|Cart|More|Key|Highlights|Visit|Buy|Apply|Bank|EMI|₹)/i)) {
+            productName = line;
+            break;
+          }
+        }
+      }
+      
+      // Extract MRP (strikethrough price) and selling price
+      let mrp = ''; // Compare at price (strikethrough)
+      let price = ''; // Actual selling price
+      
+      // Strategy: Find the main product pricing section
+      // The main price usually appears with:
+      // 1. Discount percentage (like "86%")
+      // 2. Strikethrough original price
+      // 3. Current price with ₹ symbol
+      // They typically appear together in the same container
+      
+      // 1. First, find selling price - look for prominent price with ₹ (not in ads)
+      // Main product price is usually NOT in these patterns:
+      // - "Buy at ₹..." (CTA button)
+      // - "Pay ₹..." (EMI)
+      // - Small prices < ₹100
+      
+      const bodyText = document.body.innerText;
+      const textLines = bodyText.split('\n').map(l => l.trim());
+      
+      // Find lines with just price (₹X,XXX format) - these are likely the main prices
+      let foundPriceSection = false;
+      for (let i = 0; i < textLines.length; i++) {
+        const line = textLines[i];
+        
+        // Look for selling price pattern: just "₹X,XXX" on its own line or with discount%
+        if (line.match(/^(↓\d+%)?₹\s*[\d,]+$/) || line.match(/^\d+%\s*₹\s*[\d,]+$/)) {
+          const priceMatch = line.match(/₹\s*([\d,]+)/);
+          if (priceMatch) {
+            const priceValue = parseInt(priceMatch[1].replace(/,/g, ''));
+            if (priceValue > 500) { // Reasonable product price
+              price = '₹' + priceMatch[1];
+              foundPriceSection = true;
+              
+              // Look for MRP in nearby lines (usually 1-2 lines before)
+              for (let j = Math.max(0, i - 3); j < i; j++) {
+                const prevLine = textLines[j];
+                // MRP is usually just numbers (no ₹) or has ↓discount%
+                const mrpMatch = prevLine.match(/^(↓\d+%)?(\d{1,2},?\d{3,})$/);
+                if (mrpMatch && !prevLine.includes('₹')) {
+                  const mrpValue = parseInt(mrpMatch[2].replace(/,/g, ''));
+                  if (mrpValue > priceValue) { // MRP should be higher than selling price
+                    mrp = '₹' + mrpMatch[2];
+                    break;
+                  }
+                }
+              }
+              
+              if (price) break; // Found main price, stop searching
+            }
+          }
+        }
+      }
+      
+      // Fallback 1: Look for strikethrough elements near price elements
+      if (!mrp || !price) {
+        const strikeDivs = Array.from(document.querySelectorAll('div[style*="line-through"]'));
+        const strikePrices: string[] = [];
+        
+        strikeDivs.forEach(el => {
+          const text = el.textContent?.trim() || '';
+          const priceMatch = text.match(/(\d{1,2},?\d{3,})/);
+          if (priceMatch) {
+            const priceValue = parseInt(priceMatch[1].replace(/,/g, ''));
+            if (priceValue > 500) {
+              strikePrices.push('₹' + priceMatch[1]);
+            }
+          }
+        });
+        
+        if (strikePrices.length > 0 && !mrp) {
+          mrp = strikePrices[0];
+        }
+      }
+      
+      // Fallback 2: Extract from body text if still not found
+      if (!price) {
+        const allPrices = bodyText.match(/₹\s*([\d,]+)/g) || [];
+        for (const priceText of allPrices) {
+          const match = priceText.match(/₹\s*([\d,]+)/);
+          if (match) {
+            const priceValue = parseInt(match[1].replace(/,/g, ''));
+            if (priceValue > 500 && priceValue < 1000000) {
+              price = '₹' + match[1];
+              break;
+            }
+          }
+        }
+      }
+      
+      // Extract images - look for product images
+      const images: string[] = [];
+      const imgElements = document.querySelectorAll('img[src*="rukminim"], img[src*="flixcart"]');
+      imgElements.forEach(img => {
+        const src = img.getAttribute('src');
+        if (src && src.includes('rukminim') && src.match(/\.(jpg|jpeg|png|webp)/i)) {
+          // Convert to high-res
+          let highRes = src.replace(/\/128\/128\//, '/832/832/')
+                          .replace(/\/416\/416\//, '/832/832/')
+                          .replace(/\/200\/200\//, '/832/832/')
+                          .replace(/\/312\/312\//, '/832/832/')
+                          .replace(/\/80\/80\//, '/832/832/');
+          if (!images.includes(highRes)) {
+            images.push(highRes);
+          }
+        }
+      });
+      
+      // Get page text for description
+      const description = bodyText.substring(0, 500);
+      
+      return {
+        productName,
+        price,
+        mrp,
+        images,
+        description,
+      };
+    }, pageTitle);
+    
+    console.log('[Flipkart Puppeteer] Extracted:', {
+      name: productData.productName,
+      price: productData.price,
+      mrp: productData.mrp,
+      images: productData.images.length
+    });
     
     await browser.close();
     
-    return await parseFlipkartHTML(htmlContent, url);
+    // Validate and return
+    const estimated = estimateWeight(productData.productName);
+    
+    // Use MRP as compare at price if available, otherwise calculate
+    const finalCompareAtPrice = productData.mrp || ensureCompareAtPrice(productData.price, '');
+    
+    return {
+      productName: cleanProductName(productData.productName),
+      description: productData.description,
+      price: productData.price,
+      compareAtPrice: finalCompareAtPrice,
+      images: productData.images.slice(0, 10),
+      vendor: "Flipkart",
+      productType: "",
+      tags: "",
+      costPerItem: "",
+      sku: "",
+      barcode: "",
+      weight: estimated.value,
+      weightUnit: estimated.unit,
+      options: [],
+      variants: [],
+    };
   } catch (error) {
     console.error('[Flipkart Puppeteer] Error:', error);
     if (browser) {
