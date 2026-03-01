@@ -7,6 +7,7 @@ import fs from "fs";
 import path from "path";
 import { parse } from "node-html-parser";
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
+import { canCreateProduct, incrementProductUsage } from "../utils/billing.server";
 
 async function extractProductDataWithAI(url: string, htmlContent: string) {
   const apiKey = process.env.GOOGLE_GEMINI_API_KEY;
@@ -165,7 +166,19 @@ async function extractProductDataWithAI(url: string, htmlContent: string) {
 }
 
 export const action = async ({ request }: ActionFunctionArgs) => {
-  await authenticate.admin(request);
+  const { session } = await authenticate.admin(request);
+
+  console.log('[FETCH-API] Product fetch request from shop:', session.shop);
+
+  // Check subscription and product limit BEFORE processing
+  const canCreate = await canCreateProduct(session.shop);
+  console.log('[FETCH-API] canCreateProduct result:', canCreate);
+  if (!canCreate) {
+    console.log('[FETCH-API] Blocking fetch - limit reached');
+    return json({ 
+      error: "Product limit reached. Please upgrade your subscription or wait for the next billing cycle." 
+    }, { status: 403 });
+  }
 
   const formData = await request.formData();
   const url = formData.get("url") as string;
@@ -332,6 +345,11 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         { status: 400 },
       );
     }
+
+    // Increment product usage counter after successful fetch (AI tokens consumed)
+    console.log('[FETCH-API] Product data fetched successfully, incrementing usage counter');
+    await incrementProductUsage(session.shop);
+    console.log('[FETCH-API] Usage counter incremented');
 
     // Add HTML for debugging in browser console
     return json({

@@ -9,9 +9,13 @@ import type { ShopSubscription, SubscriptionPlan } from "@prisma/client";
 export function getProductsUsed(subscription: any): number {
   if (!subscription) return 0;
   
-  return subscription.status === "trial" 
+  const result = subscription.status === "trial" 
     ? subscription.trialProductsUsed 
     : subscription.productsUsed;
+  
+  console.log('[Billing] getProductsUsed - Status:', subscription.status, 'Returning:', result, '(productsUsed:', subscription.productsUsed, 'trialProductsUsed:', subscription.trialProductsUsed, ')');
+  
+  return result;
 }
 
 /**
@@ -156,20 +160,28 @@ export async function canCreateProduct(shop: string): Promise<boolean> {
   });
 
   if (!subscription) {
+    console.log('[Billing] No subscription found');
     return false;
   }
 
+  console.log('[Billing] Checking limit - Status:', subscription.status, 'Used:', subscription.productsUsed, 'Limit:', subscription.plan.productLimit);
+
   if (subscription.status !== "active" && subscription.status !== "trial") {
+    console.log('[Billing] Subscription not active/trial');
     return false;
   }
 
   // For trial status, check 2-product limit
   if (subscription.status === "trial") {
-    return subscription.trialProductsUsed < 2;
+    const canCreate = subscription.trialProductsUsed < 2;
+    console.log('[Billing] Trial check:', canCreate);
+    return canCreate;
   }
 
   // For active subscription, check plan limit
-  return subscription.productsUsed < subscription.plan.productLimit;
+  const canCreate = subscription.productsUsed < subscription.plan.productLimit;
+  console.log('[Billing] Active subscription check:', canCreate, '(', subscription.productsUsed, '<', subscription.plan.productLimit, ')');
+  return canCreate;
 }
 
 /**
@@ -185,6 +197,10 @@ export async function incrementProductUsage(shop: string) {
     throw new Error("No subscription found for shop");
   }
 
+  console.log('[Billing] Current usage:', subscription.status === "trial" 
+    ? `trial: ${subscription.trialProductsUsed}` 
+    : `active: ${subscription.productsUsed}`);
+
   // Update appropriate counter based on status
   if (subscription.status === "trial") {
     await prisma.shopSubscription.update({
@@ -193,6 +209,7 @@ export async function incrementProductUsage(shop: string) {
         trialProductsUsed: subscription.trialProductsUsed + 1,
       },
     });
+    console.log('[Billing] Incremented trial usage to:', subscription.trialProductsUsed + 1);
   } else {
     await prisma.shopSubscription.update({
       where: { shop },
@@ -200,6 +217,7 @@ export async function incrementProductUsage(shop: string) {
         productsUsed: subscription.productsUsed + 1,
       },
     });
+    console.log('[Billing] Incremented productsUsed to:', subscription.productsUsed + 1);
   }
 
   // Log to usage history (daily aggregation) - only for active subscriptions

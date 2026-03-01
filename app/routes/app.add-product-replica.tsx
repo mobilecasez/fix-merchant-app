@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect, useRef } from "react";
-import { useFetcher, useLoaderData } from "@remix-run/react";
+import { useFetcher, useLoaderData, useRevalidator } from "@remix-run/react";
 import { json, LoaderFunction } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
@@ -46,6 +46,8 @@ export const loader: LoaderFunction = async ({ request }) => {
   // Calculate products used on server side
   const productsUsed = getProductsUsed(subscription);
   const productLimit = subscription.plan.productLimit;
+  
+  console.log('[Loader] Returning data - Shop:', session.shop, 'productsUsed:', productsUsed, 'productLimit:', productLimit, 'status:', subscription.status);
   
   return json({ categories, productsUsed, productLimit, subscription });
 };
@@ -96,6 +98,13 @@ export default function AddProductReplica() {
   const fetcher = useFetcher();
   const saveFetcher = useFetcher();
   const processAllFetcher = useFetcher();
+  const revalidator = useRevalidator();
+
+  // Sync local counter with loader data when it changes (after revalidation)
+  useEffect(() => {
+    console.log('[Loader Sync] Updating currentProductsUsed from loader:', productsUsed);
+    setCurrentProductsUsed(productsUsed);
+  }, [productsUsed]);
 
   // Loading states for ShopFlix animated loader
   const [loadingProgress, setLoadingProgress] = useState(0);
@@ -376,17 +385,6 @@ export default function AddProductReplica() {
           setToastActive(true);
         }, 600);
       }, 800);
-      
-      // Increment product usage counter on successful import and update local quota
-      (async () => {
-        try {
-          await fetch("/api/increment-usage", { method: "POST" });
-          // Update local usage count immediately after successful increment
-          setCurrentProductsUsed((prev: number) => prev + 1);
-        } catch (error) {
-          console.error("Failed to increment usage:", error);
-        }
-      })();
     }
   }, [processAllFetcher.data, processAllFetcher.state]);
 
@@ -496,17 +494,25 @@ export default function AddProductReplica() {
 
   useEffect(() => {
     if (saveFetcher.state === 'idle' && saveFetcher.data) {
+      console.log('[Product Creation] saveFetcher state is idle with data:', JSON.stringify(saveFetcher.data, null, 2));
       const { product, errors } = saveFetcher.data as any;
+      console.log('[Product Creation] Parsed - product:', !!product, 'errors:', !!errors);
       if (errors) {
+        console.log('[Product Creation] Has errors:', errors);
         setToastMessage(errors[0].message);
         setToastError(true);
       } else if (product) {
+        console.log('[Product Creation] Product created successfully:', product.id);
         setToastMessage(`Product "${product.title}" created successfully!`);
         setToastError(false);
+        // Revalidate loader to fetch updated counter from database
+        console.log('[Product Creation] Calling revalidator.revalidate()');
+        revalidator.revalidate();
+        console.log('[Product Creation] Revalidator called');
       }
       setToastActive(true);
     }
-  }, [saveFetcher.state, saveFetcher.data]);
+  }, [saveFetcher.state, saveFetcher.data, revalidator]);
 
   const handleSubmit = () => {
     if (!productName) {

@@ -5,9 +5,13 @@ import { canCreateProduct } from "../utils/billing.server";
 export const action = async ({ request }: ActionFunctionArgs) => {
   const { admin, session } = await authenticate.admin(request);
 
+  console.log('[API] Product create request from shop:', session.shop);
+
   // Check subscription and product limit
   const canCreate = await canCreateProduct(session.shop);
+  console.log('[API] canCreateProduct result:', canCreate);
   if (!canCreate) {
+    console.log('[API] Blocking creation - limit reached');
     return json({ 
       errors: [{ 
         message: "Product limit reached. Please upgrade your subscription or wait for the next billing cycle." 
@@ -297,6 +301,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         }
       );
     }
+
+    // Note: Usage counter is incremented in fetch-product endpoint (when AI processes data)
+    // This prevents users from fetching unlimited products without counting AI token usage
 
     return json({ product: createdProduct });
   } catch (error) {
