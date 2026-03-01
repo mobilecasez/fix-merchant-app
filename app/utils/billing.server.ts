@@ -2,24 +2,20 @@ import prisma from "../db.server";
 import type { ShopSubscription, SubscriptionPlan } from "@prisma/client";
 
 /**
- * Calculate the current products used based on subscription status
+ * Calculate the current products used
  * @param subscription - Subscription object with plan included (can be from loader JSON)
- * @returns The correct products used count (trial or active)
+ * @returns The current products used count
  */
 export function getProductsUsed(subscription: any): number {
   if (!subscription) return 0;
   
-  const result = subscription.status === "trial" 
-    ? subscription.trialProductsUsed 
-    : subscription.productsUsed;
+  console.log('[Billing] getProductsUsed - Status:', subscription.status, 'Returning:', subscription.productsUsed);
   
-  console.log('[Billing] getProductsUsed - Status:', subscription.status, 'Returning:', result, '(productsUsed:', subscription.productsUsed, 'trialProductsUsed:', subscription.trialProductsUsed, ')');
-  
-  return result;
+  return subscription.productsUsed;
 }
 
 /**
- * Get or create subscription with free trial (auto-initializes on first access)
+ * Get or create subscription with Free Plan (auto-initializes on first access)
  */
 export async function getOrCreateSubscription(shop: string) {
   let subscription = await prisma.shopSubscription.findUnique({
@@ -28,24 +24,24 @@ export async function getOrCreateSubscription(shop: string) {
   });
 
   if (!subscription) {
-    // Get the Free Trial plan
-    const freeTrialPlan = await prisma.subscriptionPlan.findFirst({
-      where: { name: "Free Trial" },
+    // Get the Free Plan
+    const freePlan = await prisma.subscriptionPlan.findFirst({
+      where: { name: "Free Plan" },
     });
 
-    if (!freeTrialPlan) {
-      throw new Error("Free Trial plan not found. Please run seed script.");
+    if (!freePlan) {
+      throw new Error("Free Plan not found. Please run seed script.");
     }
 
-    // Create subscription with free trial
+    // Create subscription with Free Plan (permanent free tier)
     subscription = await prisma.shopSubscription.create({
       data: {
         shop,
-        planId: freeTrialPlan.id,
-        status: "trial",
+        planId: freePlan.id,
+        status: "active",
         productsUsed: 0,
         trialProductsUsed: 0,
-        triedPlanIds: freeTrialPlan.id,
+        triedPlanIds: "",
         billingCycleStart: new Date(),
       },
       include: { plan: true },
@@ -53,79 +49,6 @@ export async function getOrCreateSubscription(shop: string) {
   }
 
   return subscription;
-}
-
-/**
- * Check if shop has tried a specific plan
- */
-export async function hasTriedPlan(shop: string, planId: string): Promise<boolean> {
-  const subscription = await prisma.shopSubscription.findUnique({
-    where: { shop },
-  });
-
-  if (!subscription || !subscription.triedPlanIds) return false;
-  
-  const triedPlans = subscription.triedPlanIds.split(',').filter(id => id.length > 0);
-  return triedPlans.includes(planId);
-}
-
-/**
- * Start trial for a specific plan (2 free products)
- */
-export async function startPlanTrial(shop: string, planId: string) {
-  // Check if this plan was already tried
-  const alreadyTried = await hasTriedPlan(shop, planId);
-  if (alreadyTried) {
-    throw new Error("You've already tried this plan. Please purchase to continue.");
-  }
-
-  const existing = await prisma.shopSubscription.findUnique({
-    where: { shop },
-  });
-
-  const now = new Date();
-  const triedPlanIds = existing?.triedPlanIds 
-    ? `${existing.triedPlanIds},${planId}` 
-    : planId;
-
-  if (existing) {
-    return await prisma.shopSubscription.update({
-      where: { shop },
-      data: {
-        planId,
-        status: "trial",
-        trialProductsUsed: 0,
-        triedPlanIds,
-        billingCycleStart: now,
-      },
-    });
-  }
-
-  return await prisma.shopSubscription.create({
-    data: {
-      shop,
-      planId,
-      status: "trial",
-      trialProductsUsed: 0,
-      triedPlanIds: planId,
-      billingCycleStart: now,
-    },
-  });
-}
-
-/**
- * Check if trial has reached 2 product limit
- */
-export async function isTrialLimitReached(shop: string): Promise<boolean> {
-  const subscription = await prisma.shopSubscription.findUnique({
-    where: { shop },
-  });
-
-  if (subscription?.status === "trial") {
-    return subscription.trialProductsUsed >= 2;
-  }
-
-  return false;
 }
 
 /**
@@ -137,7 +60,7 @@ export async function hasActiveSubscription(shop: string): Promise<boolean> {
     include: { plan: true },
   });
 
-  return subscription?.status === "active" || subscription?.status === "trial";
+  return subscription?.status === "active";
 }
 
 /**
@@ -166,21 +89,14 @@ export async function canCreateProduct(shop: string): Promise<boolean> {
 
   console.log('[Billing] Checking limit - Status:', subscription.status, 'Used:', subscription.productsUsed, 'Limit:', subscription.plan.productLimit);
 
-  if (subscription.status !== "active" && subscription.status !== "trial") {
-    console.log('[Billing] Subscription not active/trial');
+  if (subscription.status !== "active") {
+    console.log('[Billing] Subscription not active');
     return false;
   }
 
-  // For trial status, check 2-product limit
-  if (subscription.status === "trial") {
-    const canCreate = subscription.trialProductsUsed < 2;
-    console.log('[Billing] Trial check:', canCreate);
-    return canCreate;
-  }
-
-  // For active subscription, check plan limit
+  // Check plan limit
   const canCreate = subscription.productsUsed < subscription.plan.productLimit;
-  console.log('[Billing] Active subscription check:', canCreate, '(', subscription.productsUsed, '<', subscription.plan.productLimit, ')');
+  console.log('[Billing] Subscription check:', canCreate, '(', subscription.productsUsed, '<', subscription.plan.productLimit, ')');
   return canCreate;
 }
 
@@ -197,28 +113,16 @@ export async function incrementProductUsage(shop: string) {
     throw new Error("No subscription found for shop");
   }
 
-  console.log('[Billing] Current usage:', subscription.status === "trial" 
-    ? `trial: ${subscription.trialProductsUsed}` 
-    : `active: ${subscription.productsUsed}`);
+  console.log('[Billing] Current usage:', subscription.productsUsed);
 
-  // Update appropriate counter based on status
-  if (subscription.status === "trial") {
-    await prisma.shopSubscription.update({
-      where: { shop },
-      data: {
-        trialProductsUsed: subscription.trialProductsUsed + 1,
-      },
-    });
-    console.log('[Billing] Incremented trial usage to:', subscription.trialProductsUsed + 1);
-  } else {
-    await prisma.shopSubscription.update({
-      where: { shop },
-      data: {
-        productsUsed: subscription.productsUsed + 1,
-      },
-    });
-    console.log('[Billing] Incremented productsUsed to:', subscription.productsUsed + 1);
-  }
+  // Increment products used
+  await prisma.shopSubscription.update({
+    where: { shop },
+    data: {
+      productsUsed: subscription.productsUsed + 1,
+    },
+  });
+  console.log('[Billing] Incremented productsUsed to:', subscription.productsUsed + 1);
 
   // Log to usage history (daily aggregation) - only for active subscriptions
   if (subscription.status === "active") {
@@ -353,16 +257,10 @@ export async function changePlan(shop: string, newPlanId: string) {
     status: "active",
   };
 
-  // Reset product counter only if moving to a higher limit plan
-  if (newPlan.productLimit > subscription.plan.productLimit) {
+  // Reset product counter only if moving to a higher limit plan, or if upgrading from Free Plan
+  if (newPlan.productLimit > subscription.plan.productLimit || subscription.plan.name === "Free Plan") {
     updates.productsUsed = 0;
-  }
-
-  // If upgrading from trial, reset counters and set billing cycle
-  if (subscription.status === "trial") {
     const now = new Date();
-    updates.productsUsed = 0;
-    updates.trialProductsUsed = 0;
     updates.billingCycleStart = now;
     updates.billingCycleEnd = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
   }

@@ -20,22 +20,17 @@ import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { 
   createSubscription, 
-  changePlan,
-  startPlanTrial,
-  hasTriedPlan 
+  changePlan
 } from "../utils/billing.server";
 
 export const loader: LoaderFunction = async ({ request }) => {
   const { session } = await authenticate.admin(request);
   console.log("[choose-subscription] Loading plans for shop:", session.shop);
 
-  // Get all active plans (exclude old Free Trial plan)
+  // Get all active plans
   const plans = await prisma.subscriptionPlan.findMany({
     where: { 
-      isActive: true,
-      NOT: {
-        name: { contains: 'Free Trial' }
-      }
+      isActive: true
     },
     orderBy: { price: 'asc' },
   });
@@ -48,17 +43,10 @@ export const loader: LoaderFunction = async ({ request }) => {
   });
   console.log("[choose-subscription] Current subscription:", currentSubscription?.id || "none");
 
-  // Get which plans have been tried (for per-plan trial tracking)
-  const triedPlanIds = currentSubscription?.triedPlanIds 
-    ? currentSubscription.triedPlanIds.split(',').filter((id: string) => id.length > 0)
-    : [];
-  console.log("[choose-subscription] Tried plan IDs:", triedPlanIds);
-
   return json({ 
     plans, 
     currentSubscription, 
-    shop: session.shop,
-    triedPlanIds 
+    shop: session.shop
   });
 };
 
@@ -92,18 +80,12 @@ export const action: ActionFunction = async ({ request }) => {
       where: { shop: session.shop },
     });
 
-    // Handle per-plan trial (2 free products) - FREE, no billing needed
-    if (isTrial) {
-      const alreadyTried = await hasTriedPlan(session.shop, planId);
-      
-      if (alreadyTried) {
-        return json({ 
-          error: "You've already tried this plan. Please purchase to continue." 
-        }, { status: 400 });
-      }
-
-      await startPlanTrial(session.shop, planId);
-      return redirect("/app/subscription-success?planId=" + planId + "&trial=true");
+    // For PAID plans (except Free Plan), create Shopify recurring charge via GraphQL
+    // Free Plan users are automatically on active status, no charge needed
+    if (plan.price === 0) {
+      // Free plan - just assign it
+      await changePlan(session.shop, planId);
+      return redirect("/app/subscription-success?planId=" + planId);
     }
 
     // For PAID plans, create Shopify recurring charge via GraphQL
@@ -205,7 +187,7 @@ export const action: ActionFunction = async ({ request }) => {
 
 export default function ChooseSubscription() {
   // ALL HOOKS AT THE TOP - NEVER CONDITIONALLY CALLED
-  const { plans, currentSubscription, shop, triedPlanIds } = useLoaderData<typeof loader>();
+  const { plans, currentSubscription, shop } = useLoaderData<typeof loader>();
   const fetcher = useFetcher<typeof action>();
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
   const [selectedAction, setSelectedAction] = useState<'trial' | 'purchase' | 'change' | null>(null);
@@ -329,29 +311,13 @@ export default function ChooseSubscription() {
             </Layout.Section>
           )}
 
-          {currentSubscription && currentSubscription.status === "trial" && (
-            <Layout.Section>
-              <Banner tone="success">
-                <BlockStack gap="200">
-                  <Text as="p">
-                    <strong>Trial Active: {currentSubscription.plan.name}</strong>
-                  </Text>
-                  <Text as="p" tone="subdued">
-                    You've used {currentSubscription.trialProductsUsed} of 2 free trial products. 
-                    Upgrade to a paid plan to continue after your trial.
-                  </Text>
-                </BlockStack>
-              </Banner>
-            </Layout.Section>
-          )}
+
 
           <Layout.Section>
             <BlockStack gap="400">
               {plans.map((plan: any) => {
                 const isCurrentPlan = currentSubscription?.planId === plan.id;
-                const hasTriedThisPlan = triedPlanIds.includes(plan.id);
-                const isOnTrial = currentSubscription?.status === "trial";
-                const canTry = !hasTriedThisPlan && !isCurrentPlan;
+                const isFreeplan = plan.price === 0;
                 
                 return (
                   <Card key={plan.id}>
@@ -365,8 +331,8 @@ export default function ChooseSubscription() {
                             {isCurrentPlan && (
                               <Badge tone="success">Current Plan</Badge>
                             )}
-                            {hasTriedThisPlan && !isCurrentPlan && (
-                              <Badge tone="info">Previously Tried</Badge>
+                            {isFreeplan && (
+                              <Badge tone="info">Free Forever</Badge>
                             )}
                           </InlineStack>
                           <Text as="p" variant="headingXl" tone="base">
@@ -417,30 +383,10 @@ export default function ChooseSubscription() {
                           </Box>
                         )}
 
-                        {canTry && (
-                          <Box paddingBlockStart="200">
-                            <Banner tone="info">
-                              <Text as="p" fontWeight="semibold">
-                                🎁 Try this plan FREE with 2 product imports!
-                              </Text>
-                            </Banner>
-                          </Box>
-                        )}
+
                       </BlockStack>
 
                       <InlineStack gap="200">
-                        {canTry && (
-                          <Button
-                            variant="secondary"
-                            size="large"
-                            onClick={() => handleSelectPlan(plan.id, 'trial')}
-                            loading={isLoading && selectedPlanId === plan.id && selectedAction === 'trial'}
-                            disabled={isLoading}
-                          >
-                            Try for Free (2 products)
-                          </Button>
-                        )}
-                        
                         <Button
                           variant={isCurrentPlan ? "secondary" : "primary"}
                           size="large"
@@ -454,8 +400,8 @@ export default function ChooseSubscription() {
                             ? "Current Plan" 
                             : currentSubscription?.status === "active" && !isCurrentPlan
                               ? (plan.price > currentSubscription.plan.price ? "Upgrade" : "Downgrade")
-                              : isOnTrial && !isCurrentPlan
-                                ? "Upgrade to This Plan"
+                              : isFreeplan
+                                ? "Select Free Plan"
                                 : "Choose Plan"
                           }
                         </Button>
@@ -471,31 +417,16 @@ export default function ChooseSubscription() {
             <Card>
               <BlockStack gap="200">
                 <Text as="h3" variant="headingMd">
-                  How Trials Work
-                </Text>
-                <Text as="p" tone="subdued">
-                  Try any plan for free with 2 product imports. Each plan can be tried once. 
-                  After using your free trial products, upgrade to continue importing.
-                </Text>
-                <Text as="p" tone="subdued">
-                  All plans include full access to our features: multi-platform import, 
-                  AI-powered descriptions, and Google Merchant Center compliance checking.
-                </Text>
-              </BlockStack>
-            </Card>
-          </Layout.Section>
-
-          <Layout.Section>
-            <Card>
-              <BlockStack gap="200">
-                <Text as="h3" variant="headingMd">
                   Need help choosing?
                 </Text>
                 <Text as="p" tone="subdued">
-                  {triedPlanIds.length > 0
-                    ? "All plans include full access to our product import features. Choose based on how many products you need to add per month. You can upgrade or downgrade at any time."
-                    : "Start with a free trial to test all features. Each plan offers 2 free product imports. After that, choose a plan based on how many products you need to add per month."
-                  }
+                  Start with the Free Plan to test all features with 2 product imports per month. 
+                  When you need more, upgrade to a paid plan based on your monthly import needs. 
+                  You can upgrade or downgrade at any time.
+                </Text>
+                <Text as="p" tone="subdued">
+                  All plans include full access to our features: multi-platform import, 
+                  AI-powered descriptions, and automated image importing.
                 </Text>
               </BlockStack>
             </Card>

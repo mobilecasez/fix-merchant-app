@@ -14,12 +14,12 @@ async function main() {
   }
 
   // Create the subscription plans (all monthly billing)
-  const trialPlan = await prisma.subscriptionPlan.create({
+  const freePlan = await prisma.subscriptionPlan.create({
     data: {
-      name: 'Free Trial',
+      name: 'Free Plan',
       price: 0,
       productLimit: 2,
-      description: '7-day free trial - Test all features with up to 2 products',
+      description: 'Free Forever - Import up to 2 products per month',
       isActive: true,
     },
   });
@@ -75,7 +75,7 @@ async function main() {
   });
 
   console.log('✓ Created subscription plans:');
-  console.log(`  - ${trialPlan.name}: $${trialPlan.price} (${trialPlan.productLimit} products) - FREE TRIAL`);
+  console.log(`  - ${freePlan.name}: $${freePlan.price} (${freePlan.productLimit} products) - FREE FOREVER`);
   console.log(`  - ${plan1.name}: $${plan1.price} (${plan1.productLimit} products)`);
   console.log(`  - ${plan2.name}: $${plan2.price} (${plan2.productLimit} products)`);
   console.log(`  - ${plan3.name}: $${plan3.price} (${plan3.productLimit} products)`);
