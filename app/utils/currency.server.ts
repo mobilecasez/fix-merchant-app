@@ -32,6 +32,9 @@ const CURRENCY_SYMBOLS: Record<string, string> = {
   'SAR': 'SAR',
 };
 
+// Currency code patterns (for text like "INR 1000" or "USD 50")
+const CURRENCY_CODES = ['USD', 'EUR', 'GBP', 'INR', 'JPY', 'CAD', 'AUD', 'NZD', 'SGD', 'HKD', 'MXN', 'BRL', 'CHF', 'SEK', 'NOK', 'DKK', 'PLN', 'THB', 'PHP', 'KRW', 'AED', 'SAR', 'ZAR'];
+
 // Domain to currency mapping for common e-commerce sites
 const DOMAIN_CURRENCY_MAP: Record<string, string> = {
   'amazon.com': 'USD',
@@ -65,7 +68,17 @@ export function detectCurrency(price: string, url?: string): string {
   console.log('[Currency Detection] Price string:', price);
   console.log('[Currency Detection] URL:', url);
   
-  // First try to detect from price string
+  // Priority 1: Check for explicit currency codes (INR 1000, USD 50, etc.)
+  for (const code of CURRENCY_CODES) {
+    // Check for patterns like "INR 1000", "INR1000", "1000 INR"
+    const codeRegex = new RegExp(`\\b${code}\\b|${code}(?=\\d)|(?<=\\d)${code}`, 'i');
+    if (codeRegex.test(price)) {
+      console.log(`[Currency Detection] ✓ Found currency code "${code}" in price`);
+      return code.toUpperCase();
+    }
+  }
+  
+  // Priority 2: Check for currency symbols in price string
   for (const [symbol, code] of Object.entries(CURRENCY_SYMBOLS)) {
     if (price.includes(symbol)) {
       console.log(`[Currency Detection] ✓ Found symbol "${symbol}" → ${code}`);
@@ -73,9 +86,9 @@ export function detectCurrency(price: string, url?: string): string {
     }
   }
   
-  console.log('[Currency Detection] No symbol found in price');
+  console.log('[Currency Detection] No currency found in price string');
   
-  // Try to detect from URL domain
+  // Priority 3: Try to detect from URL domain (fallback only)
   if (url) {
     try {
       const domain = new URL(url).hostname.toLowerCase();
@@ -83,7 +96,7 @@ export function detectCurrency(price: string, url?: string): string {
       
       for (const [siteDomain, currency] of Object.entries(DOMAIN_CURRENCY_MAP)) {
         if (domain.includes(siteDomain)) {
-          console.log(`[Currency Detection] ✓ Domain match "${siteDomain}" → ${currency}`);
+          console.log(`[Currency Detection] ✓ Domain match "${siteDomain}" → ${currency} (fallback)`);
           return currency;
         }
       }
