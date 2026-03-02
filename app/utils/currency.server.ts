@@ -98,13 +98,6 @@ export function detectCurrency(price: string, url?: string): string {
   console.log('[Currency Detection] Using default: USD');
   return 'USD';
 }
-      // Invalid URL
-    }
-  }
-  
-  // Default to USD
-  return 'USD';
-}
 
 /**
  * Get live exchange rate from source currency to target currency
