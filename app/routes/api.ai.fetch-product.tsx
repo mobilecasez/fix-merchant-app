@@ -328,10 +328,11 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     // Log final result before sending to client
     console.log("[FINAL RESULT] Sending to client:");
     console.log("[FINAL RESULT] Product name:", productData?.productName);
+    console.log("[FINAL RESULT] Price:", productData?.price);
     console.log("[FINAL RESULT] Images:", JSON.stringify(productData?.images, null, 2));
     console.log("[FINAL RESULT] Total images:", productData?.images?.length || 0);
 
-    // Final validation
+    // Final validation - check product name
     if (
       !productData ||
       !productData.productName ||
@@ -346,8 +347,40 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       );
     }
 
-    // Increment product usage counter after successful fetch (AI tokens consumed)
-    console.log('[FETCH-API] Product data fetched successfully, incrementing usage counter');
+    // Validate critical fields - don't charge credit if essential data is missing
+    const missingFields: string[] = [];
+    
+    // Check for images
+    if (!productData.images || productData.images.length === 0) {
+      missingFields.push("images");
+    }
+    
+    // Check for price - either main price or variant prices
+    const hasMainPrice = productData.price && productData.price.trim() !== "" && productData.price !== "0";
+    const hasVariantPrices = productData.variants && 
+      productData.variants.length > 0 && 
+      productData.variants.some((v: any) => v.price && v.price.trim() !== "" && v.price !== "0");
+    
+    if (!hasMainPrice && !hasVariantPrices) {
+      missingFields.push("pricing");
+    }
+    
+    // If critical fields are missing, return warning without charging credit
+    if (missingFields.length > 0) {
+      console.log('[FETCH-API] Critical fields missing:', missingFields.join(", "), '- NOT charging credit');
+      return json(
+        {
+          incompleteData: true,
+          missingFields: missingFields,
+          message: `Unable to fetch complete product information. Missing: ${missingFields.join(", ")}. No credit was charged.`,
+          ...productData, // Include partial data for user to see
+        },
+        { status: 200 }, // 200 because it's not an error, it's a warning
+      );
+    }
+
+    // All critical fields present - increment product usage counter
+    console.log('[FETCH-API] All critical fields present, incrementing usage counter');
     await incrementProductUsage(session.shop);
     console.log('[FETCH-API] Usage counter incremented');
 

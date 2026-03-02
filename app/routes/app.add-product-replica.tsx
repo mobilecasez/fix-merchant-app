@@ -115,6 +115,8 @@ export default function AddProductReplica() {
   const [manualHtml, setManualHtml] = useState('');
   const [htmlPanelOpen, setHtmlPanelOpen] = useState(true);
   const [authorizedToImport, setAuthorizedToImport] = useState(false);
+  const [incompleteDataWarning, setIncompleteDataWarning] = useState<string | null>(null);
+  const [missingFields, setMissingFields] = useState<string[]>([]);
   const progressIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const targetProgressRef = useRef(0);
   const prevFetcherState = useRef(fetcher.state);
@@ -223,6 +225,31 @@ export default function AddProductReplica() {
         setToastError(false);
         setToastActive(true);
         prevFetcherState.current = fetcher.state; // Update state
+        return;
+      }
+      
+      // Handle incomplete data warning (critical fields missing - no credit charged)
+      if (scrapedData.incompleteData) {
+        if (progressIntervalRef.current) {
+          clearInterval(progressIntervalRef.current);
+          progressIntervalRef.current = null;
+        }
+        setShowLoader(false);
+        setIncompleteDataWarning(scrapedData.message || "Incomplete product data - no credit charged");
+        setMissingFields(scrapedData.missingFields || []);
+        setToastMessage(scrapedData.message || "Incomplete product data - no credit charged");
+        setToastError(false); // Not an error, just a warning
+        setToastActive(true);
+        prevFetcherState.current = fetcher.state; // Update state
+        
+        // Still populate whatever fields we got (partial data)
+        if (scrapedData.productName) setProductName(scrapedData.productName);
+        if (scrapedData.description) setDescription(scrapedData.description);
+        if (scrapedData.vendor) setVendor(scrapedData.vendor);
+        if (scrapedData.productType) setProductType(scrapedData.productType);
+        if (scrapedData.price) setPrice(scrapedData.price);
+        if (scrapedData.images && scrapedData.images.length > 0) setMedia(scrapedData.images);
+        
         return;
       }
       
@@ -618,6 +645,10 @@ export default function AddProductReplica() {
     setManualHtml('');
     setHtmlPanelOpen(false);
     
+    // Clear incomplete data warning
+    setIncompleteDataWarning(null);
+    setMissingFields([]);
+    
     // Clear all form fields to prevent old data from showing
     setProductName('');
     setDescription('');
@@ -688,6 +719,41 @@ export default function AddProductReplica() {
         ]}
       >
         <BlockStack gap="500">
+          {/* Incomplete Data Warning Banner */}
+          {incompleteDataWarning && (
+            <Banner 
+              tone="warning"
+              onDismiss={() => {
+                setIncompleteDataWarning(null);
+                setMissingFields([]);
+              }}
+            >
+              <BlockStack gap="200">
+                <Text as="p" variant="bodyMd">
+                  <strong>⚠️ Incomplete Product Data</strong>
+                </Text>
+                <Text as="p" variant="bodySm">
+                  {incompleteDataWarning}
+                </Text>
+                {missingFields.length > 0 && (
+                  <BlockStack gap="100">
+                    <Text as="p" variant="bodySm">
+                      <strong>Missing:</strong>
+                    </Text>
+                    {missingFields.map((field) => (
+                      <Text key={field} as="p" variant="bodySm">
+                        • {field}
+                      </Text>
+                    ))}
+                  </BlockStack>
+                )}
+                <Text as="p" variant="bodySm" tone="subdued">
+                  Please add the missing information manually before saving. You can try importing again or fill in the fields below.
+                </Text>
+              </BlockStack>
+            </Banner>
+          )}
+          
           {/* Fetch Product Section - Redesigned */}
           <Card>
             <BlockStack gap="400">
