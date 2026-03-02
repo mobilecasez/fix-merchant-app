@@ -8,6 +8,7 @@ import path from "path";
 import { parse } from "node-html-parser";
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
 import { canCreateProduct, incrementProductUsage } from "../utils/billing.server";
+import { detectCurrency, convertProductPrices } from "../utils/currency.server";
 
 async function extractProductDataWithAI(url: string, htmlContent: string) {
   const apiKey = process.env.GOOGLE_GEMINI_API_KEY;
@@ -166,9 +167,31 @@ async function extractProductDataWithAI(url: string, htmlContent: string) {
 }
 
 export const action = async ({ request }: ActionFunctionArgs) => {
-  const { session } = await authenticate.admin(request);
+  const { session, admin } = await authenticate.admin(request);
 
   console.log('[FETCH-API] Product fetch request from shop:', session.shop);
+
+  // Fetch shop currency for price conversion
+  let shopCurrency = 'USD'; // Default to USD
+  try {
+    const shopCurrencyQuery = `
+      query {
+        shop {
+          currencyCode
+        }
+      }
+    `;
+    const shopData = await admin.graphql(shopCurrencyQuery);
+    const shopDataJson = await shopData.json();
+    if (shopDataJson.data?.shop?.currencyCode) {
+      shopCurrency = shopDataJson.data.shop.currencyCode;
+      console.log('[Currency] Shop currency:', shopCurrency);
+    } else {
+      console.warn('[Currency] Shop currency not found, using default USD');
+    }
+  } catch (error) {
+    console.error('[Currency] Error fetching shop currency:', error);
+  }
 
   // Check subscription and product limit BEFORE processing
   const canCreate = await canCreateProduct(session.shop);
@@ -331,6 +354,41 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     console.log("[FINAL RESULT] Price:", productData?.price);
     console.log("[FINAL RESULT] Images:", JSON.stringify(productData?.images, null, 2));
     console.log("[FINAL RESULT] Total images:", productData?.images?.length || 0);
+
+    // Convert currency if needed
+    if (productData && productData.price && productData.price.trim() !== "") {
+      try {
+        const sourceCurrency = detectCurrency(productData.price, url);
+        console.log(`[Currency] Detected source currency: ${sourceCurrency} from price: ${productData.price}`);
+        
+        if (sourceCurrency !== shopCurrency) {
+          console.log(`[Currency] Converting from ${sourceCurrency} to ${shopCurrency}`);
+          const converted = await convertProductPrices(
+            productData.price,
+            productData.compareAtPrice || '',
+            sourceCurrency,
+            shopCurrency
+          );
+          
+          console.log(`[Currency] Converted prices:`, {
+            originalPrice: productData.price,
+            convertedPrice: converted.price,
+            originalCompareAt: productData.compareAtPrice,
+            convertedCompareAt: converted.compareAtPrice
+          });
+          
+          productData.price = converted.price;
+          if (converted.compareAtPrice) {
+            productData.compareAtPrice = converted.compareAtPrice;
+          }
+        } else {
+          console.log(`[Currency] No conversion needed - same currency (${shopCurrency})`);
+        }
+      } catch (error) {
+        console.warn('[Currency] Currency conversion failed, using original prices:', error);
+        // Continue with original prices on error
+      }
+    }
 
     // Final validation - check product name
     if (
