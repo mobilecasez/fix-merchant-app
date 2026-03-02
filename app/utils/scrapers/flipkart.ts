@@ -384,48 +384,133 @@ async function parseFlipkartHTML(htmlContent: string, url: string): Promise<Scra
     }
     console.log('[Flipkart Scraper] Product name:', productName);
     
-    // Extract price
+    // Extract prices - Flipkart shows selling price and MRP (original price)
     let price = "";
-    const pricePatterns = [
-      /<div class="Nx9bqj CxhGGd"[^>]*>(.*?)<\/div>/s,
-      /<div class="_30jeq3 _16Jk6d"[^>]*>(.*?)<\/div>/s,
-      /<div class="_30jeq3"[^>]*>(.*?)<\/div>/s,
-      /₹([\d,]+)/
-    ];
-    
-    for (const pattern of pricePatterns) {
-      const match = htmlContent.match(pattern);
-      if (match) {
-        const priceText = match[1] || match[0];
-        const priceNum = priceText.match(/₹?([\d,]+)/);
-        if (priceNum) {
-          price = '₹' + priceNum[1];
-          console.log('[Flipkart Scraper] Price found:', price);
-          break;
-        }
-      }
-    }
-    
-    // Extract compare at price
     let compareAtPrice = "";
-    const comparePatterns = [
-      /<div class="yRaY8j ZYYwLA"[^>]*>(.*?)<\/div>/s,
-      /<div class="yRaY8j"[^>]*>(.*?)<\/div>/s,
-      /<div class="_3I9_wc _2p6lqe"[^>]*>(.*?)<\/div>/s
-    ];
     
-    for (const pattern of comparePatterns) {
-      const match = htmlContent.match(pattern);
-      if (match) {
-        const compareText = match[1];
-        const compareNum = compareText.match(/₹?([\d,]+)/);
-        if (compareNum) {
-          compareAtPrice = '₹' + compareNum[1];
-          console.log('[Flipkart Scraper] Compare price found:', compareAtPrice);
-          break;
+    console.log('[Flipkart Scraper] ========================================');
+    console.log('[Flipkart Scraper] Starting price extraction...');
+    
+    // Strategy: Find all prices and determine which is selling price vs MRP
+    // MRP is usually:
+    // 1. Inside strikethrough/line-through style
+    // 2. Labeled as "MRP" or in gray color
+    // 3. Higher than selling price
+    // 4. May not have ₹ symbol
+    
+    // Find all prices in the page
+    const allPrices: Array<{value: number, text: string, context: string}> = [];
+    const priceRegex = /₹\s*([\d,]+)/g;
+    let match;
+    
+    while ((match = priceRegex.exec(htmlContent)) !== null) {
+      const priceValue = parseInt(match[1].replace(/,/g, ''));
+      if (priceValue > 100 && priceValue < 10000000) { // Reasonable product price range
+        const index = match.index;
+        const contextStart = Math.max(0, index - 200);
+        const contextEnd = Math.min(htmlContent.length, index + 200);
+        const context = htmlContent.substring(contextStart, contextEnd);
+        
+        allPrices.push({
+          value: priceValue,
+          text: '₹' + match[1],
+          context: context
+        });
+      }
+    }
+    
+    console.log(`[Flipkart Scraper] Found ${allPrices.length} potential prices`);
+    
+    // Separate selling price from MRP based on context
+    const sellingPrices: typeof allPrices = [];
+    const mrpPrices: typeof allPrices = [];
+    
+    allPrices.forEach((p) => {
+      // Check if this price is in a strikethrough context (MRP)
+      const isStrikethrough = p.context.match(/text-decoration:\s*line-through|style="[^"]*line-through/i);
+      const isMRP = p.context.match(/MRP|M\.R\.P/i);
+      const hasDiscount = p.context.match(/\d+%\s*off/i);
+      
+      if (isStrikethrough || isMRP) {
+        mrpPrices.push(p);
+        console.log(`[Flipkart Scraper]   MRP candidate: ${p.text} (strikethrough: ${!!isStrikethrough}, labeled MRP: ${!!isMRP})`);
+      } else {
+        sellingPrices.push(p);
+        console.log(`[Flipkart Scraper]   Selling price candidate: ${p.text}`);
+      }
+    });
+    
+    // Select the most likely selling price (usually the first non-strikethrough price with big value)
+    if (sellingPrices.length > 0) {
+      // Sort by value descending and take the first one above ₹500
+      const validPrices = sellingPrices.filter(p => p.value >= 500);
+      if (validPrices.length > 0) {
+        price = validPrices[0].text;
+        console.log('[Flipkart Scraper] ✓ Selected selling price:', price);
+      }
+    }
+    
+    // If no selling price found, use class-based patterns as fallback
+    if (!price) {
+      console.log('[Flipkart Scraper] No selling price from regex, trying class patterns...');
+      const pricePatterns = [
+        /<div class="Nx9bqj CxhGGd"[^>]*>(.*?)<\/div>/s,
+        /<div class="_30jeq3 _16Jk6d"[^>]*>(.*?)<\/div>/s,
+        /<div class="_30jeq3"[^>]*>(.*?)<\/div>/s,
+      ];
+      
+      for (const pattern of pricePatterns) {
+        const patternMatch = htmlContent.match(pattern);
+        if (patternMatch) {
+          const priceNum = patternMatch[1].match(/₹?([\d,]+)/);
+          if (priceNum) {
+            price = '₹' + priceNum[1];
+            console.log('[Flipkart Scraper] ✓ Price from class pattern:', price);
+            break;
+          }
         }
       }
     }
+    
+    // Select MRP (compare at price)
+    if (mrpPrices.length > 0) {
+      // MRP should be higher than selling price
+      const priceValue = price ? parseInt(price.replace(/[^\d]/g, '')) : 0;
+      const validMRPs = mrpPrices.filter(p => p.value > priceValue);
+      
+      if (validMRPs.length > 0) {
+        // Take the highest MRP (original price)
+        const highestMRP = validMRPs.sort((a, b) => b.value - a.value)[0];
+        compareAtPrice = highestMRP.text;
+        console.log('[Flipkart Scraper] ✓ Selected MRP:', compareAtPrice);
+      }
+    }
+    
+    // If no MRP found via strikethrough, try class-based patterns
+    if (!compareAtPrice) {
+      console.log('[Flipkart Scraper] No MRP from strikethrough, trying class patterns...');
+      const comparePatterns = [
+        /<div class="yRaY8j ZYYwLA"[^>]*>(.*?)<\/div>/s,
+        /<div class="yRaY8j"[^>]*>(.*?)<\/div>/s,
+        /<div class="_3I9_wc _2p6lqe"[^>]*>(.*?)<\/div>/s,
+        /<div[^>]*style="[^"]*text-decoration[^"]*line-through[^"]*"[^>]*>([^<]*)<\/div>/s
+      ];
+      
+      for (const pattern of comparePatterns) {
+        const patternMatch = htmlContent.match(pattern);
+        if (patternMatch) {
+          const compareNum = patternMatch[1].match(/₹?([\d,]+)/);
+          if (compareNum) {
+            compareAtPrice = '₹' + compareNum[1];
+            console.log('[Flipkart Scraper] ✓ Compare price from class pattern:', compareAtPrice);
+            break;
+          }
+        }
+      }
+    }
+    
+    console.log('[Flipkart Scraper] Final prices - Selling:', price, 'MRP:', compareAtPrice);
+    console.log('[Flipkart Scraper] ========================================');
     
     // Extract description
     let description = "";
