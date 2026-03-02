@@ -61,23 +61,43 @@ const DOMAIN_CURRENCY_MAP: Record<string, string> = {
  * Detect currency code from price string or website URL
  */
 export function detectCurrency(price: string, url?: string): string {
+  console.log('[Currency Detection] Starting detection...');
+  console.log('[Currency Detection] Price string:', price);
+  console.log('[Currency Detection] URL:', url);
+  
   // First try to detect from price string
   for (const [symbol, code] of Object.entries(CURRENCY_SYMBOLS)) {
     if (price.includes(symbol)) {
+      console.log(`[Currency Detection] ✓ Found symbol "${symbol}" → ${code}`);
       return code;
     }
   }
+  
+  console.log('[Currency Detection] No symbol found in price');
   
   // Try to detect from URL domain
   if (url) {
     try {
       const domain = new URL(url).hostname.toLowerCase();
+      console.log('[Currency Detection] Checking domain:', domain);
+      
       for (const [siteDomain, currency] of Object.entries(DOMAIN_CURRENCY_MAP)) {
         if (domain.includes(siteDomain)) {
+          console.log(`[Currency Detection] ✓ Domain match "${siteDomain}" → ${currency}`);
           return currency;
         }
       }
+      
+      console.log('[Currency Detection] No domain match found');
     } catch (e) {
+      console.warn('[Currency Detection] Invalid URL:', e);
+    }
+  }
+  
+  // Default to USD
+  console.log('[Currency Detection] Using default: USD');
+  return 'USD';
+}
       // Invalid URL
     }
   }
@@ -123,8 +143,12 @@ export async function convertPrice(
   sourceCurrency: string,
   targetCurrency: string
 ): Promise<string> {
+  console.log('[Currency Conversion] Converting price:', price);
+  console.log('[Currency Conversion] From:', sourceCurrency, 'To:', targetCurrency);
+  
   // If currencies are the same, no conversion needed
   if (sourceCurrency === targetCurrency) {
+    console.log('[Currency Conversion] Same currency, no conversion needed');
     return price;
   }
   
@@ -136,13 +160,16 @@ export async function convertPrice(
     return price;
   }
   
+  console.log('[Currency Conversion] Numeric value extracted:', numericPrice);
+  
   // Get exchange rate
   const rate = await getExchangeRate(sourceCurrency, targetCurrency);
   
   // Convert price
   const convertedPrice = numericPrice * rate;
   
-  console.log(`[Currency] Converted ${numericPrice} ${sourceCurrency} to ${convertedPrice.toFixed(2)} ${targetCurrency}`);
+  console.log(`[Currency Conversion] Calculation: ${numericPrice} × ${rate} = ${convertedPrice.toFixed(2)}`);
+  console.log(`[Currency Conversion] Result: ${sourceCurrency} ${numericPrice} → ${targetCurrency} ${convertedPrice.toFixed(2)}`);
   
   // Return as string with 2 decimal places
   return convertedPrice.toFixed(2);

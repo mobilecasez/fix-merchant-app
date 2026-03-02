@@ -96,14 +96,40 @@ async function parseAmazonHTML(htmlContent: string, url: string): Promise<Scrape
     // Extract price - look for a-price-whole or a-offscreen inside a-price span
     let price = "";
     
-    // Pattern 1: Look for a-price-whole class (visible price on page)
-    const priceWholeMatch = htmlContent.match(/<span[^>]*class="[^"]*a-price-whole[^"]*"[^>]*>([^<]+)<\/span>/);
-    if (priceWholeMatch) {
-      price = priceWholeMatch[1].replace(/<[^>]*>/g, '').trim();
-      console.log('[Amazon Scraper] Found price in a-price-whole:', price);
+    console.log('[Amazon Scraper] ========================================');
+    console.log('[Amazon Scraper] Starting price extraction...');
+    
+    // Pattern 1: Look for corePriceDisplay or apexPriceToPay (most reliable - actual selling price)
+    const corePriceMatch = htmlContent.match(/<div[^>]*(?:id="corePriceDisplay|class="[^"]*apex.*?price)[^>]*>[\s\S]{0,500}?<span[^>]*class="[^"]*a-offscreen[^"]*"[^>]*>\s*([^<]+)\s*<\/span>/i);
+    if (corePriceMatch && !corePriceMatch[0].includes('data-a-strike')) {
+      price = corePriceMatch[1].trim();
+      console.log('[Amazon Scraper] ✓ Found price in corePriceDisplay/apex (BEST):', price);
     }
     
-    // Pattern 2: If not found, try a-offscreen (but NOT inside data-a-strike which is compare price)
+    // Pattern 2: Look for a-price-whole class (visible price on page) - but not in strikes
+    if (!price) {
+      // Find all a-price-whole matches
+      const allPriceWholeMatches = htmlContent.matchAll(/<span[^>]*class="[^"]*a-price-whole[^"]*"[^>]*>([^<]+)<\/span>/g);
+      
+      for (const match of allPriceWholeMatches) {
+        // Get context around the match to check if it's a strike-through price
+        const matchIndex = match.index || 0;
+        const contextStart = Math.max(0, matchIndex - 300);
+        const contextEnd = Math.min(htmlContent.length, matchIndex + 300);
+        const context = htmlContent.substring(contextStart, contextEnd);
+        
+        // Skip if this price is inside a strike-through (compare at price)
+        if (!context.includes('data-a-strike="true"') && !context.includes('a-text-price')) {
+          price = match[1].replace(/<[^>]*>/g, '').trim();
+          console.log('[Amazon Scraper] ✓ Found price in a-price-whole:', price);
+          break;
+        } else {
+          console.log('[Amazon Scraper] ✗ Skipped strike-through price:', match[1].trim());
+        }
+      }
+    }
+    
+    // Pattern 3: If not found, try a-offscreen (but NOT inside data-a-strike which is compare price)
     if (!price) {
       const offscreenMatch = htmlContent.match(/<span[^>]*class="[^"]*a-price[^"]*"[^>]*>[\s\S]*?<span[^>]*class="[^"]*a-offscreen[^"]*"[^>]*>([^<]+)<\/span>/);
       if (offscreenMatch) {
@@ -111,12 +137,22 @@ async function parseAmazonHTML(htmlContent: string, url: string): Promise<Scrape
         const fullMatch = offscreenMatch[0];
         if (!fullMatch.includes('data-a-strike')) {
           price = offscreenMatch[1].trim();
-          console.log('[Amazon Scraper] Found price in a-offscreen:', price);
+          console.log('[Amazon Scraper] ✓ Found price in a-offscreen:', price);
         }
       }
     }
     
-    console.log('[Amazon Scraper] Final Price:', price);
+    // Pattern 4: Look for price_inside_buybox_priceblock
+    if (!price) {
+      const buyboxMatch = htmlContent.match(/<span[^>]*id="[^"]*price[^"]*"[^>]*>\s*\$?([\d,]+\.[\d]{2})/i);
+      if (buyboxMatch) {
+        price = buyboxMatch[1].trim();
+        console.log('[Amazon Scraper] ✓ Found price in buybox:', price);
+      }
+    }
+    
+    console.log('[Amazon Scraper] Final extracted price:', price);
+    console.log('[Amazon Scraper] ========================================');
     
     // Extract compare at price
     const compareMatch = htmlContent.match(/<span[^>]*data-a-strike="true"[^>]*>.*?<span[^>]*class="[^"]*a-offscreen[^"]*"[^>]*>(.*?)<\/span>/s);
