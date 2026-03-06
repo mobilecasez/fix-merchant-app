@@ -16,6 +16,7 @@ export function getProductsUsed(subscription: any): number {
 
 /**
  * Get or create subscription with Free Plan (auto-initializes on first access)
+ * Now with auto-recovery: creates Free Plan if missing to prevent startup errors
  */
 export async function getOrCreateSubscription(shop: string) {
   let subscription = await prisma.shopSubscription.findUnique({
@@ -24,13 +25,43 @@ export async function getOrCreateSubscription(shop: string) {
   });
 
   if (!subscription) {
-    // Get the Free Plan
-    const freePlan = await prisma.subscriptionPlan.findFirst({
-      where: { name: "Free Plan" },
+    // Get the Free Plan (with fallback to Free Trial for backward compatibility)
+    let freePlan = await prisma.subscriptionPlan.findFirst({
+      where: { 
+        OR: [
+          { name: "Free Plan" },
+          { name: "Free Trial" }
+        ]
+      },
     });
 
+    // Auto-create Free Plan if it doesn't exist (auto-recovery)
     if (!freePlan) {
-      throw new Error("Free Plan not found. Please run seed script.");
+      console.log('[Billing] Free Plan not found - auto-creating to prevent failure...');
+      try {
+        freePlan = await prisma.subscriptionPlan.create({
+          data: {
+            name: 'Free Plan',
+            price: 0,
+            productLimit: 2,
+            description: 'Free Forever - Import up to 2 products per month',
+            isActive: true,
+          },
+        });
+        console.log('[Billing] ✓ Auto-created Free Plan successfully');
+      } catch (error) {
+        console.error('[Billing] Failed to auto-create Free Plan:', error);
+        throw new Error("Free Plan not found and could not be created. Please run: node seed-subscription-plans.js");
+      }
+    }
+
+    // If plan was "Free Trial", rename it to "Free Plan" for consistency
+    if (freePlan.name === "Free Trial") {
+      console.log('[Billing] Renaming "Free Trial" to "Free Plan" for consistency...');
+      freePlan = await prisma.subscriptionPlan.update({
+        where: { id: freePlan.id },
+        data: { name: "Free Plan" }
+      });
     }
 
     // Create subscription with Free Plan (permanent free tier)

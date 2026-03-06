@@ -19,6 +19,7 @@ const CURRENCY_SYMBOLS: Record<string, string> = {
   'R$': 'BRL',
   'A$': 'AUD',
   'C$': 'CAD',
+  'CA$': 'CAD',
   'NZ$': 'NZD',
   'HK$': 'HKD',
   'S$': 'SGD',
@@ -27,6 +28,32 @@ const CURRENCY_SYMBOLS: Record<string, string> = {
   '₪': 'ILS',
   'CHF': 'CHF',
   'R': 'ZAR',
+  'MXN': 'MXN',
+  'AED': 'AED',
+  'SAR': 'SAR',
+};
+
+// Currency code to symbol mapping (reverse lookup)
+const CURRENCY_CODE_TO_SYMBOL: Record<string, string> = {
+  'USD': '$',
+  'EUR': '€',
+  'GBP': '£',
+  'JPY': '¥',
+  'INR': '₹',
+  'PHP': '₱',
+  'KRW': '₩',
+  'THB': '฿',
+  'BRL': 'R$',
+  'AUD': 'A$',
+  'CAD': 'CA$',
+  'NZD': 'NZ$',
+  'HKD': 'HK$',
+  'SGD': 'S$',
+  'SEK': 'kr',
+  'PLN': 'zł',
+  'ILS': '₪',
+  'CHF': 'CHF',
+  'ZAR': 'R',
   'MXN': 'MXN',
   'AED': 'AED',
   'SAR': 'SAR',
@@ -152,16 +179,30 @@ export async function convertPrice(
   console.log('[Currency Conversion] Converting price:', price);
   console.log('[Currency Conversion] From:', sourceCurrency, 'To:', targetCurrency);
   
-  // If currencies are the same, no conversion needed
+  // If currencies are the same, no conversion needed - return original price with symbol
   if (sourceCurrency === targetCurrency) {
     console.log('[Currency Conversion] Same currency, no conversion needed');
-    return price;
+    // Ensure the price has a currency symbol
+    const numericPrice = parseFloat(price.replace(/[^0-9.]/g, ''));
+    if (isNaN(numericPrice)) {
+      return price;
+    }
+    
+    // If price already has a symbol, return it as is
+    const hasSymbol = /[^\d\s.,]/.test(price);
+    if (hasSymbol) {
+      return price;
+    }
+    
+    // Add currency symbol if missing
+    const symbol = CURRENCY_CODE_TO_SYMBOL[targetCurrency] || targetCurrency + ' ';
+    return `${symbol}${numericPrice.toFixed(2)}`;
   }
   
   // Extract numeric value from price
   const numericPrice = parseFloat(price.replace(/[^0-9.]/g, ''));
   
-  if (isNaN(numericPrice)) {
+  if (isNaN(numericPrice) || numericPrice === 0) {
     console.warn('[Currency] Invalid price value:', price);
     return price;
   }
@@ -175,10 +216,15 @@ export async function convertPrice(
   const convertedPrice = numericPrice * rate;
   
   console.log(`[Currency Conversion] Calculation: ${numericPrice} × ${rate} = ${convertedPrice.toFixed(2)}`);
-  console.log(`[Currency Conversion] Result: ${sourceCurrency} ${numericPrice} → ${targetCurrency} ${convertedPrice.toFixed(2)}`);
   
-  // Return as string with 2 decimal places
-  return convertedPrice.toFixed(2);
+  // Get target currency symbol
+  const targetSymbol = CURRENCY_CODE_TO_SYMBOL[targetCurrency] || targetCurrency + ' ';
+  const formattedPrice = `${targetSymbol}${convertedPrice.toFixed(2)}`;
+  
+  console.log(`[Currency Conversion] Result: ${sourceCurrency} ${numericPrice} → ${formattedPrice}`);
+  
+  // Return with currency symbol
+  return formattedPrice;
 }
 
 /**

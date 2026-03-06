@@ -5,6 +5,13 @@ export async function scrapeAmazon(html: string, url: string): Promise<ScrapedPr
   try {
     console.log('[Amazon Scraper] Starting scrape for:', url);
     
+    // Detect Amazon domain for domain-specific handling
+    const domain = url.includes('amazon.in') ? 'IN' : 
+                   url.includes('amazon.co.uk') ? 'UK' : 
+                   url.includes('amazon.ca') ? 'CA' : 
+                   url.includes('amazon.de') ? 'DE' : 'COM';
+    console.log('[Amazon Scraper] Detected Amazon domain:', domain);
+    
     // Use proven headers that bypass Amazon's anti-scraping protection
     console.log('[Amazon Scraper] Fetching page with HTTP request...');
     
@@ -15,8 +22,16 @@ export async function scrapeAmazon(html: string, url: string): Promise<ScrapedPr
       headers: {
         'accept-language': 'en-US,en;q=0.9',
         'accept-encoding': 'gzip, deflate, br',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+        'sec-ch-ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+        'sec-ch-ua-mobile': '?0',
+        'sec-ch-ua-platform': '"Windows"',
+        'sec-fetch-dest': 'document',
+        'sec-fetch-mode': 'navigate',
+        'sec-fetch-site': 'none',
+        'sec-fetch-user': '?1',
+        'upgrade-insecure-requests': '1',
       },
     });
     
@@ -34,24 +49,70 @@ export async function scrapeAmazon(html: string, url: string): Promise<ScrapedPr
     let htmlContent = await response.text();
     console.log('[Amazon Scraper] Page fetched successfully, HTML length:', htmlContent.length);
     
-    // Check for CAPTCHA or bot detection
+    // Check if HTML contains actual price elements (not just class names in CSS/JS)
+    const hasPriceElements = (
+      /<span[^>]*class="[^"]*a-price-symbol[^"]*"/i.test(htmlContent) ||
+      /<span[^>]*class="[^"]*a-price-whole[^"]*"/i.test(htmlContent) ||
+      /<span[^>]*class="[^"]*apex[-]?pricetopay[^"]*"/i.test(htmlContent) ||
+      /<div[^>]*id="corePriceDisplay[^"]*"/i.test(htmlContent)
+    );
+    
+    console.log('[Amazon Scraper] Price elements check:', hasPriceElements);
+    
+    // Check for CAPTCHA or bot detection or missing price elements
     if (htmlContent.includes('Type the characters you see in this picture') || 
         htmlContent.includes('Enter the characters you see below') ||
         htmlContent.includes('To discuss automated access to Amazon data please contact') ||
         htmlContent.toLowerCase().includes('robot check') ||
-        htmlContent.length < 10000) {  // Very small page is likely CAPTCHA
-      console.log('[Amazon Scraper] CAPTCHA/Bot detection page detected');
+        htmlContent.length < 10000 ||
+        !hasPriceElements) {  // No actual price elements found - Amazon sent simplified HTML
+      
+      if (!hasPriceElements && htmlContent.length >= 10000) {
+        console.log('[Amazon Scraper] ⚠️ Price elements missing from HTML - Amazon detected bot request');
+        console.log('[Amazon Scraper] HTML length:', htmlContent.length, 'but no price elements found');
+        console.log('[Amazon Scraper] Attempting to use Puppeteer fallback for better HTML...');
+      } else if (htmlContent.length < 10000) {
+        console.log('[Amazon Scraper] CAPTCHA/Bot detection - page too small');
+      } else {
+        console.log('[Amazon Scraper] CAPTCHA/Bot detection page detected');
+      }
       
       // Try to use the provided HTML parameter as fallback
       if (html && html.length > 10000) {
         console.log('[Amazon Scraper] Using provided HTML parameter as fallback');
         htmlContent = html;
       } else {
-        throw new Error('Amazon is showing CAPTCHA. The scraper was detected as a bot.');
+        // Try Puppeteer for Amazon.com to get the real page
+        console.log('[Amazon Scraper] Attempting Puppeteer fallback...');
+        try {
+          const puppeteerHTML = await scrapeAmazonWithPuppeteer(url);
+          if (puppeteerHTML && puppeteerHTML.length > 10000) {
+            console.log('[Amazon Scraper] ✓ Puppeteer successfully fetched HTML, length:', puppeteerHTML.length);
+            
+            // Verify Puppeteer HTML has price elements
+            const puppeteerHasPriceElements = (
+              /<span[^>]*class="[^"]*a-price-symbol[^"]*"/i.test(puppeteerHTML) ||
+              /<span[^>]*class="[^"]*a-price-whole[^"]*"/i.test(puppeteerHTML) ||
+              /<span[^>]*class="[^"]*apex[-]?pricetopay[^"]*"/i.test(puppeteerHTML) ||
+              /<div[^>]*id="corePriceDisplay[^"]*"/i.test(puppeteerHTML)
+            );
+            console.log('[Amazon Scraper] Puppeteer HTML has price elements:', puppeteerHasPriceElements);
+            
+            htmlContent = puppeteerHTML;
+          } else {
+            throw new Error('Puppeteer returned insufficient HTML');
+          }
+        } catch (puppeteerError) {
+          console.error('[Amazon Scraper] Puppeteer fallback failed:', puppeteerError);
+          throw new Error('Amazon is blocking requests. Unable to fetch product data.');
+        }
       }
     }
+    
+    console.log('[Amazon Scraper] Final HTML length before parsing:', htmlContent.length);
+    console.log('[Amazon Scraper] Proceeding to parse HTML...');
 
-    return await parseAmazonHTML(htmlContent, url);
+    return await parseAmazonHTML(htmlContent, url, domain);
   } catch (error) {
     console.error("[Amazon Scraper] Error during Amazon scraping:", error);
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -79,19 +140,68 @@ export async function scrapeAmazon(html: string, url: string): Promise<ScrapedPr
 }
 
 // Extract parsing logic into a separate function
-async function parseAmazonHTML(htmlContent: string, url: string): Promise<ScrapedProductData> {
+async function parseAmazonHTML(htmlContent: string, url: string, domain: string = 'COM'): Promise<ScrapedProductData> {
 
     // Extract product data using regex patterns from HTML
     console.log('[Amazon Scraper] Extracting product data from HTML...');
+    console.log('[Amazon Scraper] Domain:', domain);
     
-    // Extract product name from title span
-    const nameMatch = htmlContent.match(/<span[^>]*id="productTitle"[^>]*>(.*?)<\/span>/s);
-    const productName = nameMatch ? nameMatch[1].replace(/<[^>]*>/g, '').trim() : "";
+    // Extract product name from title span - multiple fallback patterns
+    let productName = "";
+    
+    // Pattern 1: Standard productTitle id
+    const nameMatch1 = htmlContent.match(/<span[^>]*id="productTitle"[^>]*>(.*?)<\/span>/s);
+    if (nameMatch1) {
+      productName = nameMatch1[1].replace(/<[^>]*>/g, '').trim();
+    }
+    
+    // Pattern 2: Look for title in page title tag as fallback
+    if (!productName) {
+      const titleMatch = htmlContent.match(/<title[^>]*>([^<]+)<\/title>/i);
+      if (titleMatch) {
+        productName = titleMatch[1]
+          .replace(/: [^:]+$/, '') // Remove trailing site info
+          .replace(/- Amazon\.(com|in|co\.uk|ca|de|fr|it)/i, '')
+          .trim();
+      }
+    }
+    
+    // Pattern 3: Look for og:title meta tag
+    if (!productName) {
+      const ogTitleMatch = htmlContent.match(/<meta[^>]*property="og:title"[^>]*content="([^"]+)"/i);
+      if (ogTitleMatch) {
+        productName = ogTitleMatch[1].trim();
+      }
+    }
+    
     console.log('[Amazon Scraper] Product name:', productName);
     
-    // Extract description from feature bullets
-    const descMatch = htmlContent.match(/<div[^>]*id="feature-bullets"[^>]*>(.*?)<\/div>/s);
-    const description = descMatch ? descMatch[1] : "";
+    // Extract description from feature bullets - multiple patterns
+    let description = "";
+    
+    // Pattern 1: Standard feature-bullets id
+    const descMatch1 = htmlContent.match(/<div[^>]*id="feature-bullets"[^>]*>(.*?)<\/div>/s);
+    if (descMatch1) {
+      description = descMatch1[1];
+    }
+    
+    // Pattern 2: Look for feature div with class
+    if (!description) {
+      const descMatch2 = htmlContent.match(/<div[^>]*id="featurebullets_feature_div"[^>]*>([\s\S]{0,5000}?)<\/div>/i);
+      if (descMatch2) {
+        description = descMatch2[1];
+      }
+    }
+    
+    // Pattern 3: Look for attributes table
+    if (!description) {
+      const descMatch3 = htmlContent.match(/<div[^>]*id="productDescription"[^>]*>([\s\S]{0,3000}?)<\/div>/i);
+      if (descMatch3) {
+        description = descMatch3[1];
+      }
+    }
+    
+    console.log('[Amazon Scraper] Description length:', description.length);
     
     // Extract price - look for a-price-whole or a-offscreen inside a-price span
     let price = "";
@@ -99,15 +209,96 @@ async function parseAmazonHTML(htmlContent: string, url: string): Promise<Scrape
     console.log('[Amazon Scraper] ========================================');
     console.log('[Amazon Scraper] Starting price extraction...');
     
-    // Pattern 1: Look for corePriceDisplay or apexPriceToPay (most reliable - actual selling price)
-    const corePriceMatch = htmlContent.match(/<div[^>]*(?:id="corePriceDisplay|class="[^"]*apex.*?price)[^>]*>[\s\S]{0,500}?<span[^>]*class="[^"]*a-offscreen[^"]*"[^>]*>\s*([^<]+)\s*<\/span>/i);
-    if (corePriceMatch && !corePriceMatch[0].includes('data-a-strike')) {
-      price = corePriceMatch[1].trim();
-      console.log('[Amazon Scraper] ✓ Found price in corePriceDisplay/apex (BEST):', price);
+    // Detect currency symbol based on domain for validation
+    const expectedCurrency = domain === 'IN' ? '₹' : domain === 'UK' ? '£' : domain === 'CA' ? 'CA$' : '$';
+    console.log('[Amazon Scraper] Expected currency symbol:', expectedCurrency);
+    
+    // DEBUG: Check for price-related classes
+    const hasPriceSymbol = htmlContent.includes('a-price-symbol');
+    const hasPriceWhole = htmlContent.includes('a-price-whole');
+    const hasPriceFraction = htmlContent.includes('a-price-fraction');
+    console.log('[Amazon Scraper] DEBUG: Price classes found:', { hasPriceSymbol, hasPriceWhole, hasPriceFraction });
+    
+    // Pattern 1: Look for apex-pricetopay-accessibility-label (most reliable for amazon.com)
+    console.log('[Amazon Scraper] Attempting Pattern 1: apex-pricetopay-accessibility-label...');
+    const apexLabelMatch = htmlContent.match(/<span[^>]*id="apex-pricetopay-accessibility-label"[^>]*>\s*([\$₹£€][\d,]+\.\d{2})/i);
+    if (apexLabelMatch) {
+      price = apexLabelMatch[1].trim();
+      console.log('[Amazon Scraper] ✓ Found price in apex-pricetopay-accessibility-label (BEST):', price);
+    } else {
+      console.log('[Amazon Scraper] ✗ Pattern 1 (apex-pricetopay-accessibility-label) did not match');
     }
     
-    // Pattern 2: Look for a-price-whole class (visible price on page) - but not in strikes
+    // Pattern 2: Look for split price structure within apex-pricetopay-value
     if (!price) {
+      console.log('[Amazon Scraper] Attempting Pattern 2: apex-pricetopay split format...');
+      const apexSplitMatch = htmlContent.match(/apex-pricetopay-value[\s\S]{0,200}?aria-hidden="true"[\s\S]{0,100}?<span[^>]*class="[^"]*a-price-symbol[^"]*"[^>]*>([^<]+)<\/span>[\s\S]{0,50}?<span[^>]*class="[^"]*a-price-whole[^"]*"[^>]*>([^<]+)<[\s\S]{0,100}?<span[^>]*class="[^"]*a-price-fraction[^"]*"[^>]*>([^<]+)<\/span>/i);
+      if (apexSplitMatch) {
+        const symbol = apexSplitMatch[1].trim();
+        const whole = apexSplitMatch[2].replace(/<[^>]*>/g, '').trim();
+        const fraction = apexSplitMatch[3].trim();
+        price = `${symbol}${whole}.${fraction}`;
+        console.log('[Amazon Scraper] ✓ Found price in apex-pricetopay split format:', price);
+      } else {
+        console.log('[Amazon Scraper] ✗ Pattern 2 (apex-pricetopay split) did not match');
+      }
+    }
+    
+    // Pattern 3: Generic split price structure (a-price-symbol + a-price-whole + a-price-fraction)
+    // This handles amazon.com format with nested decimal span: <span class="a-price-whole">75<span class="a-price-decimal">.</span></span>
+    if (!price) {
+      console.log('[Amazon Scraper] Attempting Pattern 3: Generic split price format...');
+      
+      // Updated regex to capture content including nested spans in a-price-whole
+      const splitPriceMatch = htmlContent.match(/<span[^>]*class="[^"]*a-price-symbol[^"]*"[^>]*>([^<]+)<\/span>[\s\S]{0,50}?<span[^>]*class="[^"]*a-price-whole[^"]*"[^>]*>([\s\S]*?)<\/span>[\s\S]{0,50}?<span[^>]*class="[^"]*a-price-fraction[^"]*"[^>]*>([^<]+)<\/span>/i);
+      
+      if (splitPriceMatch) {
+        const symbol = splitPriceMatch[1].trim();
+        // Strip all HTML tags from whole number (handles nested decimal span)
+        const whole = splitPriceMatch[2].replace(/<[^>]*>/g, '').trim();
+        const fraction = splitPriceMatch[3].trim();
+        price = `${symbol}${whole}.${fraction}`;
+        console.log('[Amazon Scraper] ✓ Found price in generic split format:', price);
+        console.log('[Amazon Scraper]   - Symbol:', symbol);
+        console.log('[Amazon Scraper]   - Whole:', whole);
+        console.log('[Amazon Scraper]   - Fraction:', fraction);
+      } else {
+        console.log('[Amazon Scraper] ✗ Pattern 3 (generic split) did not match');
+        
+        // Try to find individual parts to debug
+        const symbolMatch = htmlContent.match(/<span[^>]*class="[^"]*a-price-symbol[^"]*"[^>]*>([^<]+)<\/span>/i);
+        const wholeMatch = htmlContent.match(/<span[^>]*class="[^"]*a-price-whole[^"]*"[^>]*>([\s\S]*?)<\/span>/i);
+        const fractionMatch = htmlContent.match(/<span[^>]*class="[^"]*a-price-fraction[^"]*"[^>]*>([^<]+)<\/span>/i);
+        console.log('[Amazon Scraper] DEBUG individual parts:', {
+          symbol: symbolMatch ? symbolMatch[1] : 'not found',
+          wholeRaw: wholeMatch ? wholeMatch[1].substring(0, 50) : 'not found',
+          wholeCleaned: wholeMatch ? wholeMatch[1].replace(/<[^>]*>/g, '').trim() : 'not found',
+          fraction: fractionMatch ? fractionMatch[1] : 'not found'
+        });
+      }
+    }
+    
+    // Pattern 4: Look for corePriceDisplay or apexPriceToPay with a-offscreen (amazon.in format)
+    if (!price) {
+      console.log('[Amazon Scraper] Attempting Pattern 4: corePriceDisplay a-offscreen...');
+      const corePriceMatch = htmlContent.match(/<div[^>]*(?:id="corePriceDisplay|class="[^"]*apex.*?price)[^>]*>[\s\S]{0,500}?<span[^>]*class="[^"]*a-offscreen[^"]*"[^>]*>\s*([^<]+)\s*<\/span>/i);
+      if (corePriceMatch && !corePriceMatch[0].includes('data-a-strike')) {
+        const extractedPrice = corePriceMatch[1].trim();
+        // Only use if it's not empty or just whitespace and contains a digit
+        if (extractedPrice && extractedPrice.length > 1 && /\d/.test(extractedPrice)) {
+          price = extractedPrice;
+          console.log('[Amazon Scraper] ✓ Found price in corePriceDisplay/apex a-offscreen:', price);
+        } else {
+          console.log('[Amazon Scraper] ✗ Pattern 4 matched but price was empty or invalid:', extractedPrice);
+        }
+      } else {
+        console.log('[Amazon Scraper] ✗ Pattern 4 (corePriceDisplay a-offscreen) did not match');
+      }
+    }
+    
+    // Pattern 5: Look for a-price-whole class (visible price on page) - but not in strikes
+    if (!price) {
+      console.log('[Amazon Scraper] Attempting Pattern 5: a-price-whole...');
       // Find all a-price-whole matches
       const allPriceWholeMatches = htmlContent.matchAll(/<span[^>]*class="[^"]*a-price-whole[^"]*"[^>]*>([^<]+)<\/span>/g);
       
@@ -129,25 +320,76 @@ async function parseAmazonHTML(htmlContent: string, url: string): Promise<Scrape
       }
     }
     
-    // Pattern 3: If not found, try a-offscreen (but NOT inside data-a-strike which is compare price)
+    // Pattern 6: If not found, try a-offscreen (but NOT inside data-a-strike which is compare price)
     if (!price) {
+      console.log('[Amazon Scraper] Attempting Pattern 6: a-offscreen...');
       const offscreenMatch = htmlContent.match(/<span[^>]*class="[^"]*a-price[^"]*"[^>]*>[\s\S]*?<span[^>]*class="[^"]*a-offscreen[^"]*"[^>]*>([^<]+)<\/span>/);
       if (offscreenMatch) {
-        // Make sure this isn't the compare at price
+        // Make sure this isn't the compare at price and contains a digit
         const fullMatch = offscreenMatch[0];
-        if (!fullMatch.includes('data-a-strike')) {
-          price = offscreenMatch[1].trim();
+        const extractedPrice = offscreenMatch[1].trim();
+        if (!fullMatch.includes('data-a-strike') && /\d/.test(extractedPrice) && extractedPrice.length > 1) {
+          price = extractedPrice;
           console.log('[Amazon Scraper] ✓ Found price in a-offscreen:', price);
+        } else {
+          console.log('[Amazon Scraper] ✗ Pattern 6 matched but price was invalid:', extractedPrice);
         }
+      } else {
+        console.log('[Amazon Scraper] ✗ Pattern 6 (a-offscreen) did not match');
       }
     }
     
-    // Pattern 4: Look for price_inside_buybox_priceblock
+    // Pattern 7: Look for price_inside_buybox_priceblock with currency symbol
     if (!price) {
-      const buyboxMatch = htmlContent.match(/<span[^>]*id="[^"]*price[^"]*"[^>]*>\s*\$?([\d,]+\.[\d]{2})/i);
+      console.log('[Amazon Scraper] Attempting Pattern 7: buybox...');
+      const buyboxMatch = htmlContent.match(/<span[^>]*id="[^"]*price[^"]*"[^>]*>\s*[\$₹£€]?([\d,]+(?:\.[\d]{2})?)/i);
       if (buyboxMatch) {
-        price = buyboxMatch[1].trim();
+        price = buyboxMatch[0].trim();
         console.log('[Amazon Scraper] ✓ Found price in buybox:', price);
+      } else {
+        console.log('[Amazon Scraper] ✗ Pattern 7 (buybox) did not match');
+      }
+    }
+    
+    // Pattern 8: Look for price in JSON-LD structured data
+    if (!price) {
+      console.log('[Amazon Scraper] Attempting Pattern 8: JSON-LD...');
+      const jsonLdMatch = htmlContent.match(/<script[^>]*type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/gi);
+      if (jsonLdMatch) {
+        for (const jsonBlock of jsonLdMatch) {
+          try {
+            const jsonContent = jsonBlock.replace(/<script[^>]*>/, '').replace(/<\/script>/, '');
+            const data = JSON.parse(jsonContent);
+            if (data.offers && (data.offers.price || data.offers.lowPrice)) {
+              const priceValue = data.offers.price || data.offers.lowPrice;
+              const currency = data.offers.priceCurrency || expectedCurrency;
+              price = currency + priceValue;
+              console.log('[Amazon Scraper] ✓ Found price in JSON-LD:', price);
+              break;
+            }
+          } catch (e) {
+            // Skip invalid JSON
+            console.log('[Amazon Scraper] ✗ Failed to parse JSON-LD block');
+          }
+        }
+        if (!price) {
+          console.log('[Amazon Scraper] ✗ Pattern 8 (JSON-LD) did not find price');
+        }
+      } else {
+        console.log('[Amazon Scraper] ✗ Pattern 8 (JSON-LD) no JSON-LD found');
+      }
+    }
+    
+    // Pattern 9: Broad search for any price-like pattern with currency
+    if (!price) {
+      console.log('[Amazon Scraper] Attempting Pattern 9: Broad currency search...');
+      // Require at least one digit - use positive lookahead to ensure there's a digit
+      const broadPriceMatch = htmlContent.match(/([\$₹£€]\s*(?=.*\d)[\d,]+(?:\.[\d]{2})?)/);
+      if (broadPriceMatch) {
+        price = broadPriceMatch[1].trim();
+        console.log('[Amazon Scraper] ✓ Found price (broad pattern):', price);
+      } else {
+        console.log('[Amazon Scraper] ✗ Pattern 9 (broad) did not match');
       }
     }
     
@@ -313,17 +555,18 @@ async function parseAmazonHTML(htmlContent: string, url: string): Promise<Scrape
     const warranty = warrantyMatch ? warrantyMatch[1].replace(/<[^>]*>/g, '').trim() : "";
 
     // Extract high-res images from colorImages array inside ImageBlockATF
-    console.log('[Amazon Scraper] Looking for ImageBlockATF colorImages array...');
+    console.log('[Amazon Scraper] ========================================');
+    console.log('[Amazon Scraper] Starting image extraction...');
     console.log('[Amazon Scraper] HTML length:', htmlContent.length);
     
     const foundImages: string[] = [];
     
-    // Find the colorImages.initial array by locating start position and counting brackets
+    // Method 1: Find the colorImages.initial array by locating start position and counting brackets
     // This approach handles nested objects with multiple } brackets correctly
     const colorImagesStartMatch = htmlContent.match(/['"']colorImages['"']\s*:\s*\{\s*['"']initial['"']\s*:\s*\[/);
     
     if (colorImagesStartMatch && colorImagesStartMatch.index !== undefined) {
-      console.log('[Amazon Scraper] Found colorImages.initial start position');
+      console.log('[Amazon Scraper] ✓ Found colorImages.initial start position');
       const startPos = colorImagesStartMatch.index + colorImagesStartMatch[0].length;
       
       // Count brackets to find where the array ends
@@ -351,24 +594,64 @@ async function parseAmazonHTML(htmlContent: string, url: string): Promise<Scrape
       while ((match = hiResRegex.exec(colorImagesArray)) !== null) {
         matchCount++;
         const imageUrl = match[1];
-        console.log(`[Amazon Scraper] Found hiRes match ${matchCount}: ${imageUrl}`);
         if (imageUrl && imageUrl !== 'null' && imageUrl.startsWith('http')) {
           foundImages.push(imageUrl);
-          console.log(`[Amazon Scraper] ✓ Added hiRes ${foundImages.length}: ${imageUrl}`);
-        } else {
-          console.log(`[Amazon Scraper] ✗ Skipped invalid hiRes: ${imageUrl}`);
+          console.log(`[Amazon Scraper] ✓ Added hiRes ${foundImages.length}: ${imageUrl.substring(0, 80)}...`);
         }
       }
       console.log(`[Amazon Scraper] Total hiRes matches found: ${matchCount}, valid images: ${foundImages.length}`);
-    } else {
-      console.log('[Amazon Scraper] Could not find colorImages.initial start in HTML');
-      console.log('[Amazon Scraper] HTML snippet (first 1000 chars):', htmlContent.substring(0, 1000));
+    }
+    
+    // Method 2: Fallback - Look for large images in data attributes or img tags
+    if (foundImages.length === 0) {
+      console.log('[Amazon Scraper] colorImages.initial not found, trying fallback methods...');
+      
+      // Try data-old-hires attribute
+      const dataOldHiresRegex = /data-old-hires="([^"]+)"/g;
+      let match;
+      while ((match = dataOldHiresRegex.exec(htmlContent)) !== null) {
+        if (match[1] && match[1].startsWith('http')) {
+          foundImages.push(match[1]);
+          console.log(`[Amazon Scraper] ✓ Found image in data-old-hires`);
+        }
+      }
+      
+      // Try data-a-dynamic-image attribute
+      if (foundImages.length === 0) {
+        const dynamicImageRegex = /data-a-dynamic-image="([^"]+)"/g;
+        while ((match = dynamicImageRegex.exec(htmlContent)) !== null) {
+          try {
+            const decoded = match[1].replace(/&quot;/g, '"').replace(/&amp;/g, '&');
+            const imageUrls = Object.keys(JSON.parse(`{${decoded}}`));
+            imageUrls.forEach(url => {
+              if (url.startsWith('http')) {
+                foundImages.push(url);
+                console.log(`[Amazon Scraper] ✓ Found image in data-a-dynamic-image`);
+              }
+            });
+          } catch (e) {
+            // Skip invalid JSON
+          }
+        }
+      }
+      
+      // Try og:image meta tags
+      if (foundImages.length === 0) {
+        const ogImageRegex = /<meta[^>]*property="og:image"[^>]*content="([^"]+)"/gi;
+        while ((match = ogImageRegex.exec(htmlContent)) !== null) {
+          if (match[1] && match[1].startsWith('http')) {
+            foundImages.push(match[1]);
+            console.log(`[Amazon Scraper] ✓ Found image in og:image meta tag`);
+          }
+        }
+      }
     }
     
     console.log(`[Amazon Scraper] Total images extracted: ${foundImages.length}`);
+    console.log('[Amazon Scraper] ========================================');
     
-    const images = foundImages;
-    console.log(`[Amazon Scraper] Extracted ${images.length} high-res images`);
+    const images = Array.from(new Set(foundImages)); // Remove duplicates
+    console.log(`[Amazon Scraper] Final: ${images.length} unique high-res images`);
     console.log(`[Amazon Scraper] Title: ${productName?.substring(0, 50)}...`);
     console.log(`[Amazon Scraper] Price: ${price}`);
     console.log(`[Amazon Scraper] Images: ${images.length}`);
@@ -397,12 +680,37 @@ async function parseAmazonHTML(htmlContent: string, url: string): Promise<Scrape
 
     // Ensure compare at price (add 20% if missing)
     const finalCompareAtPrice = ensureCompareAtPrice(price, compareAtPrice);
+    
+    // Post-process: Ensure prices have currency symbols
+    // If price is just a number without symbol, add the appropriate currency based on domain
+    let finalPrice = price;
+    let finalComparePrice = finalCompareAtPrice;
+    
+    if (price && /^[\d,]+(?:\.[\d]{2})?$/.test(price.trim())) {
+      // Price is just a number, add currency symbol
+      const currencySymbol = domain === 'IN' ? '₹' : 
+                            domain === 'UK' ? '£' : 
+                            domain === 'CA' ? 'CA$' : 
+                            domain === 'DE' ? '€' : '$';
+      finalPrice = `${currencySymbol}${price}`;
+      console.log(`[Amazon Scraper] Added currency symbol to price: ${finalPrice}`);
+    }
+    
+    if (finalComparePrice && /^[\d,]+(?:\.[\d]{2})?$/.test(finalComparePrice.trim())) {
+      // Compare price is just a number, add currency symbol
+      const currencySymbol = domain === 'IN' ? '₹' : 
+                            domain === 'UK' ? '£' : 
+                            domain === 'CA' ? 'CA$' : 
+                            domain === 'DE' ? '€' : '$';
+      finalComparePrice = `${currencySymbol}${finalComparePrice}`;
+      console.log(`[Amazon Scraper] Added currency symbol to compare price: ${finalComparePrice}`);
+    }
 
-    return {
+    const result = {
       productName: cleanProductName(productName),
       description: finalDescription,
-      price,
-      compareAtPrice: finalCompareAtPrice,
+      price: finalPrice,
+      compareAtPrice: finalComparePrice,
       images: Array.from(new Set(images)).filter(img => img && img.trim() !== ''),
       vendor: "Amazon",
       productType: "",
@@ -415,4 +723,88 @@ async function parseAmazonHTML(htmlContent: string, url: string): Promise<Scrape
       options: [],
       variants: [],
     };
+
+    console.log('[Amazon Scraper] ========================================');
+    console.log('[Amazon Scraper] FINAL EXTRACTED DATA (JSON):');
+    console.log(JSON.stringify({
+      productName: result.productName,
+      price: result.price,
+      compareAtPrice: result.compareAtPrice,
+      imageCount: result.images.length,
+      weight: result.weight,
+      weightUnit: result.weightUnit,
+      descriptionLength: result.description.length
+    }, null, 2));
+    console.log('[Amazon Scraper] RAW PRICE VALUE:', finalPrice);
+    console.log('[Amazon Scraper] RAW COMPARE PRICE:', finalComparePrice);
+    console.log('[Amazon Scraper] ========================================');
+
+    return result;
+}
+
+// Puppeteer fallback for Amazon when HTTP requests get blocked
+async function scrapeAmazonWithPuppeteer(url: string): Promise<string> {
+  console.log('[Amazon Puppeteer] Launching headless browser...');
+  
+  try {
+    const puppeteer = await import('puppeteer');
+    
+    const browser = await puppeteer.default.launch({
+      headless: true,
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-accelerated-2d-canvas',
+        '--disable-gpu',
+        '--window-size=1920x1080',
+        '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      ],
+    });
+
+    const page = await browser.newPage();
+    
+    // Set realistic viewport
+    await page.setViewport({ width: 1920, height: 1080 });
+    
+    // Set extra headers
+    await page.setExtraHTTPHeaders({
+      'Accept-Language': 'en-US,en;q=0.9',
+      'Accept-Encoding': 'gzip, deflate, br',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+    });
+
+    console.log('[Amazon Puppeteer] Navigating to:', url);
+    
+    // Navigate with longer timeout
+    await page.goto(url, {
+      waitUntil: 'networkidle2',
+      timeout: 30000,
+    });
+
+    console.log('[Amazon Puppeteer] Page loaded, waiting for price elements...');
+    
+    // Wait a bit for dynamic content
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    
+    // Try to wait for price elements (but don't fail if not found)
+    try {
+      await page.waitForSelector('#corePriceDisplay_desktop_feature_div, #apex_desktop, .a-price', { timeout: 5000 });
+      console.log('[Amazon Puppeteer] ✓ Price elements found');
+    } catch (e) {
+      console.log('[Amazon Puppeteer] ⚠️ Price elements not found, continuing anyway...');
+    }
+
+    // Get the HTML content
+    const html = await page.content();
+    console.log('[Amazon Puppeteer] Extracted HTML, length:', html.length);
+
+    await browser.close();
+    console.log('[Amazon Puppeteer] Browser closed');
+
+    return html;
+  } catch (error) {
+    console.error('[Amazon Puppeteer] Error:', error);
+    throw error;
+  }
 }

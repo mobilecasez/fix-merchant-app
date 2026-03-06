@@ -205,87 +205,120 @@ async function scrapeFlipkartWithPuppeteer(url: string): Promise<ScrapedProductD
       let mrp = ''; // Compare at price (strikethrough)
       let price = ''; // Actual selling price
       
-      // Strategy: Find the main product pricing section
-      // The main price usually appears with:
-      // 1. Discount percentage (like "86%")
-      // 2. Strikethrough original price
-      // 3. Current price with ₹ symbol
-      // They typically appear together in the same container
-      
-      // 1. First, find selling price - look for prominent price with ₹ (not in ads)
-      // Main product price is usually NOT in these patterns:
-      // - "Buy at ₹..." (CTA button)
-      // - "Pay ₹..." (EMI)
-      // - Small prices < ₹100
-      
+      // Get body text for later use
       const bodyText = document.body.innerText;
-      const textLines = bodyText.split('\n').map(l => l.trim());
       
-      // Find lines with just price (₹X,XXX format) - these are likely the main prices
-      let foundPriceSection = false;
-      for (let i = 0; i < textLines.length; i++) {
-        const line = textLines[i];
+      // SMART STRATEGY: Use star rating as anchor to avoid ad prices
+      // 1. Find the star rating element (unique to main product)
+      // 2. Look for the FIRST strikethrough price AFTER the rating
+      // 3. Find the selling price near that strikethrough
+      
+      // Find star rating SVG (green star with #008042 fill)
+      const starSvgs = Array.from(document.querySelectorAll('svg'));
+      let ratingElement: Element | null = null;
+      
+      for (const svg of starSvgs) {
+        const path = svg.querySelector('path[fill*="#008042"]');
+        if (path && svg.getAttribute('width') === '14' && svg.getAttribute('height') === '14') {
+          ratingElement = svg;
+          break;
+        }
+      }
+      
+      // If we found the rating, search for prices AFTER it in the DOM
+      if (ratingElement) {
+        console.log('[Flipkart Puppeteer] Found star rating, searching for prices after it...');
         
-        // Look for selling price pattern: just "₹X,XXX" on its own line or with discount%
-        if (line.match(/^(↓\d+%)?₹\s*[\d,]+$/) || line.match(/^\d+%\s*₹\s*[\d,]+$/)) {
-          const priceMatch = line.match(/₹\s*([\d,]+)/);
-          if (priceMatch) {
-            const priceValue = parseInt(priceMatch[1].replace(/,/g, ''));
-            if (priceValue > 500) { // Reasonable product price
-              price = '₹' + priceMatch[1];
-              foundPriceSection = true;
-              
-              // Look for MRP in nearby lines (usually 1-2 lines before)
-              for (let j = Math.max(0, i - 3); j < i; j++) {
-                const prevLine = textLines[j];
-                // MRP is usually just numbers (no ₹) or has ↓discount%
-                const mrpMatch = prevLine.match(/^(↓\d+%)?(\d{1,2},?\d{3,})$/);
-                if (mrpMatch && !prevLine.includes('₹')) {
-                  const mrpValue = parseInt(mrpMatch[2].replace(/,/g, ''));
-                  if (mrpValue > priceValue) { // MRP should be higher than selling price
-                    mrp = '₹' + mrpMatch[2];
-                    break;
+        // Get all strikethrough elements
+        const allStrikethroughs = Array.from(document.querySelectorAll('[style*="line-through"]'));
+        
+        // Filter: only those that come AFTER the rating element in DOM order
+        const ratingPosition = Array.from(document.querySelectorAll('*')).indexOf(ratingElement);
+        
+        for (const strike of allStrikethroughs) {
+          const strikePosition = Array.from(document.querySelectorAll('*')).indexOf(strike);
+          
+          // Only consider strikethroughs that come AFTER the rating
+          if (strikePosition > ratingPosition) {
+            const strikeText = strike.textContent?.trim() || '';
+            const mrpMatch = strikeText.match(/([\d,]+)/);
+            
+            if (mrpMatch) {
+              const mrpValue = parseInt(mrpMatch[1].replace(/,/g, ''));
+              if (mrpValue > 500) { // Reasonable product price
+                mrp = '₹' + mrpMatch[1];
+                
+                // Find selling price near this strikethrough
+                let searchContainer = strike.parentElement;
+                for (let i = 0; i < 5 && searchContainer; i++) {
+                  const containerText = searchContainer.textContent || '';
+                  const priceMatches = containerText.match(/₹\s*([\d,]+)/g);
+                  
+                  if (priceMatches) {
+                    for (const priceText of priceMatches) {
+                      const match = priceText.match(/₹\s*([\d,]+)/);
+                      if (match && match[1] !== mrpMatch[1]) {
+                        const priceValue = parseInt(match[1].replace(/,/g, ''));
+                        const mrpVal = parseInt(mrpMatch[1].replace(/,/g, ''));
+                        if (priceValue < mrpVal && priceValue > 500) {
+                          price = '₹' + match[1];
+                          break;
+                        }
+                      }
+                    }
                   }
+                  
+                  if (price) break;
+                  searchContainer = searchContainer.parentElement;
+                }
+                
+                // If we found both prices, we're done
+                if (mrp && price) {
+                  console.log('[Flipkart Puppeteer] Found prices after rating - MRP:', mrp, 'Price:', price);
+                  break;
                 }
               }
-              
-              if (price) break; // Found main price, stop searching
             }
           }
         }
       }
       
-      // Fallback 1: Look for strikethrough elements near price elements
-      if (!mrp || !price) {
-        const strikeDivs = Array.from(document.querySelectorAll('div[style*="line-through"]'));
-        const strikePrices: string[] = [];
-        
-        strikeDivs.forEach(el => {
-          const text = el.textContent?.trim() || '';
-          const priceMatch = text.match(/(\d{1,2},?\d{3,})/);
-          if (priceMatch) {
-            const priceValue = parseInt(priceMatch[1].replace(/,/g, ''));
-            if (priceValue > 500) {
-              strikePrices.push('₹' + priceMatch[1]);
-            }
-          }
-        });
-        
-        if (strikePrices.length > 0 && !mrp) {
-          mrp = strikePrices[0];
-        }
-      }
-      
-      // Fallback 2: Extract from body text if still not found
+      // Fallback: If star rating method didn't work, try text-based search
       if (!price) {
-        const allPrices = bodyText.match(/₹\s*([\d,]+)/g) || [];
-        for (const priceText of allPrices) {
-          const match = priceText.match(/₹\s*([\d,]+)/);
-          if (match) {
-            const priceValue = parseInt(match[1].replace(/,/g, ''));
-            if (priceValue > 500 && priceValue < 1000000) {
-              price = '₹' + match[1];
-              break;
+        console.log('[Flipkart Puppeteer] Star rating method failed, using fallback...');
+        const textLines = bodyText.split('\n').map(l => l.trim()).slice(0, 100);
+        
+        for (let i = 0; i < textLines.length; i++) {
+          const line = textLines[i];
+          
+          if (line.match(/^₹\s*[\d,]+$/) && !line.includes('Buy') && !line.includes('Pay')) {
+            const priceMatch = line.match(/₹\s*([\d,]+)/);
+            if (priceMatch) {
+              const priceValue = parseInt(priceMatch[1].replace(/,/g, ''));
+              if (priceValue > 500) {
+                price = '₹' + priceMatch[1];
+                break;
+              }
+            }
+          }
+        }
+      }
+      
+      // Fallback 2: Text-based search (only first 100 lines)
+      if (!price) {
+        const textLines = bodyText.split('\n').map(l => l.trim()).slice(0, 100);
+        
+        for (let i = 0; i < textLines.length; i++) {
+          const line = textLines[i];
+          
+          if (line.match(/^₹\s*[\d,]+$/) && !line.includes('Buy') && !line.includes('Pay')) {
+            const priceMatch = line.match(/₹\s*([\d,]+)/);
+            if (priceMatch) {
+              const priceValue = parseInt(priceMatch[1].replace(/,/g, ''));
+              if (priceValue > 500) {
+                price = '₹' + priceMatch[1];
+                break;
+              }
             }
           }
         }
@@ -391,33 +424,84 @@ async function parseFlipkartHTML(htmlContent: string, url: string): Promise<Scra
     console.log('[Flipkart Scraper] ========================================');
     console.log('[Flipkart Scraper] Starting price extraction...');
     
-    // Strategy: Find the main product price section which has pattern:
-    // discount% (with down arrow) → strikethrough MRP → ₹selling price
-    // They appear together in sequence in the HTML
+    // SMART STRATEGY: Find star rating first, then look for prices AFTER it
+    // This avoids capturing prices from ads that appear before the product details
     
-    // Pattern 1: Look for discount percentage followed by prices
-    // Example: 84%</div>...34,999</div>...₹5,699</div>
-    const discountPattern = /(\d+)%<\/[^>]+>[\s\S]{0,500}?text-decoration-line:\s*line-through[^>]*>([0-9,]+)<\/[^>]+>[\s\S]{0,200}?₹\s*([0-9,]+)</i;
-    const discountMatch = htmlContent.match(discountPattern);
+    // Pattern 1: Find star rating SVG (14x14 with green star #008042)
+    // Then capture the FIRST strikethrough price and selling price AFTER the rating
+    const starRatingPattern = /<svg[^>]+width="14"[^>]+height="14"[^>]*>[\s\S]*?<path[^>]+fill[^>]*#008042[^>]*>[\s\S]*?<\/svg>/i;
+    const starMatch = htmlContent.match(starRatingPattern);
     
-    if (discountMatch) {
-      const discount = discountMatch[1];
-      const mrp = discountMatch[2];
-      const sellingPrice = discountMatch[3];
+    if (starMatch) {
+      console.log('[Flipkart Scraper] ✓ Found star rating anchor');
       
-      console.log('[Flipkart Scraper] ✓ Found price group with discount pattern:');
-      console.log('[Flipkart Scraper]   Discount:', discount + '%');
-      console.log('[Flipkart Scraper]   MRP (strikethrough):', mrp);
-      console.log('[Flipkart Scraper]   Selling price:', sellingPrice);
+      // Get the HTML content AFTER the star rating
+      const starIndex = htmlContent.indexOf(starMatch[0]);
+      const contentAfterRating = htmlContent.substring(starIndex);
       
-      price = '₹' + sellingPrice;
-      compareAtPrice = '₹' + mrp;
+      // Now look for the first price pattern after the rating
+      const priceAfterRatingPattern = /text-decoration-line:\s*line-through[^>]*>([0-9,]+)<\/[^>]+>[\s\S]{0,150}?₹\s*([0-9,]+)/i;
+      const priceMatch = contentAfterRating.match(priceAfterRatingPattern);
+      
+      if (priceMatch) {
+        const mrp = priceMatch[1];
+        const sellingPrice = priceMatch[2];
+        
+        console.log('[Flipkart Scraper] ✓ Found prices AFTER star rating:');
+        console.log('[Flipkart Scraper]   MRP (strikethrough):', mrp);
+        console.log('[Flipkart Scraper]   Selling price:', sellingPrice);
+        
+        price = '₹' + sellingPrice;
+        compareAtPrice = '₹' + mrp;
+      }
     }
     
-    // Pattern 2: If no discount pattern, look for strikethrough followed by ₹price
+    // Pattern 2: Fallback - Look for GREEN discount (#008042) if star rating not found
     if (!price) {
-      console.log('[Flipkart Scraper] No discount pattern found, trying strikethrough + price pattern...');
-      const strikeAndPricePattern = /text-decoration-line:\s*line-through[^>]*>([0-9,]+)<\/[^>]+>[\s\S]{0,200}?₹\s*([0-9,]+)/i;
+      console.log('[Flipkart Scraper] Star rating not found, trying green discount pattern...');
+      const greenDiscountPattern = /#008042[^>]*>[\s\S]{0,300}?(\d+)%[\s\S]{0,300}?text-decoration-line:\s*line-through[^>]*>([0-9,]+)<\/[^>]+>[\s\S]{0,150}?₹\s*([0-9,]+)/i;
+      const greenMatch = htmlContent.match(greenDiscountPattern);
+    
+      if (greenMatch) {
+        const discount = greenMatch[1];
+        const mrp = greenMatch[2];
+        const sellingPrice = greenMatch[3];
+        
+        console.log('[Flipkart Scraper] ✓ Found price with green discount:');
+        console.log('[Flipkart Scraper]   Discount:', discount + '%');
+        console.log('[Flipkart Scraper]   MRP (strikethrough):', mrp);
+        console.log('[Flipkart Scraper]   Selling price:', sellingPrice);
+        
+        price = '₹' + sellingPrice;
+        compareAtPrice = '₹' + mrp;
+      }
+    }
+    
+    // Pattern 3: Last resort - discount percentage followed by prices (tightened range)
+    if (!price) {
+      console.log('[Flipkart Scraper] Trying discount pattern fallback...');
+      const discountPattern = /(\d+)%<\/[^>]+>[\s\S]{0,150}?text-decoration-line:\s*line-through[^>]*>([0-9,]+)<\/[^>]+>[\s\S]{0,80}?₹\s*([0-9,]+)/i;
+      const discountMatch = htmlContent.match(discountPattern);
+      
+      if (discountMatch) {
+        const discount = discountMatch[1];
+        const mrp = discountMatch[2];
+        const sellingPrice = discountMatch[3];
+        
+        console.log('[Flipkart Scraper] ✓ Found price group with discount pattern:');
+        console.log('[Flipkart Scraper]   Discount:', discount + '%');
+        console.log('[Flipkart Scraper]   MRP (strikethrough):', mrp);
+        console.log('[Flipkart Scraper]   Selling price:', sellingPrice);
+        
+        price = '₹' + sellingPrice;
+        compareAtPrice = '₹' + mrp;
+      }
+    }
+    
+    // Pattern 3: Strikethrough followed by price (last resort fallback)
+    if (!price) {
+      console.log('[Flipkart Scraper] Trying strikethrough + price pattern...');
+      const strikeAndPricePattern = /text-decoration-line:\s*line-through[^>]*>([0-9,]+)<\/[^>]+>[\s\S]{0,80}?₹\s*([0-9,]+)/i;
       const strikeMatch = htmlContent.match(strikeAndPricePattern);
       
       if (strikeMatch) {
@@ -433,9 +517,9 @@ async function parseFlipkartHTML(htmlContent: string, url: string): Promise<Scra
       }
     }
     
-    // Pattern 3: If still not found, use class-based patterns as fallback
+    // Pattern 4: Class-based extraction (final fallback)
     if (!price) {
-      console.log('[Flipkart Scraper] No pattern match, trying class-based extraction...');
+      console.log('[Flipkart Scraper] Trying class-based extraction...');
       
       const pricePatterns = [
         /<div class="Nx9bqj CxhGGd"[^>]*>(.*?)<\/div>/s,
