@@ -41,9 +41,30 @@ export async function scrapeWalmart(html: string, url: string): Promise<ScrapedP
     }
     
     // Check for CAPTCHA or bot detection
-    if (htmlContent.includes('Robot or human') || htmlContent.includes('BogleWeb')) {
-      console.log('[Walmart Scraper] CAPTCHA detected');
-      throw new Error('Walmart CAPTCHA detected - please use manual HTML import');
+    if (htmlContent.includes('Robot or human') || htmlContent.includes('BogleWeb') || htmlContent.length < 20000) {
+      console.log('[Walmart Scraper] CAPTCHA/Bot detection detected');
+      
+      // Try to use the provided HTML parameter as fallback
+      if (html && html.length > 20000) {
+        console.log('[Walmart Scraper] Using provided HTML parameter as fallback');
+        htmlContent = html;
+      } else {
+        // Try Puppeteer fallback
+        console.log('[Walmart Scraper] Attempting Puppeteer fallback...');
+        try {
+          const puppeteerHTML = await scrapeWalmartWithPuppeteer(url);
+          if (puppeteerHTML && puppeteerHTML.length > 20000) {
+            console.log('[Walmart Scraper] ✓ Puppeteer successfully fetched HTML, length:', puppeteerHTML.length);
+            htmlContent = puppeteerHTML;
+          } else {
+            console.log('[Walmart Scraper] ✗ Puppeteer HTML too short');
+            throw new Error('Walmart CAPTCHA detected and Puppeteer failed - please use manual HTML import');
+          }
+        } catch (puppeteerError) {
+          console.error('[Walmart Scraper] Puppeteer fallback failed:', puppeteerError);
+          throw new Error('Walmart CAPTCHA detected and Puppeteer failed - please use manual HTML import');
+        }
+      }
     }
     
     return await parseWalmartHTML(htmlContent, url);
@@ -445,6 +466,73 @@ async function parseWalmartHTML(htmlContent: string, url: string): Promise<Scrap
     };
   } catch (error) {
     console.error('[Walmart Scraper] Parse error:', error);
+    throw error;
+  }
+}
+
+// Puppeteer fallback for Walmart when HTTP requests get blocked
+async function scrapeWalmartWithPuppeteer(url: string): Promise<string> {
+  console.log('[Walmart Puppeteer] Launching headless browser...');
+  
+  try {
+    const puppeteer = await import('puppeteer');
+    
+    const browser = await puppeteer.default.launch({
+      headless: true,
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-accelerated-2d-canvas',
+        '--disable-gpu',
+        '--window-size=1920x1080',
+        '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      ],
+    });
+
+    const page = await browser.newPage();
+    
+    // Set realistic viewport
+    await page.setViewport({ width: 1920, height: 1080 });
+    
+    // Set extra headers
+    await page.setExtraHTTPHeaders({
+      'Accept-Language': 'en-US,en;q=0.9',
+      'Accept-Encoding': 'gzip, deflate, br',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+    });
+
+    console.log('[Walmart Puppeteer] Navigating to:', url);
+    
+    // Navigate with longer timeout
+    await page.goto(url, {
+      waitUntil: 'networkidle2',
+      timeout: 30000,
+    });
+
+    console.log('[Walmart Puppeteer] Page loaded, waiting for content...');
+    
+    // Wait a bit for dynamic content
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    
+    // Try to wait for product elements (but don't fail if not found)
+    try {
+      await page.waitForSelector('h1, [itemprop="name"], [data-testid="product-title"]', { timeout: 5000 });
+      console.log('[Walmart Puppeteer] ✓ Product elements found');
+    } catch (e) {
+      console.log('[Walmart Puppeteer] ⚠️ Product elements not found, continuing anyway...');
+    }
+
+    // Get the HTML content
+    const html = await page.content();
+    console.log('[Walmart Puppeteer] Extracted HTML, length:', html.length);
+
+    await browser.close();
+    console.log('[Walmart Puppeteer] Browser closed');
+
+    return html;
+  } catch (error) {
+    console.error('[Walmart Puppeteer] Error:', error);
     throw error;
   }
 }
