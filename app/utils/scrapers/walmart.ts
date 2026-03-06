@@ -49,11 +49,23 @@ export async function scrapeWalmart(html: string, url: string): Promise<ScrapedP
     if (hasCaptcha) {
       console.log('[Walmart Scraper] CAPTCHA/Bot detection detected, HTML length:', htmlContent.length);
       
-      // Try to use the provided HTML parameter as fallback
-      if (html && html.length > 15000) {
-        console.log('[Walmart Scraper] Using provided HTML parameter as fallback');
+      // Check if provided HTML parameter is also CAPTCHA
+      const providedHtmlHasCaptcha = html && (
+        html.includes('Robot or human') || 
+        html.includes('BogleWeb') ||
+        html.includes('Activate and hold the button') ||
+        html.length < 15000
+      );
+      
+      // Try to use the provided HTML parameter as fallback ONLY if it's clean
+      if (html && html.length > 15000 && !providedHtmlHasCaptcha) {
+        console.log('[Walmart Scraper] ✓ Using clean provided HTML parameter as fallback');
         htmlContent = html;
       } else {
+        if (providedHtmlHasCaptcha) {
+          console.log('[Walmart Scraper] ⚠️ Provided HTML also has CAPTCHA, trying Puppeteer instead');
+        }
+        
         // Try Puppeteer fallback
         console.log('[Walmart Scraper] Attempting Puppeteer fallback...');
         try {
