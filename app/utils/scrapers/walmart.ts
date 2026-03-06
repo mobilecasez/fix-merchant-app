@@ -41,11 +41,16 @@ export async function scrapeWalmart(html: string, url: string): Promise<ScrapedP
     }
     
     // Check for CAPTCHA or bot detection
-    if (htmlContent.includes('Robot or human') || htmlContent.includes('BogleWeb') || htmlContent.length < 20000) {
-      console.log('[Walmart Scraper] CAPTCHA/Bot detection detected');
+    const hasCaptcha = htmlContent.includes('Robot or human') || 
+                       htmlContent.includes('BogleWeb') || 
+                       htmlContent.includes('Activate and hold the button') ||
+                       htmlContent.length < 15000;
+    
+    if (hasCaptcha) {
+      console.log('[Walmart Scraper] CAPTCHA/Bot detection detected, HTML length:', htmlContent.length);
       
       // Try to use the provided HTML parameter as fallback
-      if (html && html.length > 20000) {
+      if (html && html.length > 15000) {
         console.log('[Walmart Scraper] Using provided HTML parameter as fallback');
         htmlContent = html;
       } else {
@@ -53,16 +58,29 @@ export async function scrapeWalmart(html: string, url: string): Promise<ScrapedP
         console.log('[Walmart Scraper] Attempting Puppeteer fallback...');
         try {
           const puppeteerHTML = await scrapeWalmartWithPuppeteer(url);
-          if (puppeteerHTML && puppeteerHTML.length > 20000) {
-            console.log('[Walmart Scraper] ✓ Puppeteer successfully fetched HTML, length:', puppeteerHTML.length);
-            htmlContent = puppeteerHTML;
+          if (puppeteerHTML && puppeteerHTML.length > 10000) {
+            console.log('[Walmart Scraper] ✓ Puppeteer fetched HTML, length:', puppeteerHTML.length);
+            
+            // Check if Puppeteer HTML also has CAPTCHA
+            const puppeteerHasCaptcha = puppeteerHTML.includes('Robot or human') || 
+                                       puppeteerHTML.includes('BogleWeb') ||
+                                       puppeteerHTML.includes('Activate and hold the button');
+            
+            if (!puppeteerHasCaptcha) {
+              console.log('[Walmart Scraper] ✓ Puppeteer HTML looks clean, using it');
+              htmlContent = puppeteerHTML;
+            } else {
+              console.log('[Walmart Scraper] ⚠️ Puppeteer also got CAPTCHA, keeping for AI fallback');
+              htmlContent = puppeteerHTML; // Keep it anyway for AI to try
+            }
           } else {
-            console.log('[Walmart Scraper] ✗ Puppeteer HTML too short');
-            throw new Error('Walmart CAPTCHA detected and Puppeteer failed - please use manual HTML import');
+            console.log('[Walmart Scraper] ⚠️ Puppeteer HTML too short, keeping original for AI fallback');
+            // Don't throw error - keep the original HTML for AI fallback
           }
         } catch (puppeteerError) {
-          console.error('[Walmart Scraper] Puppeteer fallback failed:', puppeteerError);
-          throw new Error('Walmart CAPTCHA detected and Puppeteer failed - please use manual HTML import');
+          console.error('[Walmart Scraper] Puppeteer error:', puppeteerError);
+          console.log('[Walmart Scraper] ⚠️ Keeping original HTML for AI fallback');
+          // Don't throw error - keep the original HTML for AI fallback
         }
       }
     }
@@ -485,12 +503,36 @@ async function scrapeWalmartWithPuppeteer(url: string): Promise<string> {
         '--disable-dev-shm-usage',
         '--disable-accelerated-2d-canvas',
         '--disable-gpu',
+        '--disable-blink-features=AutomationControlled', // Hide automation
         '--window-size=1920x1080',
         '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
       ],
     });
 
     const page = await browser.newPage();
+    
+    // Remove automation flags
+    await page.evaluateOnNewDocument(() => {
+      // Overwrite the `navigator.webdriver` property
+      Object.defineProperty(navigator, 'webdriver', {
+        get: () => false,
+      });
+      
+      // Mock plugins
+      Object.defineProperty(navigator, 'plugins', {
+        get: () => [1, 2, 3, 4, 5],
+      });
+      
+      // Mock languages
+      Object.defineProperty(navigator, 'languages', {
+        get: () => ['en-US', 'en'],
+      });
+      
+      // Mock platform
+      Object.defineProperty(navigator, 'platform', {
+        get: () => 'Win32',
+      });
+    });
     
     // Set realistic viewport
     await page.setViewport({ width: 1920, height: 1080 });
@@ -500,6 +542,15 @@ async function scrapeWalmartWithPuppeteer(url: string): Promise<string> {
       'Accept-Language': 'en-US,en;q=0.9',
       'Accept-Encoding': 'gzip, deflate, br',
       'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+      'Referer': 'https://www.walmart.com/',
+      'sec-ch-ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+      'sec-ch-ua-mobile': '?0',
+      'sec-ch-ua-platform': '"Windows"',
+      'sec-fetch-dest': 'document',
+      'sec-fetch-mode': 'navigate',
+      'sec-fetch-site': 'same-origin',
+      'sec-fetch-user': '?1',
+      'upgrade-insecure-requests': '1',
     });
 
     console.log('[Walmart Puppeteer] Navigating to:', url);
@@ -507,21 +558,27 @@ async function scrapeWalmartWithPuppeteer(url: string): Promise<string> {
     // Navigate with longer timeout
     await page.goto(url, {
       waitUntil: 'networkidle2',
-      timeout: 30000,
+      timeout: 45000,
     });
 
     console.log('[Walmart Puppeteer] Page loaded, waiting for content...');
     
-    // Wait a bit for dynamic content
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    // Wait longer for dynamic content to load
+    await new Promise(resolve => setTimeout(resolve, 3000));
     
     // Try to wait for product elements (but don't fail if not found)
     try {
-      await page.waitForSelector('h1, [itemprop="name"], [data-testid="product-title"]', { timeout: 5000 });
+      await page.waitForSelector('h1, [itemprop="name"], [data-testid="product-title"], script[type="application/ld+json"]', { timeout: 5000 });
       console.log('[Walmart Puppeteer] ✓ Product elements found');
     } catch (e) {
       console.log('[Walmart Puppeteer] ⚠️ Product elements not found, continuing anyway...');
     }
+    
+    // Scroll the page to trigger lazy loading
+    await page.evaluate(() => {
+      window.scrollBy(0, window.innerHeight);
+    });
+    await new Promise(resolve => setTimeout(resolve, 1000));
 
     // Get the HTML content
     const html = await page.content();
