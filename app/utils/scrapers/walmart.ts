@@ -82,7 +82,12 @@ export async function scrapeWalmart(html: string, url: string): Promise<ScrapedP
               console.log('[Walmart Scraper] ✓ Puppeteer HTML looks clean, using it');
               htmlContent = puppeteerHTML;
             } else {
-              console.log('[Walmart Scraper] ⚠️ Puppeteer also got CAPTCHA, keeping for AI fallback');
+              console.log('[Walmart Scraper] ⚠️ Puppeteer also got CAPTCHA page, will trigger AI fallback');
+              // Log title for debugging
+              const titleMatch = puppeteerHTML.match(/<title>([^<]+)<\/title>/i);
+              if (titleMatch) {
+                console.log('[Walmart Scraper] CAPTCHA page title:', titleMatch[1]);
+              }
               htmlContent = puppeteerHTML; // Keep it anyway for AI to try
             }
           } else {
@@ -95,6 +100,18 @@ export async function scrapeWalmart(html: string, url: string): Promise<ScrapedP
           // Don't throw error - keep the original HTML for AI fallback
         }
       }
+    }
+    
+    // Final check: If we still have CAPTCHA after all attempts, refuse to parse
+    const finalHasCaptcha = htmlContent.includes('Robot or human') || 
+                           htmlContent.includes('BogleWeb') ||
+                           htmlContent.includes('Activate and hold the button') ||
+                           htmlContent.includes('<title>Robot or human?</title>');
+    
+    if (finalHasCaptcha) {
+      console.log('[Walmart Scraper] ❌ All attempts (HTTP + Puppeteer) returned CAPTCHA');
+      console.log('[Walmart Scraper] Walmart has strong bot detection - manual HTML import required');
+      throw new Error('Walmart requires manual HTML import. Please copy the page HTML from your browser and paste it in the "Manual HTML" field.');
     }
     
     return await parseWalmartHTML(htmlContent, url);
