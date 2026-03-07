@@ -23,91 +23,98 @@ export async function scrapeGeneric(
     let htmlContent = (html || "").trim();
     let isManualHtml = false;
     
-    // If no HTML provided or too short, try to fetch it
-    if (!htmlContent || htmlContent.length < 100) {
-      console.log('[Generic Scraper] No valid HTML provided, attempting auto-fetch...');
+    // Strategy: Like Walmart scraper, if good HTML provided (>= 10KB), trust it (likely user pasted)
+    // Only auto-fetch or validate if HTML is missing/small
+    
+    if (!htmlContent || htmlContent.length < 10000) {
+      // Small or no HTML - need to fetch or validate
       
-      try {
-        // Fetch with 30 second timeout to prevent hanging
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 30000);
+      if (!htmlContent || htmlContent.length < 100) {
+        // No HTML or too tiny - auto-fetch
+        console.log('[Generic Scraper] No valid HTML provided, attempting auto-fetch...');
         
         try {
-          const response = await fetch(url, {
-            signal: controller.signal,
-            headers: {
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-              'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-              'Accept-Language': 'en-US,en;q=0.9',
-              'Accept-Encoding': 'gzip, deflate, br',
-              'DNT': '1',
-              'Connection': 'keep-alive',
-              'Upgrade-Insecure-Requests': '1',
-              'Sec-Fetch-Dest': 'document',
-              'Sec-Fetch-Mode': 'navigate',
-              'Sec-Fetch-Site': 'none',
-              'Sec-Fetch-User': '?1',
-              'Cache-Control': 'max-age=0',
-            },
-          });
-          clearTimeout(timeoutId);
-        
-          if (!response.ok) {
-            console.log(`[Generic Scraper] HTTP error: ${response.status}`);
+          // Fetch with 30 second timeout to prevent hanging
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 30000);
+          
+          try {
+            const response = await fetch(url, {
+              signal: controller.signal,
+              headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'DNT': '1',
+                'Connection': 'keep-alive',
+                'Upgrade-Insecure-Requests': '1',
+                'Sec-Fetch-Dest': 'document',
+                'Sec-Fetch-Mode': 'navigate',
+                'Sec-Fetch-Site': 'none',
+                'Sec-Fetch-User': '?1',
+                'Cache-Control': 'max-age=0',
+              },
+            });
             clearTimeout(timeoutId);
-            return MANUAL_HTML_REQUIRED;
-          }
           
-          htmlContent = await response.text();
-          console.log('[Generic Scraper] Auto-fetch successful, HTML length:', htmlContent.length);
-          
-          // Check for common blocking patterns
-          if (
-            htmlContent.length < 5000 ||
-            htmlContent.toLowerCase().includes('captcha') ||
-            htmlContent.toLowerCase().includes('access denied') ||
-            htmlContent.toLowerCase().includes('blocked') ||
-            htmlContent.toLowerCase().includes('robot') ||
-            htmlContent.toLowerCase().includes('site maintenance')
-          ) {
-            console.log('[Generic Scraper] Detected blocking/CAPTCHA, requesting manual HTML');
+            if (!response.ok) {
+              console.log(`[Generic Scraper] HTTP error: ${response.status}`);
+              return MANUAL_HTML_REQUIRED;
+            }
+            
+            htmlContent = await response.text();
+            console.log('[Generic Scraper] Auto-fetch successful, HTML length:', htmlContent.length);
+            
+            // Check auto-fetched HTML for blocking patterns
+            if (
+              htmlContent.length < 5000 ||
+              htmlContent.toLowerCase().includes('captcha') ||
+              htmlContent.toLowerCase().includes('access denied') ||
+              htmlContent.toLowerCase().includes('blocked') ||
+              htmlContent.toLowerCase().includes('robot') ||
+              htmlContent.toLowerCase().includes('site maintenance')
+            ) {
+              console.log('[Generic Scraper] Detected blocking/CAPTCHA in auto-fetched HTML, requesting manual HTML');
+              return MANUAL_HTML_REQUIRED;
+            }
+          } catch (fetchError) {
+            clearTimeout(timeoutId);
+            console.error('[Generic Scraper] Fetch failed:', fetchError);
+            if (fetchError instanceof Error && fetchError.name === 'AbortError') {
+              console.log('[Generic Scraper] Fetch timeout after 30 seconds - requesting manual HTML');
+            }
             return MANUAL_HTML_REQUIRED;
           }
         } catch (fetchError) {
-          clearTimeout(timeoutId);
-          console.error('[Generic Scraper] Fetch failed:', fetchError);
-          if (fetchError instanceof Error && fetchError.name === 'AbortError') {
-            console.log('[Generic Scraper] Fetch timeout after 30 seconds - requesting manual HTML');
-          }
+          console.error('[Generic Scraper] Fetch wrapper failed:', fetchError);
           return MANUAL_HTML_REQUIRED;
         }
-      } catch (fetchError) {
-        console.error('[Generic Scraper] Fetch wrapper failed:', fetchError);
-        return MANUAL_HTML_REQUIRED;
+      } else {
+        // Small HTML provided (100 bytes - 10KB) - likely from API route's auto-fetch that got blocked
+        // Validate for blocking patterns
+        console.log('[Generic Scraper] Small HTML provided (', htmlContent.length, 'bytes), validating for blocking...');
+        
+        if (
+          htmlContent.length < 5000 ||
+          htmlContent.toLowerCase().includes('captcha') ||
+          htmlContent.toLowerCase().includes('access denied') ||
+          htmlContent.toLowerCase().includes('blocked') ||
+          htmlContent.toLowerCase().includes('robot') ||
+          htmlContent.toLowerCase().includes('site maintenance')
+        ) {
+          console.log('[Generic Scraper] Small HTML appears to be blocked/CAPTCHA page, requesting manual HTML');
+          return MANUAL_HTML_REQUIRED;
+        }
+        
+        // Small but valid HTML
+        console.log('[Generic Scraper] Small HTML looks valid, proceeding');
+        isManualHtml = true;
       }
     } else {
-      // HTML was provided by API route's initial fetch
-      // Need to validate it's not a blocked/CAPTCHA page
-      console.log('[Generic Scraper] HTML provided, length:', htmlContent.length);
-      
-      // Check if provided HTML looks like a blocked page
-      if (
-        htmlContent.length < 5000 ||
-        htmlContent.toLowerCase().includes('captcha') ||
-        htmlContent.toLowerCase().includes('access denied') ||
-        htmlContent.toLowerCase().includes('blocked') ||
-        htmlContent.toLowerCase().includes('robot') ||
-        htmlContent.toLowerCase().includes('site maintenance')
-      ) {
-        console.log('[Generic Scraper] Provided HTML appears to be blocked/CAPTCHA page');
-        console.log('[Generic Scraper] Will not attempt re-fetch to avoid duplicate timeouts');
-        console.log('[Generic Scraper] Requesting manual HTML from user');
-        return MANUAL_HTML_REQUIRED;
-      }
-      
-      // HTML looks good - probably manually provided by user
+      // Large HTML provided (>= 10KB) - trust it, likely user manually pasted full page source
+      console.log('[Generic Scraper] Large HTML provided (', htmlContent.length, 'bytes) - assuming manual paste, proceeding');
       isManualHtml = true;
-      console.log('[Generic Scraper] HTML looks valid, proceeding with parsing');
     }
     
     // CRITICAL: If manual HTML or useAI flag is set, use Gemini AI directly
