@@ -2,12 +2,22 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { redirect } from "@remix-run/node";
 import { Form, useLoaderData } from "@remix-run/react";
 
-import { login } from "../../shopify.server";
+import { login, authenticate } from "../../shopify.server";
 
 import styles from "./styles.module.css";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const url = new URL(request.url);
+
+  // If logged in (has valid session), redirect to app dashboard
+  try {
+    await authenticate.admin(request);
+    // User is authenticated, redirect to app
+    throw redirect("/app");
+  } catch (error) {
+    // User is not authenticated, continue to show login page
+    // This is expected for non-logged-in users
+  }
 
   if (url.searchParams.get("shop")) {
     throw redirect(`/app?${url.searchParams.toString()}`);
