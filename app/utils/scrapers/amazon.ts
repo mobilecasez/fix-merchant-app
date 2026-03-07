@@ -13,6 +13,7 @@ export async function scrapeAmazon(html: string, url: string): Promise<ScrapedPr
     console.log('[Amazon Scraper] Detected Amazon domain:', domain);
     
     let htmlContent = "";
+    let originalHTTPContent = ""; // Backup of original HTTP response
     let fetchSuccessful = false;
     
     // STEP 1: Try fast HTTP request first (works ~30% of the time)
@@ -39,6 +40,7 @@ export async function scrapeAmazon(html: string, url: string): Promise<ScrapedPr
       
       if (response.ok) {
         htmlContent = await response.text();
+        originalHTTPContent = htmlContent; // Save backup before any validation
         console.log('[Amazon Scraper] ✓ HTTP request successful, HTML length:', htmlContent.length);
         
         // Verify it has price elements
@@ -46,16 +48,18 @@ export async function scrapeAmazon(html: string, url: string): Promise<ScrapedPr
           /<span[^>]*class="[^"]*a-price-symbol[^"]*"/i.test(htmlContent) ||
           /<span[^>]*class="[^"]*a-price-whole[^"]*"/i.test(htmlContent) ||
           /<span[^>]*class="[^"]*apex[-]?pricetopay[^"]*"/i.test(htmlContent) ||
-          /<div[^>]*id="corePriceDisplay[^"]*"/i.test(htmlContent)
+          /<div[^>]*id="corePriceDisplay[^"]*"/i.test(htmlContent) ||
+          /\$[\d,]+\.?\d{0,2}/.test(htmlContent) || // Broad currency pattern fallback
+          /₹[\d,]+\.?\d{0,2}/.test(htmlContent)
         );
         
-        // Check for CAPTCHA or blocking
+        // Check for CAPTCHA or blocking (more lenient now)
         const isBlocked = (
           htmlContent.includes('Type the characters you see in this picture') ||
           htmlContent.includes('Enter the characters you see below') ||
           htmlContent.includes('To discuss automated access to Amazon data please contact') ||
           htmlContent.toLowerCase().includes('robot check') ||
-          htmlContent.length < 10000 ||
+          htmlContent.length < 5000 ||  // Reduced from 10000 to 5000 (more lenient)
           !hasPriceElements
         );
         
@@ -63,8 +67,11 @@ export async function scrapeAmazon(html: string, url: string): Promise<ScrapedPr
           console.log('[Amazon Scraper] ✅ HTTP fetch SUCCESS - valid HTML with price elements');
           fetchSuccessful = true;
         } else {
-          console.log('[Amazon Scraper] ⚠️ HTTP fetch blocked or CAPTCHA detected');
-          htmlContent = ""; // Clear blocked HTML
+          console.log('[Amazon Scraper] ⚠️ HTTP fetch validation failed, will try Puppeteer...');
+          console.log('[Amazon Scraper]    - Length check:', htmlContent.length >= 5000);
+          console.log('[Amazon Scraper]    - Has price elements:', hasPriceElements);
+          console.log('[Amazon Scraper]    - Is CAPTCHA:', htmlContent.toLowerCase().includes('robot check') || htmlContent.includes('Type the characters'));
+          // Don't clear htmlContent - keep it as potential fallback
         }
       } else {
         console.log(`[Amazon Scraper] ❌ HTTP error: ${response.status} ${response.statusText}`);
@@ -151,7 +158,15 @@ export async function scrapeAmazon(html: string, url: string): Promise<ScrapedPr
         }
       }
       
-      // If all automatic methods failed
+      // If all Puppeteer attempts failed, try using original HTTP content as last resort
+      if (!fetchSuccessful && originalHTTPContent && originalHTTPContent.length > 5000) {
+        console.log('[Amazon Scraper] ⚠️ All Puppeteer attempts failed, using original HTTP content as fallback');
+        console.log('[Amazon Scraper] 🔄 HTTP content length:', originalHTTPContent.length);
+        htmlContent = originalHTTPContent;
+        fetchSuccessful = true;
+      }
+      
+      // If still no valid HTML after all attempts
       if (!fetchSuccessful) {
         console.error('[Amazon Scraper] ❌ All automatic methods failed after', maxRetries, 'Puppeteer attempts');
         console.error('[Amazon Scraper] 📋 Manual HTML paste required as last resort');
