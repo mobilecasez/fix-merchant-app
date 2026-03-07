@@ -82,29 +82,59 @@ export async function scrapeAmazon(html: string, url: string): Promise<ScrapedPr
         console.log('[Amazon Scraper] Using provided HTML parameter as fallback');
         htmlContent = html;
       } else {
-        // Try Puppeteer for Amazon.com to get the real page
-        console.log('[Amazon Scraper] Attempting Puppeteer fallback...');
-        try {
-          const puppeteerHTML = await scrapeAmazonWithPuppeteer(url);
-          if (puppeteerHTML && puppeteerHTML.length > 10000) {
-            console.log('[Amazon Scraper] ✓ Puppeteer successfully fetched HTML, length:', puppeteerHTML.length);
+        // Try enhanced Puppeteer with multiple retries
+        console.log('[Amazon Scraper] Attempting enhanced Puppeteer fallback with retry logic...');
+        let lastError: Error | null = null;
+        const maxRetries = 3;
+        
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+          try {
+            console.log(`[Amazon Scraper] 🔄 Puppeteer attempt ${attempt}/${maxRetries}...`);
+            const puppeteerHTML = await scrapeAmazonWithPuppeteerStealth(url, attempt);
             
-            // Verify Puppeteer HTML has price elements
-            const puppeteerHasPriceElements = (
-              /<span[^>]*class="[^"]*a-price-symbol[^"]*"/i.test(puppeteerHTML) ||
-              /<span[^>]*class="[^"]*a-price-whole[^"]*"/i.test(puppeteerHTML) ||
-              /<span[^>]*class="[^"]*apex[-]?pricetopay[^"]*"/i.test(puppeteerHTML) ||
-              /<div[^>]*id="corePriceDisplay[^"]*"/i.test(puppeteerHTML)
-            );
-            console.log('[Amazon Scraper] Puppeteer HTML has price elements:', puppeteerHasPriceElements);
+            if (puppeteerHTML && puppeteerHTML.length > 10000) {
+              console.log('[Amazon Scraper] ✓ Puppeteer successfully fetched HTML, length:', puppeteerHTML.length);
+              
+              // Verify Puppeteer HTML has price elements
+              const puppeteerHasPriceElements = (
+                /<span[^>]*class="[^"]*a-price-symbol[^"]*"/i.test(puppeteerHTML) ||
+                /<span[^>]*class="[^"]*a-price-whole[^"]*"/i.test(puppeteerHTML) ||
+                /<span[^>]*class="[^"]*apex[-]?pricetopay[^"]*"/i.test(puppeteerHTML) ||
+                /<div[^>]*id="corePriceDisplay[^"]*"/i.test(puppeteerHTML)
+              );
+              console.log('[Amazon Scraper] Puppeteer HTML has price elements:', puppeteerHasPriceElements);
+              
+              if (puppeteerHasPriceElements) {
+                htmlContent = puppeteerHTML;
+                console.log(`[Amazon Scraper] ✅ SUCCESS on attempt ${attempt}`);
+                break;
+              } else {
+                console.log(`[Amazon Scraper] ⚠️ Attempt ${attempt}: HTML fetched but no price elements, retrying...`);
+                if (attempt < maxRetries) {
+                  const backoffDelay = Math.min(2000 * Math.pow(2, attempt - 1), 10000);
+                  console.log(`[Amazon Scraper] Waiting ${backoffDelay}ms before retry...`);
+                  await new Promise(resolve => setTimeout(resolve, backoffDelay));
+                }
+              }
+            } else {
+              throw new Error('Puppeteer returned insufficient HTML');
+            }
+          } catch (puppeteerError) {
+            lastError = puppeteerError as Error;
+            console.error(`[Amazon Scraper] ❌ Attempt ${attempt} failed:`, puppeteerError);
             
-            htmlContent = puppeteerHTML;
-          } else {
-            throw new Error('Puppeteer returned insufficient HTML');
+            if (attempt < maxRetries) {
+              const backoffDelay = Math.min(2000 * Math.pow(2, attempt - 1), 10000);
+              console.log(`[Amazon Scraper] Waiting ${backoffDelay}ms before retry...`);
+              await new Promise(resolve => setTimeout(resolve, backoffDelay));
+            }
           }
-        } catch (puppeteerError) {
-          console.error('[Amazon Scraper] Puppeteer fallback failed:', puppeteerError);
-          throw new Error('Amazon is blocking requests. Unable to fetch product data.');
+        }
+        
+        // If all retries failed and we still don't have valid HTML, throw error
+        if (htmlContent.length < 10000 || !hasPriceElements) {
+          console.error('[Amazon Scraper] ❌ All automatic methods failed after', maxRetries, 'attempts');
+          throw new Error(`Amazon scraping failed after ${maxRetries} attempts: ${lastError?.message || 'Unknown error'}`);
         }
       }
     }
@@ -742,69 +772,184 @@ async function parseAmazonHTML(htmlContent: string, url: string, domain: string 
     return result;
 }
 
-// Puppeteer fallback for Amazon when HTTP requests get blocked
-async function scrapeAmazonWithPuppeteer(url: string): Promise<string> {
-  console.log('[Amazon Puppeteer] Launching headless browser...');
+// Enhanced Puppeteer with stealth mode and human-like behavior
+async function scrapeAmazonWithPuppeteerStealth(url: string, attemptNumber: number = 1): Promise<string> {
+  console.log(`[Amazon Stealth] 🚀 Launching stealth browser (attempt ${attemptNumber})...`);
   
   try {
-    const puppeteer = await import('puppeteer');
+    // Use puppeteer-extra with stealth plugin
+    const puppeteerExtra = await import('puppeteer-extra');
+    const StealthPlugin = await import('puppeteer-extra-plugin-stealth');
     
-    const browser = await puppeteer.default.launch({
+    // Add stealth plugin to evade detection
+    puppeteerExtra.default.use(StealthPlugin.default());
+    
+    console.log('[Amazon Stealth] ✓ Stealth plugin loaded');
+    
+    const browser = await puppeteerExtra.default.launch({
       headless: true,
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
         '--disable-dev-shm-usage',
-        '--disable-accelerated-2d-canvas',
+        '--disable-blink-features=AutomationControlled',
+        '--disable-features=IsolateOrigins,site-per-process',
+        '--disable-web-security',
+        '--window-size=1920,1080',
         '--disable-gpu',
-        '--window-size=1920x1080',
-        '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        '--disable-dev-shm-usage',
+        '--disable-accelerated-2d-canvas',
+        '--no-first-run',
+        '--no-zygote',
+        '--disable-background-timer-throttling',
+        '--disable-backgrounding-occluded-windows',
+        '--disable-renderer-backgrounding',
       ],
     });
 
     const page = await browser.newPage();
+    console.log('[Amazon Stealth] ✓ New page created');
     
-    // Set realistic viewport
-    await page.setViewport({ width: 1920, height: 1080 });
+    // Set realistic viewport with slight randomization
+    const viewportWidth = 1920 + Math.floor(Math.random() * 100 - 50);
+    const viewportHeight = 1080 + Math.floor(Math.random() * 100 - 50);
+    await page.setViewport({ 
+      width: viewportWidth, 
+      height: viewportHeight,
+      deviceScaleFactor: 1,
+      hasTouch: false,
+      isLandscape: true,
+    });
+    console.log(`[Amazon Stealth] ✓ Viewport set: ${viewportWidth}x${viewportHeight}`);
     
-    // Set extra headers
+    // Set extra headers that mimic real browser
     await page.setExtraHTTPHeaders({
       'Accept-Language': 'en-US,en;q=0.9',
       'Accept-Encoding': 'gzip, deflate, br',
-      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+      'Sec-Fetch-Dest': 'document',
+      'Sec-Fetch-Mode': 'navigate',
+      'Sec-Fetch-Site': 'none',
+      'Sec-Fetch-User': '?1',
+      'Upgrade-Insecure-Requests': '1',
     });
+    
+    // Override navigator properties to appear more human
+    await page.evaluateOnNewDocument(() => {
+      // Override the navigator.webdriver property
+      Object.defineProperty(navigator, 'webdriver', {
+        get: () => undefined,
+      });
+      
+      // Override plugins to make it look real
+      Object.defineProperty(navigator, 'plugins', {
+        get: () => [1, 2, 3, 4, 5],
+      });
+      
+      // Override languages
+      Object.defineProperty(navigator, 'languages', {
+        get: () => ['en-US', 'en'],
+      });
+    });
+    console.log('[Amazon Stealth] ✓ Navigator properties overridden');
 
-    console.log('[Amazon Puppeteer] Navigating to:', url);
+    // Add random delay before navigation (1-3 seconds)
+    const preNavDelay = 1000 + Math.floor(Math.random() * 2000);
+    console.log(`[Amazon Stealth] ⏳ Waiting ${preNavDelay}ms before navigation...`);
+    await new Promise(resolve => setTimeout(resolve, preNavDelay));
+
+    console.log('[Amazon Stealth] 🌐 Navigating to:', url);
     
     // Navigate with longer timeout
     await page.goto(url, {
-      waitUntil: 'networkidle2',
-      timeout: 30000,
+      waitUntil: 'domcontentloaded',
+      timeout: 45000,
     });
+    console.log('[Amazon Stealth] ✓ Page loaded');
 
-    console.log('[Amazon Puppeteer] Page loaded, waiting for price elements...');
+    // Random delay after page load (2-4 seconds) to mimic human reading time
+    const postLoadDelay = 2000 + Math.floor(Math.random() * 2000);
+    console.log(`[Amazon Stealth] ⏳ Waiting ${postLoadDelay}ms for dynamic content...`);
+    await new Promise(resolve => setTimeout(resolve, postLoadDelay));
     
-    // Wait a bit for dynamic content
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    // Simulate human-like behavior: random scrolling
+    console.log('[Amazon Stealth] 🖱️ Simulating human scrolling...');
+    await page.evaluate(() => {
+      // Scroll down slowly like a human
+      const scrollHeight = Math.floor(Math.random() * 500) + 300;
+      window.scrollBy({
+        top: scrollHeight,
+        left: 0,
+        behavior: 'smooth'
+      });
+    });
+    await new Promise(resolve => setTimeout(resolve, 800 + Math.random() * 400));
     
-    // Try to wait for price elements (but don't fail if not found)
+    // Scroll back up a bit
+    await page.evaluate(() => {
+      window.scrollBy({
+        top: -100,
+        left: 0,
+        behavior: 'smooth'
+      });
+    });
+    await new Promise(resolve => setTimeout(resolve, 500 + Math.random() * 300));
+    
+    // Try to handle cookie consent if present
+    console.log('[Amazon Stealth] 🍪 Checking for cookie consent...');
     try {
-      await page.waitForSelector('#corePriceDisplay_desktop_feature_div, #apex_desktop, .a-price', { timeout: 5000 });
-      console.log('[Amazon Puppeteer] ✓ Price elements found');
+      const cookieButton = await page.$('input[name="accept"]');
+      if (cookieButton) {
+        console.log('[Amazon Stealth] ✓ Found cookie consent, clicking...');
+        await cookieButton.click();
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
     } catch (e) {
-      console.log('[Amazon Puppeteer] ⚠️ Price elements not found, continuing anyway...');
+      console.log('[Amazon Stealth] No cookie consent found or already accepted');
     }
+    
+    // Move mouse randomly to appear more human
+    console.log('[Amazon Stealth] 🖱️ Simulating mouse movement...');
+    const mouseX = Math.floor(Math.random() * viewportWidth);
+    const mouseY = Math.floor(Math.random() * viewportHeight);
+    await page.mouse.move(mouseX, mouseY);
+    await new Promise(resolve => setTimeout(resolve, 200 + Math.random() * 300));
+    
+    // Wait for price elements with multiple selectors
+    console.log('[Amazon Stealth] 🔍 Waiting for price elements...');
+    try {
+      await Promise.race([
+        page.waitForSelector('#corePriceDisplay_desktop_feature_div', { timeout: 8000 }),
+        page.waitForSelector('#apex_desktop', { timeout: 8000 }),
+        page.waitForSelector('.a-price', { timeout: 8000 }),
+        page.waitForSelector('#priceblock_ourprice', { timeout: 8000 }),
+        page.waitForSelector('[data-a-strike="true"]', { timeout: 8000 }),
+      ]);
+      console.log('[Amazon Stealth] ✓ Price elements found!');
+    } catch (e) {
+      console.log('[Amazon Stealth] ⚠️ Price elements not found within timeout, continuing anyway...');
+    }
+
+    // Final wait before extraction
+    await new Promise(resolve => setTimeout(resolve, 1000));
 
     // Get the HTML content
     const html = await page.content();
-    console.log('[Amazon Puppeteer] Extracted HTML, length:', html.length);
+    console.log('[Amazon Stealth] ✓ Extracted HTML, length:', html.length);
+    
+    // Check if we got blocked (CAPTCHA detection)
+    if (html.includes('Type the characters you see') || html.includes('Enter the characters you see below')) {
+      console.log('[Amazon Stealth] ❌ CAPTCHA detected in response');
+    } else {
+      console.log('[Amazon Stealth] ✓ No CAPTCHA detected');
+    }
 
     await browser.close();
-    console.log('[Amazon Puppeteer] Browser closed');
+    console.log('[Amazon Stealth] ✓ Browser closed successfully');
 
     return html;
   } catch (error) {
-    console.error('[Amazon Puppeteer] Error:', error);
+    console.error('[Amazon Stealth] ❌ Error:', error);
     throw error;
   }
 }
