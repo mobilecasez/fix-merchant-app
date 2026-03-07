@@ -1,7 +1,8 @@
 import { ScrapedProductData } from "./types";
 import { cleanProductName, ensureCompareAtPrice, parseWeight, estimateWeight } from "./helpers";
+import { MANUAL_HTML_REQUIRED } from "./generic";
 
-export async function scrapeWalmart(html: string, url: string): Promise<ScrapedProductData> {
+export async function scrapeWalmart(html: string, url: string): Promise<ScrapedProductData | typeof MANUAL_HTML_REQUIRED> {
   try {
     console.log('[Walmart Scraper] Starting scrape for:', url);
     console.log('[Walmart Scraper] HTML length provided:', html?.length || 0);
@@ -111,7 +112,8 @@ export async function scrapeWalmart(html: string, url: string): Promise<ScrapedP
     if (finalHasCaptcha) {
       console.log('[Walmart Scraper] ❌ All attempts (HTTP + Puppeteer) returned CAPTCHA');
       console.log('[Walmart Scraper] Walmart has strong bot detection - manual HTML import required');
-      throw new Error('Walmart requires manual HTML import. Please copy the page HTML from your browser and paste it in the "Manual HTML" field.');
+      console.log('[Walmart Scraper] Returning MANUAL_HTML_REQUIRED flag to show manual HTML input');
+      return MANUAL_HTML_REQUIRED;
     }
     
     return await parseWalmartHTML(htmlContent, url);
