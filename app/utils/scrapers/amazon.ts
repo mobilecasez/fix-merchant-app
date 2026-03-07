@@ -12,130 +12,150 @@ export async function scrapeAmazon(html: string, url: string): Promise<ScrapedPr
                    url.includes('amazon.de') ? 'DE' : 'COM';
     console.log('[Amazon Scraper] Detected Amazon domain:', domain);
     
-    // Use proven headers that bypass Amazon's anti-scraping protection
-    console.log('[Amazon Scraper] Fetching page with HTTP request...');
+    let htmlContent = "";
+    let fetchSuccessful = false;
     
-    // Use a random delay to mimic human behavior
-    await new Promise(resolve => setTimeout(resolve, Math.random() * 1000 + 500));
-    
-    const response = await fetch(url, {
-      headers: {
-        'accept-language': 'en-US,en;q=0.9',
-        'accept-encoding': 'gzip, deflate, br',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-        'sec-ch-ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
-        'sec-ch-ua-mobile': '?0',
-        'sec-ch-ua-platform': '"Windows"',
-        'sec-fetch-dest': 'document',
-        'sec-fetch-mode': 'navigate',
-        'sec-fetch-site': 'none',
-        'sec-fetch-user': '?1',
-        'upgrade-insecure-requests': '1',
-      },
-    });
-    
-    if (!response.ok) {
-      console.log(`[Amazon Scraper] HTTP error: ${response.status} ${response.statusText}`);
-      // If fetch fails, try to use the provided HTML parameter as fallback
-      if (html && html.length > 10000) {
-        console.log('[Amazon Scraper] Using provided HTML as fallback');
-        const htmlContent = html;
-        return await parseAmazonHTML(htmlContent, url);
+    // STEP 1: Try fast HTTP request first (works ~30% of the time)
+    console.log('[Amazon Scraper] 🚀 Attempting fast HTTP request...');
+    try {
+      await new Promise(resolve => setTimeout(resolve, Math.random() * 1000 + 500));
+      
+      const response = await fetch(url, {
+        headers: {
+          'accept-language': 'en-US,en;q=0.9',
+          'accept-encoding': 'gzip, deflate, br',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+          'sec-ch-ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+          'sec-ch-ua-mobile': '?0',
+          'sec-ch-ua-platform': '"Windows"',
+          'sec-fetch-dest': 'document',
+          'sec-fetch-mode': 'navigate',
+          'sec-fetch-site': 'none',
+          'sec-fetch-user': '?1',
+          'upgrade-insecure-requests': '1',
+        },
+      });
+      
+      if (response.ok) {
+        htmlContent = await response.text();
+        console.log('[Amazon Scraper] ✓ HTTP request successful, HTML length:', htmlContent.length);
+        
+        // Verify it has price elements
+        const hasPriceElements = (
+          /<span[^>]*class="[^"]*a-price-symbol[^"]*"/i.test(htmlContent) ||
+          /<span[^>]*class="[^"]*a-price-whole[^"]*"/i.test(htmlContent) ||
+          /<span[^>]*class="[^"]*apex[-]?pricetopay[^"]*"/i.test(htmlContent) ||
+          /<div[^>]*id="corePriceDisplay[^"]*"/i.test(htmlContent)
+        );
+        
+        // Check for CAPTCHA or blocking
+        const isBlocked = (
+          htmlContent.includes('Type the characters you see in this picture') ||
+          htmlContent.includes('Enter the characters you see below') ||
+          htmlContent.includes('To discuss automated access to Amazon data please contact') ||
+          htmlContent.toLowerCase().includes('robot check') ||
+          htmlContent.length < 10000 ||
+          !hasPriceElements
+        );
+        
+        if (!isBlocked) {
+          console.log('[Amazon Scraper] ✅ HTTP fetch SUCCESS - valid HTML with price elements');
+          fetchSuccessful = true;
+        } else {
+          console.log('[Amazon Scraper] ⚠️ HTTP fetch blocked or CAPTCHA detected');
+          htmlContent = ""; // Clear blocked HTML
+        }
+      } else {
+        console.log(`[Amazon Scraper] ❌ HTTP error: ${response.status} ${response.statusText}`);
       }
-      throw new Error(`Failed to fetch Amazon page: ${response.status}`);
+    } catch (httpError) {
+      console.log('[Amazon Scraper] ❌ HTTP request failed:', httpError);
     }
     
-    let htmlContent = await response.text();
-    console.log('[Amazon Scraper] Page fetched successfully, HTML length:', htmlContent.length);
-    
-    // Check if HTML contains actual price elements (not just class names in CSS/JS)
-    const hasPriceElements = (
-      /<span[^>]*class="[^"]*a-price-symbol[^"]*"/i.test(htmlContent) ||
-      /<span[^>]*class="[^"]*a-price-whole[^"]*"/i.test(htmlContent) ||
-      /<span[^>]*class="[^"]*apex[-]?pricetopay[^"]*"/i.test(htmlContent) ||
-      /<div[^>]*id="corePriceDisplay[^"]*"/i.test(htmlContent)
-    );
-    
-    console.log('[Amazon Scraper] Price elements check:', hasPriceElements);
-    
-    // Check for CAPTCHA or bot detection or missing price elements
-    if (htmlContent.includes('Type the characters you see in this picture') || 
-        htmlContent.includes('Enter the characters you see below') ||
-        htmlContent.includes('To discuss automated access to Amazon data please contact') ||
-        htmlContent.toLowerCase().includes('robot check') ||
-        htmlContent.length < 10000 ||
-        !hasPriceElements) {  // No actual price elements found - Amazon sent simplified HTML
+    // STEP 2: If HTTP failed, try manual HTML from user (if provided)
+    if (!fetchSuccessful && html && html.length > 10000) {
+      console.log('[Amazon Scraper] 📋 Checking provided manual HTML...');
+      const hasPriceElements = (
+        /<span[^>]*class="[^"]*a-price-symbol[^"]*"/i.test(html) ||
+        /<span[^>]*class="[^"]*a-price-whole[^"]*"/i.test(html) ||
+        /<span[^>]*class="[^"]*apex[-]?pricetopay[^"]*"/i.test(html) ||
+        /<div[^>]*id="corePriceDisplay[^"]*"/i.test(html)
+      );
       
-      if (!hasPriceElements && htmlContent.length >= 10000) {
-        console.log('[Amazon Scraper] ⚠️ Price elements missing from HTML - Amazon detected bot request');
-        console.log('[Amazon Scraper] HTML length:', htmlContent.length, 'but no price elements found');
-        console.log('[Amazon Scraper] Attempting to use Puppeteer fallback for better HTML...');
-      } else if (htmlContent.length < 10000) {
-        console.log('[Amazon Scraper] CAPTCHA/Bot detection - page too small');
-      } else {
-        console.log('[Amazon Scraper] CAPTCHA/Bot detection page detected');
-      }
-      
-      // Try to use the provided HTML parameter as fallback
-      if (html && html.length > 10000) {
-        console.log('[Amazon Scraper] Using provided HTML parameter as fallback');
+      if (hasPriceElements) {
+        console.log('[Amazon Scraper] ✅ Using provided manual HTML (valid)');
         htmlContent = html;
+        fetchSuccessful = true;
       } else {
-        // Try enhanced Puppeteer with multiple retries
-        console.log('[Amazon Scraper] Attempting enhanced Puppeteer fallback with retry logic...');
-        let lastError: Error | null = null;
-        const maxRetries = 3;
-        
-        for (let attempt = 1; attempt <= maxRetries; attempt++) {
-          try {
-            console.log(`[Amazon Scraper] 🔄 Puppeteer attempt ${attempt}/${maxRetries}...`);
-            const puppeteerHTML = await scrapeAmazonWithPuppeteerStealth(url, attempt);
+        console.log('[Amazon Scraper] ⚠️ Provided HTML invalid or missing price elements');
+      }
+    }
+    
+    // STEP 3: If still no valid HTML, use enhanced Puppeteer stealth mode with retries
+    if (!fetchSuccessful) {
+      console.log('[Amazon Scraper] 🤖 Attempting enhanced Puppeteer stealth mode with retry logic...');
+      let lastError: Error | null = null;
+      const maxRetries = 3;
+      
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+          console.log(`[Amazon Scraper] 🔄 Stealth Puppeteer attempt ${attempt}/${maxRetries}...`);
+          const puppeteerHTML = await scrapeAmazonWithPuppeteerStealth(url, attempt);
+          
+          if (puppeteerHTML && puppeteerHTML.length > 10000) {
+            console.log('[Amazon Scraper] ✓ Puppeteer fetched HTML, length:', puppeteerHTML.length);
             
-            if (puppeteerHTML && puppeteerHTML.length > 10000) {
-              console.log('[Amazon Scraper] ✓ Puppeteer successfully fetched HTML, length:', puppeteerHTML.length);
-              
-              // Verify Puppeteer HTML has price elements
-              const puppeteerHasPriceElements = (
-                /<span[^>]*class="[^"]*a-price-symbol[^"]*"/i.test(puppeteerHTML) ||
-                /<span[^>]*class="[^"]*a-price-whole[^"]*"/i.test(puppeteerHTML) ||
-                /<span[^>]*class="[^"]*apex[-]?pricetopay[^"]*"/i.test(puppeteerHTML) ||
-                /<div[^>]*id="corePriceDisplay[^"]*"/i.test(puppeteerHTML)
-              );
-              console.log('[Amazon Scraper] Puppeteer HTML has price elements:', puppeteerHasPriceElements);
-              
-              if (puppeteerHasPriceElements) {
-                htmlContent = puppeteerHTML;
-                console.log(`[Amazon Scraper] ✅ SUCCESS on attempt ${attempt}`);
-                break;
-              } else {
-                console.log(`[Amazon Scraper] ⚠️ Attempt ${attempt}: HTML fetched but no price elements, retrying...`);
-                if (attempt < maxRetries) {
-                  const backoffDelay = Math.min(2000 * Math.pow(2, attempt - 1), 10000);
-                  console.log(`[Amazon Scraper] Waiting ${backoffDelay}ms before retry...`);
-                  await new Promise(resolve => setTimeout(resolve, backoffDelay));
-                }
-              }
+            // Verify Puppeteer HTML has price elements
+            const puppeteerHasPriceElements = (
+              /<span[^>]*class="[^"]*a-price-symbol[^"]*"/i.test(puppeteerHTML) ||
+              /<span[^>]*class="[^"]*a-price-whole[^"]*"/i.test(puppeteerHTML) ||
+              /<span[^>]*class="[^"]*apex[-]?pricetopay[^"]*"/i.test(puppeteerHTML) ||
+              /<div[^>]*id="corePriceDisplay[^"]*"/i.test(puppeteerHTML)
+            );
+            
+            // Check for CAPTCHA
+            const isCaptcha = (
+              puppeteerHTML.includes('Type the characters you see in this picture') ||
+              puppeteerHTML.includes('Enter the characters you see below') ||
+              puppeteerHTML.toLowerCase().includes('robot check')
+            );
+            
+            console.log('[Amazon Scraper] Puppeteer result - Has price elements:', puppeteerHasPriceElements, ', Is CAPTCHA:', isCaptcha);
+            
+            if (puppeteerHasPriceElements && !isCaptcha) {
+              htmlContent = puppeteerHTML;
+              fetchSuccessful = true;
+              console.log(`[Amazon Scraper] ✅ Stealth Puppeteer SUCCESS on attempt ${attempt}`);
+              break;
             } else {
-              throw new Error('Puppeteer returned insufficient HTML');
+              console.log(`[Amazon Scraper] ⚠️ Attempt ${attempt}: HTML fetched but blocked/invalid, retrying...`);
+              if (attempt < maxRetries) {
+                const backoffDelay = Math.min(2000 * Math.pow(2, attempt - 1), 10000);
+                console.log(`[Amazon Scraper] ⏳ Waiting ${backoffDelay}ms before retry...`);
+                await new Promise(resolve => setTimeout(resolve, backoffDelay));
+              }
             }
-          } catch (puppeteerError) {
-            lastError = puppeteerError as Error;
-            console.error(`[Amazon Scraper] ❌ Attempt ${attempt} failed:`, puppeteerError);
-            
-            if (attempt < maxRetries) {
-              const backoffDelay = Math.min(2000 * Math.pow(2, attempt - 1), 10000);
-              console.log(`[Amazon Scraper] Waiting ${backoffDelay}ms before retry...`);
-              await new Promise(resolve => setTimeout(resolve, backoffDelay));
-            }
+          } else {
+            throw new Error('Puppeteer returned insufficient HTML');
+          }
+        } catch (puppeteerError) {
+          lastError = puppeteerError as Error;
+          console.error(`[Amazon Scraper] ❌ Attempt ${attempt} failed:`, puppeteerError);
+          
+          if (attempt < maxRetries) {
+            const backoffDelay = Math.min(2000 * Math.pow(2, attempt - 1), 10000);
+            console.log(`[Amazon Scraper] ⏳ Waiting ${backoffDelay}ms before retry...`);
+            await new Promise(resolve => setTimeout(resolve, backoffDelay));
           }
         }
-        
-        // If all retries failed and we still don't have valid HTML, throw error
-        if (htmlContent.length < 10000 || !hasPriceElements) {
-          console.error('[Amazon Scraper] ❌ All automatic methods failed after', maxRetries, 'attempts');
-          throw new Error(`Amazon scraping failed after ${maxRetries} attempts: ${lastError?.message || 'Unknown error'}`);
-        }
+      }
+      
+      // If all automatic methods failed
+      if (!fetchSuccessful) {
+        console.error('[Amazon Scraper] ❌ All automatic methods failed after', maxRetries, 'Puppeteer attempts');
+        console.error('[Amazon Scraper] 📋 Manual HTML paste required as last resort');
+        throw new Error(`Amazon auto-scraping failed after ${maxRetries} attempts. Please use manual HTML paste. Error: ${lastError?.message || 'Unknown error'}`);
       }
     }
     
