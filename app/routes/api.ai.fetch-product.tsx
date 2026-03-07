@@ -228,35 +228,49 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         // Add random delay to mimic human behavior
         await new Promise(resolve => setTimeout(resolve, Math.random() * 1000 + 500));
         
-        const response = await fetch(url, {
-          headers: {
-            'accept-language': 'en-US,en;q=0.9',
-            'accept-encoding': 'gzip, deflate, br',
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36',
-            'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-          },
-        });
+        // Fetch with 30 second timeout to prevent hanging
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 30000);
         
-        if (response.ok) {
-          html = await response.text();
-          
-          // Check if we got a CAPTCHA or bot detection page
-          if (html.includes('Type the characters you see in this picture') || 
-              html.includes('Enter the characters you see below') ||
-              html.includes('To discuss automated access to Amazon data please contact') ||
-              html.toLowerCase().includes('robot check') ||
-              html.length < 10000) {
-            console.log(`Got CAPTCHA/bot detection page (size: ${html.length}), keeping HTML for AI fallback`);
-            fetchSuccess = true; // Keep HTML available for AI fallback
+        try {
+          const response = await fetch(url, {
+            signal: controller.signal,
+            headers: {
+              'accept-language': 'en-US,en;q=0.9',
+              'accept-encoding': 'gzip, deflate, br',
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36',
+              'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+            },
+          });
+          clearTimeout(timeoutId);
+        
+          if (response.ok) {
+            html = await response.text();
+            
+            // Check if we got a CAPTCHA or bot detection page
+            if (html.includes('Type the characters you see in this picture') || 
+                html.includes('Enter the characters you see below') ||
+                html.includes('To discuss automated access to Amazon data please contact') ||
+                html.toLowerCase().includes('robot check') ||
+                html.length < 10000) {
+              console.log(`Got CAPTCHA/bot detection page (size: ${html.length}), keeping HTML for AI fallback`);
+              fetchSuccess = true; // Keep HTML available for AI fallback
+            } else {
+              fetchSuccess = true;
+              console.log(`Successfully fetched page, HTML length: ${html.length}`);
+            }
           } else {
-            fetchSuccess = true;
-            console.log(`Successfully fetched page, HTML length: ${html.length}`);
+            console.log(`Initial fetch failed with status ${response.status}, will try with scraper`);
           }
-        } else {
-          console.log(`Initial fetch failed with status ${response.status}, will try with scraper`);
+        } catch (fetchError) {
+          clearTimeout(timeoutId);
+          console.log("Initial fetch failed, will try with scraper:", fetchError);
+          if (fetchError instanceof Error && fetchError.name === 'AbortError') {
+            console.log("Fetch timeout after 30 seconds - website too slow or blocking");
+          }
         }
       } catch (fetchError) {
-        console.log("Initial fetch failed, will try with scraper:", fetchError);
+        console.log("Initial fetch wrapper failed, will try with scraper:", fetchError);
       }
     }
 

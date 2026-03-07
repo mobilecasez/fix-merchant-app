@@ -28,45 +28,61 @@ export async function scrapeGeneric(
       console.log('[Generic Scraper] Attempting auto-fetch...');
       
       try {
-        const response = await fetch(url, {
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-            'Accept-Language': 'en-US,en;q=0.9',
-            'Accept-Encoding': 'gzip, deflate, br',
-            'DNT': '1',
-            'Connection': 'keep-alive',
-            'Upgrade-Insecure-Requests': '1',
-            'Sec-Fetch-Dest': 'document',
-            'Sec-Fetch-Mode': 'navigate',
-            'Sec-Fetch-Site': 'none',
-            'Sec-Fetch-User': '?1',
-            'Cache-Control': 'max-age=0',
-          },
-        });
+        // Fetch with 30 second timeout to prevent hanging
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 30000);
         
-        if (!response.ok) {
-          console.log(`[Generic Scraper] HTTP error: ${response.status}`);
-          return MANUAL_HTML_REQUIRED;
-        }
+        try {
+          const response = await fetch(url, {
+            signal: controller.signal,
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+              'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+              'Accept-Language': 'en-US,en;q=0.9',
+              'Accept-Encoding': 'gzip, deflate, br',
+              'DNT': '1',
+              'Connection': 'keep-alive',
+              'Upgrade-Insecure-Requests': '1',
+              'Sec-Fetch-Dest': 'document',
+              'Sec-Fetch-Mode': 'navigate',
+              'Sec-Fetch-Site': 'none',
+              'Sec-Fetch-User': '?1',
+              'Cache-Control': 'max-age=0',
+            },
+          });
+          clearTimeout(timeoutId);
         
-        htmlContent = await response.text();
-        console.log('[Generic Scraper] Auto-fetch successful, HTML length:', htmlContent.length);
-        
-        // Check for common blocking patterns
-        if (
-          htmlContent.length < 5000 ||
-          htmlContent.toLowerCase().includes('captcha') ||
-          htmlContent.toLowerCase().includes('access denied') ||
-          htmlContent.toLowerCase().includes('blocked') ||
-          htmlContent.toLowerCase().includes('robot') ||
-          htmlContent.toLowerCase().includes('site maintenance')
-        ) {
-          console.log('[Generic Scraper] Detected blocking/CAPTCHA, requesting manual HTML');
+          if (!response.ok) {
+            console.log(`[Generic Scraper] HTTP error: ${response.status}`);
+            clearTimeout(timeoutId);
+            return MANUAL_HTML_REQUIRED;
+          }
+          
+          htmlContent = await response.text();
+          console.log('[Generic Scraper] Auto-fetch successful, HTML length:', htmlContent.length);
+          
+          // Check for common blocking patterns
+          if (
+            htmlContent.length < 5000 ||
+            htmlContent.toLowerCase().includes('captcha') ||
+            htmlContent.toLowerCase().includes('access denied') ||
+            htmlContent.toLowerCase().includes('blocked') ||
+            htmlContent.toLowerCase().includes('robot') ||
+            htmlContent.toLowerCase().includes('site maintenance')
+          ) {
+            console.log('[Generic Scraper] Detected blocking/CAPTCHA, requesting manual HTML');
+            return MANUAL_HTML_REQUIRED;
+          }
+        } catch (fetchError) {
+          clearTimeout(timeoutId);
+          console.error('[Generic Scraper] Fetch failed:', fetchError);
+          if (fetchError instanceof Error && fetchError.name === 'AbortError') {
+            console.log('[Generic Scraper] Fetch timeout after 30 seconds - requesting manual HTML');
+          }
           return MANUAL_HTML_REQUIRED;
         }
       } catch (fetchError) {
-        console.error('[Generic Scraper] Fetch failed:', fetchError);
+        console.error('[Generic Scraper] Fetch wrapper failed:', fetchError);
         return MANUAL_HTML_REQUIRED;
       }
     } else {
