@@ -314,103 +314,167 @@ export default function ChooseSubscription() {
 
 
           <Layout.Section>
-            <BlockStack gap="400">
+            <style>{`
+              .pricing-grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+                gap: 24px;
+                margin-top: 24px;
+              }
+              
+              .price-card {
+                background: white;
+                border: 1px solid #e1e3e5;
+                border-radius: 12px;
+                padding: 32px 24px;
+                text-align: center;
+                transition: all 0.3s ease;
+                position: relative;
+                overflow: hidden;
+              }
+              
+              .price-card:hover {
+                transform: translateY(-4px);
+                box-shadow: 0 12px 24px rgba(0, 0, 0, 0.1);
+              }
+              
+              .price-card.current-plan {
+                border: 2px solid #008060;
+                background: #f6f6f7;
+              }
+              
+              .price-card-badge {
+                position: absolute;
+                top: 16px;
+                right: 16px;
+              }
+              
+              .price-card-header {
+                margin-bottom: 24px;
+              }
+              
+              .price-card-title {
+                font-size: 24px;
+                font-weight: 600;
+                color: #202223;
+                margin-bottom: 16px;
+              }
+              
+              .price-card-price {
+                font-size: 48px;
+                font-weight: 700;
+                color: #000;
+                line-height: 1;
+              }
+              
+              .price-card-period {
+                font-size: 16px;
+                color: #6d7175;
+                font-weight: 600;
+                margin-top: 8px;
+              }
+              
+              .price-card-features {
+                list-style: none;
+                padding: 0;
+                margin: 24px 0;
+                text-align: left;
+              }
+              
+              .price-card-features li {
+                padding: 12px 0;
+                border-bottom: 1px solid #e1e3e5;
+                font-size: 15px;
+                color: #202223;
+                display: flex;
+                align-items: center;
+                gap: 12px;
+              }
+              
+              .price-card-features li:last-child {
+                border-bottom: none;
+              }
+              
+              .price-card-features li::before {
+                content: "✓";
+                color: #008060;
+                font-weight: bold;
+                font-size: 18px;
+                flex-shrink: 0;
+              }
+              
+              .price-card-button {
+                margin-top: 24px;
+                width: 100%;
+              }
+              
+              .price-card-description {
+                margin-top: 16px;
+                font-size: 14px;
+                color: #6d7175;
+                font-style: italic;
+              }
+            `}</style>
+            
+            <div className="pricing-grid">
               {plans.map((plan: any) => {
                 const isCurrentPlan = currentSubscription?.planId === plan.id;
                 const isFreeplan = plan.price === 0;
                 
                 return (
-                  <Card key={plan.id}>
-                    <BlockStack gap="400">
-                      <InlineStack align="space-between" blockAlign="center">
-                        <BlockStack gap="100">
-                          <InlineStack gap="200" blockAlign="center">
-                            <Text as="h2" variant="headingLg">
-                              {plan.name}
-                            </Text>
-                            {isCurrentPlan && (
-                              <Badge tone="success">Current Plan</Badge>
-                            )}
-                            {isFreeplan && (
-                              <Badge tone="info">Free Forever</Badge>
-                            )}
-                          </InlineStack>
-                          <Text as="p" variant="headingXl" tone="base">
-                            ${plan.price.toFixed(2)}
-                            <Text as="span" variant="bodyMd" tone="subdued">
-                              {" "}/month
-                            </Text>
-                          </Text>
-                        </BlockStack>
-                      </InlineStack>
-
-                      <Divider />
-
-                      <BlockStack gap="300">
-                        <InlineStack gap="200" blockAlign="start">
-                          <Text as="span" tone="success">✓</Text>
-                          <Text as="p">
-                            <strong>{plan.productLimit} products</strong> per month
-                          </Text>
-                        </InlineStack>
-                        
-                        <InlineStack gap="200" blockAlign="start">
-                          <Text as="span" tone="success">✓</Text>
-                          <Text as="p">
-                            Import from 11 major e-commerce platforms
-                          </Text>
-                        </InlineStack>
-                        
-                        <InlineStack gap="200" blockAlign="start">
-                          <Text as="span" tone="success">✓</Text>
-                          <Text as="p">
-                            AI-powered product descriptions
-                          </Text>
-                        </InlineStack>
-                        
-                        <InlineStack gap="200" blockAlign="start">
-                          <Text as="span" tone="success">✓</Text>
-                          <Text as="p">
-                            Automated image importing
-                          </Text>
-                        </InlineStack>
-
-                        {plan.description && (
-                          <Box paddingBlockStart="200">
-                            <Text as="p" tone="subdued">
-                              {plan.description}
-                            </Text>
-                          </Box>
+                  <div key={plan.id} className={`price-card ${isCurrentPlan ? 'current-plan' : ''}`}>
+                    {(isCurrentPlan || isFreeplan) && (
+                      <div className="price-card-badge">
+                        {isCurrentPlan && <Badge tone="success">Current Plan</Badge>}
+                        {isFreeplan && !isCurrentPlan && <Badge tone="info">Free Forever</Badge>}
+                      </div>
+                    )}
+                    
+                    <div className="price-card-header">
+                      <div className="price-card-title">{plan.name}</div>
+                      <div className="price-card-price">${plan.price.toFixed(2)}</div>
+                      <div className="price-card-period">Per Month</div>
+                    </div>
+                    
+                    <ul className="price-card-features">
+                      <li><strong>{plan.productLimit} products</strong> per month</li>
+                      <li>Import from 11 platforms</li>
+                      <li>AI product descriptions</li>
+                      <li>Automated image import</li>
+                      <li>{isFreeplan ? '24/7 Support' : 'Priority 24/7 Support'}</li>
+                    </ul>
+                    
+                    {plan.description && (
+                      <div className="price-card-description">
+                        {plan.description}
+                      </div>
+                    )}
+                    
+                    <div className="price-card-button">
+                      <Button
+                        variant={isCurrentPlan ? "secondary" : "primary"}
+                        size="large"
+                        onClick={() => handleSelectPlan(plan.id, 
+                          currentSubscription && !isCurrentPlan ? 'change' : 'purchase'
                         )}
-
-
-                      </BlockStack>
-
-                      <InlineStack gap="200">
-                        <Button
-                          variant={isCurrentPlan ? "secondary" : "primary"}
-                          size="large"
-                          onClick={() => handleSelectPlan(plan.id, 
-                            currentSubscription && !isCurrentPlan ? 'change' : 'purchase'
-                          )}
-                          loading={isLoading && selectedPlanId === plan.id && selectedAction !== 'trial'}
-                          disabled={isCurrentPlan || isLoading}
-                        >
-                          {isCurrentPlan 
-                            ? "Current Plan" 
-                            : currentSubscription?.status === "active" && !isCurrentPlan
-                              ? (plan.price > currentSubscription.plan.price ? "Upgrade" : "Downgrade")
-                              : isFreeplan
-                                ? "Select Free Plan"
-                                : "Choose Plan"
-                          }
-                        </Button>
-                      </InlineStack>
-                    </BlockStack>
-                  </Card>
+                        loading={isLoading && selectedPlanId === plan.id && selectedAction !== 'trial'}
+                        disabled={isCurrentPlan || isLoading}
+                        fullWidth
+                      >
+                        {isCurrentPlan 
+                          ? "Current Plan" 
+                          : currentSubscription?.status === "active" && !isCurrentPlan
+                            ? (plan.price > currentSubscription.plan.price ? "Upgrade" : "Downgrade")
+                            : isFreeplan
+                              ? "Select Free Plan"
+                              : "Choose Plan"
+                        }
+                      </Button>
+                    </div>
+                  </div>
                 );
               })}
-            </BlockStack>
+            </div>
           </Layout.Section>
 
           <Layout.Section>
