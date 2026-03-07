@@ -20,12 +20,12 @@ export async function scrapeGeneric(
   try {
     console.log('[Generic Scraper] Starting scrape for:', url);
     
-    let htmlContent = html || "";
+    let htmlContent = (html || "").trim();
     let isManualHtml = false;
     
-    // If no HTML provided, try to fetch it
-    if (!htmlContent) {
-      console.log('[Generic Scraper] Attempting auto-fetch...');
+    // If no HTML provided or too short, try to fetch it
+    if (!htmlContent || htmlContent.length < 100) {
+      console.log('[Generic Scraper] No valid HTML provided, attempting auto-fetch...');
       
       try {
         // Fetch with 30 second timeout to prevent hanging
@@ -86,9 +86,28 @@ export async function scrapeGeneric(
         return MANUAL_HTML_REQUIRED;
       }
     } else {
-      // HTML was provided manually by user
+      // HTML was provided by API route's initial fetch
+      // Need to validate it's not a blocked/CAPTCHA page
+      console.log('[Generic Scraper] HTML provided, length:', htmlContent.length);
+      
+      // Check if provided HTML looks like a blocked page
+      if (
+        htmlContent.length < 5000 ||
+        htmlContent.toLowerCase().includes('captcha') ||
+        htmlContent.toLowerCase().includes('access denied') ||
+        htmlContent.toLowerCase().includes('blocked') ||
+        htmlContent.toLowerCase().includes('robot') ||
+        htmlContent.toLowerCase().includes('site maintenance')
+      ) {
+        console.log('[Generic Scraper] Provided HTML appears to be blocked/CAPTCHA page');
+        console.log('[Generic Scraper] Will not attempt re-fetch to avoid duplicate timeouts');
+        console.log('[Generic Scraper] Requesting manual HTML from user');
+        return MANUAL_HTML_REQUIRED;
+      }
+      
+      // HTML looks good - probably manually provided by user
       isManualHtml = true;
-      console.log('[Generic Scraper] Using manually provided HTML, length:', htmlContent.length);
+      console.log('[Generic Scraper] HTML looks valid, proceeding with parsing');
     }
     
     // CRITICAL: If manual HTML or useAI flag is set, use Gemini AI directly
