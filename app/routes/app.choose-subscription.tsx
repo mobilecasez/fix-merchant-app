@@ -107,8 +107,8 @@ export const action: ActionFunction = async ({ request }) => {
     // Log the URL to verify it's correct
     console.log("👉 BILLING RETURN URL:", returnUrl);
     
-    // Always use test mode for now (set to false only when ready for production billing)
-    const isTest = true;
+    // Use test mode only in development
+    const isTest = process.env.NODE_ENV !== "production";
     
     const response = await admin.graphql(
       `#graphql

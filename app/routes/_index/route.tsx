@@ -42,9 +42,9 @@ export default function App() {
   return (
     <div className={styles.index}>
       <div className={styles.content}>
-        <h1 className={styles.heading}>A short heading about [your app]</h1>
+        <h1 className={styles.heading}>ShopFlix AI</h1>
         <p className={styles.text}>
-          A tagline about [your app] that describes your value proposition.
+          AI-powered product listing optimization for your Shopify store.
         </p>
         {showForm && (
           <Form className={styles.form} method="post">
@@ -60,16 +60,13 @@ export default function App() {
         )}
         <ul className={styles.list}>
           <li>
-            <strong>Product feature</strong>. Some detail about your feature and
-            its benefit to your customer.
+            <strong>Smart Product Import</strong>. Import products from Amazon, Walmart, and more with one click using AI-powered data extraction.
           </li>
           <li>
-            <strong>Product feature</strong>. Some detail about your feature and
-            its benefit to your customer.
+            <strong>AI-Powered Optimization</strong>. Automatically rewrite titles, descriptions, and tags to boost SEO and conversion rates.
           </li>
           <li>
-            <strong>Product feature</strong>. Some detail about your feature and
-            its benefit to your customer.
+            <strong>Error Detection &amp; Auto-Fix</strong>. Identify and fix product listing issues like missing images, descriptions, and barcodes.
           </li>
         </ul>
       </div>

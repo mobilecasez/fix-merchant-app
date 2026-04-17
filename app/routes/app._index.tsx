@@ -25,7 +25,6 @@ import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { getOrCreateSubscription, getProductsUsed } from "../utils/billing.server";
 import RichTextEditor from "../components/RichTextEditor";
-import DOMPurify from "dompurify";
 import "../styles/modal-overrides.css";
 import "../styles/dashboard.css";
 
@@ -208,6 +207,12 @@ export default function Index() {
   const [reviewBannerDismissed, setReviewBannerDismissed] = useState(initialReview?.dismissed || false);
   const [userRating, setUserRating] = useState<number | null>(initialReview?.rating || null);
   const [showRatingThankYou, setShowRatingThankYou] = useState(false);
+
+  // Lazy-load DOMPurify on client side only (SSR-safe)
+  const [purify, setPurify] = useState<any>(null);
+  useEffect(() => {
+    import('dompurify').then((mod) => setPurify(() => mod.default));
+  }, []);
 
   // Modal state
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -662,7 +667,7 @@ export default function Index() {
                   background="bg-surface-secondary"
                 >
                 {editField === "description" ? (
-                  <div dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(originalValue) }} />
+                  <div dangerouslySetInnerHTML={{ __html: purify ? purify.sanitize(originalValue) : originalValue.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '') }} />
                 ) : (
                   <Text as="p" variant="bodyMd">
                     {originalValue}

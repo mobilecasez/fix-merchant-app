@@ -15,7 +15,11 @@ async function clearAllSessions(request: Request) {
   const key = url.searchParams.get("key");
   
   // Simple security check
-  const ADMIN_KEY = process.env.ADMIN_KEY || "clearSessions2024";
+  const ADMIN_KEY = process.env.ADMIN_KEY;
+  
+  if (!ADMIN_KEY) {
+    return json({ error: "Admin key not configured" }, { status: 500 });
+  }
   
   if (key !== ADMIN_KEY) {
     return json({ error: "Unauthorized" }, { status: 401 });

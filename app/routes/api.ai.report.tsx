@@ -260,8 +260,8 @@ async function processAndSendReport(
       port: 465,
       secure: true, // Use SSL
       auth: {
-        user: "Shopify-app@mobilecasez.com",
-        pass: "Ab!12345", // This should ideally be from environment variables
+        user: process.env.SMTP_USER || "Shopify-app@mobilecasez.com",
+        pass: process.env.SMTP_PASS || "",
       },
     });
 
@@ -288,8 +288,8 @@ async function processAndSendReport(
         port: 465,
         secure: true, // Use SSL
         auth: {
-          user: "Shopify-app@mobilecasez.com",
-          pass: "Ab!12345", // This should ideally be from environment variables
+          user: process.env.SMTP_USER || "Shopify-app@mobilecasez.com",
+          pass: process.env.SMTP_PASS || ""
         },
       });
       try {

@@ -4,6 +4,8 @@ import {
   Outlet,
   Scripts,
   ScrollRestoration,
+  useRouteError,
+  isRouteErrorResponse,
 } from "@remix-run/react";
 
 export default function App() {
@@ -24,6 +26,28 @@ export default function App() {
       <body>
         <Outlet />
         <ScrollRestoration />
+        <Scripts />
+      </body>
+    </html>
+  );
+}
+
+export function ErrorBoundary() {
+  const error = useRouteError();
+
+  return (
+    <html>
+      <head>
+        <meta charSet="utf-8" />
+        <meta name="viewport" content="width=device-width,initial-scale=1" />
+        <title>ShopFlix AI - Error</title>
+        <Meta />
+        <Links />
+      </head>
+      <body style={{ fontFamily: "Inter, sans-serif", padding: "2rem", textAlign: "center" }}>
+        <h1>{isRouteErrorResponse(error) ? `${error.status} - ${error.statusText}` : "Something went wrong"}</h1>
+        <p>{isRouteErrorResponse(error) ? error.data : "An unexpected error occurred. Please try again."}</p>
+        <a href="/" style={{ color: "#008060", textDecoration: "underline" }}>Go back to home</a>
         <Scripts />
       </body>
     </html>

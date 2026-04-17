@@ -1,6 +1,7 @@
 import React, { useState, useCallback } from "react";
 import { useFetcher, useLoaderData } from "@remix-run/react";
 import { json, LoaderFunction } from "@remix-run/node";
+import { authenticate } from "../shopify.server";
 import { getProductCategories } from "../utils/categories.server";
 import {
   Page,
@@ -18,7 +19,8 @@ import RichTextEditor from "../components/RichTextEditor";
 import HierarchicalSelect from "../components/HierarchicalSelect";
 import "../styles/smart-product-editor.css";
 
-export const loader: LoaderFunction = async () => {
+export const loader: LoaderFunction = async ({ request }) => {
+  const { session } = await authenticate.admin(request);
   const categories = getProductCategories();
   return json({ categories });
 };

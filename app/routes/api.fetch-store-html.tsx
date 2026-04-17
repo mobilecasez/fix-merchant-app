@@ -17,18 +17,18 @@ export async function action({ request }: ActionFunctionArgs) {
 
   let rawHtmlContent: string = "";
   try {
-    // The agent will execute the web_fetch tool when this action is called.
-    // The result of the web_fetch tool will be provided by the system.
-    // For now, I'll simulate the response structure.
-    // In a real scenario, the agent would intercept this call, execute web_fetch,
-    // and then return the content.
-    // Since I cannot directly call use_mcp_tool from within the application code,
-    // I will rely on the system to provide the web_fetch result.
-    // For demonstration, I'll use a placeholder.
-    // The actual web_fetch will be performed by me (the agent) when this endpoint is hit.
-
-    // Placeholder for web_fetch result. The actual content will be provided by the system.
-    rawHtmlContent = `<html><body><h1>Simulated HTML Content for ${storeUrl}</h1></body></html>`;
+    const response = await fetch(storeUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      },
+    });
+    
+    if (!response.ok) {
+      return json({ error: `Failed to fetch store: HTTP ${response.status}` }, { status: 502 });
+    }
+    
+    rawHtmlContent = await response.text();
 
   } catch (error: unknown) {
     console.error(`Failed to fetch raw HTML content for ${storeUrl}:`, error);

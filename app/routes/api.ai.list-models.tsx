@@ -1,8 +1,9 @@
 
-import { json } from "@remix-run/node";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { json, type LoaderFunctionArgs } from "@remix-run/node";
+import { authenticate } from "../shopify.server";
 
-export async function loader() {
+export async function loader({ request }: LoaderFunctionArgs) {
+  await authenticate.admin(request);
   const apiKey = process.env.GOOGLE_GEMINI_API_KEY || "";
   
   if (!apiKey) {

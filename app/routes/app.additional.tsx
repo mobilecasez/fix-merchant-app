@@ -37,23 +37,10 @@ export default function AdditionalPage() {
           <Card>
             <BlockStack gap="300">
               <Text as="p" variant="bodyMd">
-                The app template comes with an additional page which
-                demonstrates how to create multiple pages within app navigation
-                using{" "}
-                <Link
-                  url="https://shopify.dev/docs/apps/tools/app-bridge"
-                  target="_blank"
-                  removeUnderline
-                >
-                  App Bridge
-                </Link>
-                .
+                Welcome to additional resources for ShopFlix AI. Here you can find helpful links and documentation to get the most out of the app.
               </Text>
               <Text as="p" variant="bodyMd">
-                To create your own page and have it show up in the app
-                navigation, add a page inside <Code>app/routes</Code>, and a
-                link to it in the <Code>&lt;NavMenu&gt;</Code> component found
-                in <Code>app/routes/app.jsx</Code>.
+                Use the navigation menu to access all features including product import, AI optimization, and error reports.
               </Text>
             </BlockStack>
           </Card>
