@@ -12,13 +12,6 @@ import { detectCurrency, convertProductPrices } from "../utils/currency.server";
 
 async function extractProductDataWithAI(url: string, htmlContent: string) {
   const apiKey = process.env.GOOGLE_GEMINI_API_KEY;
-  console.log(
-    "[AI-Scraper] Using Gemini API, key present:",
-    !!apiKey,
-    "key length:",
-    apiKey?.length || 0,
-  );
-
   if (!apiKey) {
     throw new Error("GOOGLE_GEMINI_API_KEY environment variable is not set");
   }
@@ -126,17 +119,12 @@ async function extractProductDataWithAI(url: string, htmlContent: string) {
       const result = await model.generateContent(prompt);
       const response = await result.response;
       const text = response.text();
-      
-      console.log("Raw AI Response:", text);
-
       try {
         const parsedData = JSON.parse(text);
         
         // Apply 20% markup if compareAtPrice is missing or null
         if (parsedData.price && (!parsedData.compareAtPrice || parsedData.compareAtPrice === null)) {
-          parsedData.compareAtPrice = ensureCompareAtPrice(parsedData.price, "");
-          console.log("[AI-Scraper] Applied 20% markup to compareAtPrice:", parsedData.compareAtPrice);
-        }
+          parsedData.compareAtPrice = ensureCompareAtPrice(parsedData.price, "");}
         
         return parsedData;
       } catch (e) {
@@ -169,8 +157,6 @@ async function extractProductDataWithAI(url: string, htmlContent: string) {
 export const action = async ({ request }: ActionFunctionArgs) => {
   const { session, admin } = await authenticate.admin(request);
 
-  console.log('[FETCH-API] Product fetch request from shop:', session.shop);
-
   // Fetch shop currency for price conversion
   let shopCurrency = 'USD'; // Default to USD
   try {
@@ -185,7 +171,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     const shopDataJson = await shopData.json();
     if (shopDataJson.data?.shop?.currencyCode) {
       shopCurrency = shopDataJson.data.shop.currencyCode;
-      console.log('[Currency] Shop currency:', shopCurrency);
     } else {
       console.warn('[Currency] Shop currency not found, using default USD');
     }
@@ -195,9 +180,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
   // Check subscription and product limit BEFORE processing
   const canCreate = await canCreateProduct(session.shop);
-  console.log('[FETCH-API] canCreateProduct result:', canCreate);
   if (!canCreate) {
-    console.log('[FETCH-API] Blocking fetch - limit reached');
     return json({ 
       error: "Product limit reached. Please upgrade your subscription or wait for the next billing cycle." 
     }, { status: 403 });
@@ -206,26 +189,15 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const formData = await request.formData();
   const url = formData.get("url") as string;
   const manualHtml = formData.get("manualHtml") as string | null; // New field for manual HTML paste
-
-  console.log("[FETCH-PRODUCT] URL:", url);
-  console.log("[FETCH-PRODUCT] Manual HTML provided:", !!manualHtml, "Length:", manualHtml?.length || 0);
-
   if (!url) {
     return json({ error: "URL is required" }, { status: 400 });
   }
 
   try {
     let html = manualHtml || ""; // Use manual HTML if provided
-    let fetchSuccess = !!manualHtml; // If manual HTML provided, skip auto-fetch
-    
-    console.log("[FETCH-PRODUCT] Using manual HTML:", fetchSuccess, "HTML length:", html.length);
-    
-    // Only try auto-fetch if no manual HTML was provided
+    let fetchSuccess = !!manualHtml; // If manual HTML provided, skip auto-fetch// Only try auto-fetch if no manual HTML was provided
     if (!manualHtml) {
-      try {
-        console.log("Attempting to fetch:", url);
-        
-        // Add random delay to mimic human behavior
+      try {// Add random delay to mimic human behavior
         await new Promise(resolve => setTimeout(resolve, Math.random() * 1000 + 500));
         
         // Fetch with 30 second timeout to prevent hanging
@@ -252,45 +224,26 @@ export const action = async ({ request }: ActionFunctionArgs) => {
                 html.includes('Enter the characters you see below') ||
                 html.includes('To discuss automated access to Amazon data please contact') ||
                 html.toLowerCase().includes('robot check') ||
-                html.length < 10000) {
-              console.log(`Got CAPTCHA/bot detection page (size: ${html.length}), keeping HTML for AI fallback`);
-              fetchSuccess = true; // Keep HTML available for AI fallback
+                html.length < 10000) {fetchSuccess = true; // Keep HTML available for AI fallback
             } else {
-              fetchSuccess = true;
-              console.log(`Successfully fetched page, HTML length: ${html.length}`);
-            }
-          } else {
-            console.log(`Initial fetch failed with status ${response.status}, will try with scraper`);
-          }
+              fetchSuccess = true;}
+          } else {}
         } catch (fetchError) {
           clearTimeout(timeoutId);
-          console.log("Initial fetch failed, will try with scraper:", fetchError);
-          if (fetchError instanceof Error && fetchError.name === 'AbortError') {
-            console.log("Fetch timeout after 30 seconds - website too slow or blocking");
-          }
+          if (fetchError instanceof Error && fetchError.name === 'AbortError') {}
         }
-      } catch (fetchError) {
-        console.log("Initial fetch wrapper failed, will try with scraper:", fetchError);
-      }
+      } catch (fetchError) {}
     }
 
     const scraper = getScraper(url);
 
     let productData;
-    if (scraper) {
-      console.log("Using specialized scraper.");
-      try {
-        // Log HTML to help with debugging (first 2000 chars)
-        console.log("[SCRAPER HTML] First 2000 characters:");
-        console.log(html.substring(0, 2000));
-        
-        // Call scraper with manual HTML override if provided
+    if (scraper) {try {
+        // Log HTML to help with debugging (first 2000 chars)// Call scraper with manual HTML override if provided
         productData = await scraper(html, url);
         
         // Check if scraper returned MANUAL_HTML_REQUIRED flag
-        if (typeof productData === 'string' && productData === MANUAL_HTML_REQUIRED) {
-          console.log("[SCRAPER] Manual HTML required - auto-fetch blocked");
-          return json({
+        if (typeof productData === 'string' && productData === MANUAL_HTML_REQUIRED) {return json({
             manualHtmlRequired: true,
             message: "The website is blocking automated access. Please manually copy the HTML:",
             instructions: [
@@ -306,45 +259,27 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         // Check if manual HTML is required (string response)
         if (typeof productData === 'string' && productData === MANUAL_HTML_REQUIRED) {
           // This is already handled above, should not reach here
-          console.log("[SCRAPER] Manual HTML required detected");
         }
         
         // Type guard: only access properties if it's ScrapedProductData
         if (typeof productData !== 'string') {
-          console.log("[SCRAPER] ========================================");
-          console.log("[SCRAPER] Extracted images:", JSON.stringify(productData.images, null, 2));
-          console.log("[SCRAPER] Total images:", productData.images?.length || 0);
-          console.log("[SCRAPER] First 3 image URLs:");
           if (productData.images) {
-            productData.images.slice(0, 3).forEach((img: string, idx: number) => {
-              console.log(`[SCRAPER]   ${idx + 1}. ${img}`);
-            });
+            productData.images.slice(0, 3).forEach((img: string, idx: number) => {});
           }
-          console.log("[SCRAPER] ========================================");
         }
 
         // Validate that scraper returned valid data
         // If product name is missing but we have images, still use the scraper data
         if (typeof productData !== 'string' && (!productData.productName || productData.productName.trim() === "") && 
             (!productData.images || productData.images.length === 0)) {
-          console.log(
-            "Scraper returned empty product name AND no images, falling back to AI if possible",
-          );
-          
           // Only fall back to AI if we have HTML content
           if (fetchSuccess && html && html.trim().length > 0) {
-            console.log("Falling back to AI scraper with available HTML");
             const aiData = await extractProductDataWithAI(url, html);
-            console.log("[AI] AI extracted data:", JSON.stringify({...aiData, images: aiData.images?.slice(0, 3)}, null, 2));
-            console.log("[AI] Total AI images:", aiData.images?.length || 0);
             productData = aiData;
           } else {
-            console.log("No HTML available for AI fallback");
             throw new Error("Unable to extract product data. Please try again or add the product manually.");
           }
-        } else if (typeof productData !== 'string' && (!productData.productName || productData.productName.trim() === "")) {
-          console.log("[SCRAPER] Product name empty but has images, will proceed with scraper data");
-        }
+        } else if (typeof productData !== 'string' && (!productData.productName || productData.productName.trim() === "")) {}
       } catch (scraperError) {
         console.error("Local scraper failed, falling back to AI:", scraperError);
         // Fall back to AI extraction on scraper error
@@ -355,48 +290,27 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         }
       }
     } else {
-      console.log("No specialized scraper found, using AI.");
       if (!fetchSuccess) {
         throw new Error("Cannot fetch URL - website may be blocking requests");
       }
       productData = await extractProductDataWithAI(url, html);
     }
 
-    // Log final result before sending to client
-    console.log("[FINAL RESULT] Sending to client:");
-    console.log("[FINAL RESULT] Product name:", productData?.productName);
-    console.log("[FINAL RESULT] Price:", productData?.price);
-    console.log("[FINAL RESULT] Images:", JSON.stringify(productData?.images, null, 2));
-    console.log("[FINAL RESULT] Total images:", productData?.images?.length || 0);
-
     // Convert currency if needed
     if (productData && productData.price && productData.price.trim() !== "") {
       try {
         const sourceCurrency = detectCurrency(productData.price, url);
-        console.log(`[Currency] Detected source currency: ${sourceCurrency} from price: ${productData.price}`);
-        
         if (sourceCurrency !== shopCurrency) {
-          console.log(`[Currency] Converting from ${sourceCurrency} to ${shopCurrency}`);
           const converted = await convertProductPrices(
             productData.price,
             productData.compareAtPrice || '',
             sourceCurrency,
             shopCurrency
           );
-          
-          console.log(`[Currency] Converted prices:`, {
-            originalPrice: productData.price,
-            convertedPrice: converted.price,
-            originalCompareAt: productData.compareAtPrice,
-            convertedCompareAt: converted.compareAtPrice
-          });
-          
           productData.price = converted.price;
           if (converted.compareAtPrice) {
             productData.compareAtPrice = converted.compareAtPrice;
           }
-        } else {
-          console.log(`[Currency] No conversion needed - same currency (${shopCurrency})`);
         }
       } catch (error) {
         console.warn('[Currency] Currency conversion failed, using original prices:', error);
@@ -439,7 +353,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     
     // If critical fields are missing, return warning without charging credit
     if (missingFields.length > 0) {
-      console.log('[FETCH-API] Critical fields missing:', missingFields.join(", "), '- NOT charging credit');
       return json(
         {
           incompleteData: true,
@@ -452,15 +365,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     }
 
     // All critical fields present - increment product usage counter
-    console.log('[FETCH-API] All critical fields present, incrementing usage counter');
     await incrementProductUsage(session.shop);
-    console.log('[FETCH-API] Usage counter incremented');
 
-    // Add HTML for debugging in browser console
-    return json({
-      ...productData,
-      debugHtml: html.substring(0, 5000), // First 5000 chars for debugging
-    });
+    return json(productData);
   } catch (error) {
     console.error("Error fetching product data:", error);
     const errorMessage =

@@ -18,7 +18,6 @@ export async function scrapeGeneric(
   useAI: boolean = false
 ): Promise<ScrapedProductData | typeof MANUAL_HTML_REQUIRED> {
   try {
-    console.log('[Generic Scraper] Starting scrape for:', url);
     
     let htmlContent = (html || "").trim();
     let isManualHtml = false;
@@ -31,7 +30,6 @@ export async function scrapeGeneric(
       
       if (!htmlContent || htmlContent.length < 100) {
         // No HTML or too tiny - auto-fetch
-        console.log('[Generic Scraper] No valid HTML provided, attempting auto-fetch...');
         
         try {
           // Fetch with 30 second timeout to prevent hanging
@@ -59,12 +57,10 @@ export async function scrapeGeneric(
             clearTimeout(timeoutId);
           
             if (!response.ok) {
-              console.log(`[Generic Scraper] HTTP error: ${response.status}`);
               return MANUAL_HTML_REQUIRED;
             }
             
             htmlContent = await response.text();
-            console.log('[Generic Scraper] Auto-fetch successful, HTML length:', htmlContent.length);
             
             // Check auto-fetched HTML for blocking patterns
             if (
@@ -75,14 +71,12 @@ export async function scrapeGeneric(
               htmlContent.toLowerCase().includes('robot') ||
               htmlContent.toLowerCase().includes('site maintenance')
             ) {
-              console.log('[Generic Scraper] Detected blocking/CAPTCHA in auto-fetched HTML, requesting manual HTML');
               return MANUAL_HTML_REQUIRED;
             }
           } catch (fetchError) {
             clearTimeout(timeoutId);
             console.error('[Generic Scraper] Fetch failed:', fetchError);
             if (fetchError instanceof Error && fetchError.name === 'AbortError') {
-              console.log('[Generic Scraper] Fetch timeout after 30 seconds - requesting manual HTML');
             }
             return MANUAL_HTML_REQUIRED;
           }
@@ -93,7 +87,6 @@ export async function scrapeGeneric(
       } else {
         // Small HTML provided (100 bytes - 10KB) - likely from API route's auto-fetch that got blocked
         // Validate for blocking patterns
-        console.log('[Generic Scraper] Small HTML provided (', htmlContent.length, 'bytes), validating for blocking...');
         
         if (
           htmlContent.length < 5000 ||
@@ -103,39 +96,32 @@ export async function scrapeGeneric(
           htmlContent.toLowerCase().includes('robot') ||
           htmlContent.toLowerCase().includes('site maintenance')
         ) {
-          console.log('[Generic Scraper] Small HTML appears to be blocked/CAPTCHA page, requesting manual HTML');
           return MANUAL_HTML_REQUIRED;
         }
         
         // Small but valid HTML
-        console.log('[Generic Scraper] Small HTML looks valid, proceeding');
         isManualHtml = true;
       }
     } else {
       // Large HTML provided (>= 10KB) - trust it, likely user manually pasted full page source
-      console.log('[Generic Scraper] Large HTML provided (', htmlContent.length, 'bytes) - assuming manual paste, proceeding');
       isManualHtml = true;
     }
     
     // CRITICAL: If manual HTML or useAI flag is set, use Gemini AI directly
     // Pattern-based parsing is too fragile for diverse website structures
     if (isManualHtml || useAI) {
-      console.log('[Generic Scraper] Using AI parsing (manual HTML or forced)');
       return await parseWithGemini(htmlContent, url);
     }
     
     // For auto-fetched HTML, try pattern-based parsing first (faster)
-    console.log('[Generic Scraper] Attempting pattern-based parsing...');
     const parsedData = parseGenericHTML(htmlContent, url);
     
     // If we got good data (title + at least one image), return it
     if (parsedData.productName && parsedData.images.length > 0) {
-      console.log('[Generic Scraper] Pattern-based parsing successful');
       return parsedData;
     }
     
     // Otherwise, fall back to AI
-    console.log('[Generic Scraper] Pattern-based parsing incomplete, using AI...');
     return await parseWithGemini(htmlContent, url);
     
   } catch (error) {
@@ -150,7 +136,6 @@ export async function scrapeGeneric(
  * Looks for: Open Graph, JSON-LD, meta tags, common selectors
  */
 function parseGenericHTML(html: string, url: string): ScrapedProductData {
-  console.log('[Generic Parser] Extracting data from HTML...');
   
   const data: ScrapedProductData = {
     productName: "",
@@ -173,7 +158,6 @@ function parseGenericHTML(html: string, url: string): ScrapedProductData {
   // 1. Try JSON-LD structured data
   const jsonLdMatch = html.match(/<script[^>]*type=["']application\/ld\+json["'][^>]*>(.*?)<\/script>/gis);
   if (jsonLdMatch) {
-    console.log(`[Generic Parser] Found ${jsonLdMatch.length} JSON-LD blocks`);
     for (const match of jsonLdMatch) {
       try {
         const jsonText = match.replace(/<script[^>]*>/i, '').replace(/<\/script>/i, '');
@@ -214,12 +198,6 @@ function parseGenericHTML(html: string, url: string): ScrapedProductData {
             const brand = typeof jsonData.brand === 'string' ? jsonData.brand : jsonData.brand.name;
             data.vendor = brand || data.vendor;
           }
-          
-          console.log('[Generic Parser] ✓ Extracted from JSON-LD:', {
-            name: data.productName.substring(0, 50),
-            price: data.price,
-            images: data.images.length
-          });
         }
       } catch (e) {
         // Skip invalid JSON
@@ -243,7 +221,6 @@ function parseGenericHTML(html: string, url: string): ScrapedProductData {
       const match = html.match(pattern);
       if (match && match[1] && match[1].trim().length > 5) {
         data.productName = match[1].trim().replace(/<[^>]*>/g, '');
-        console.log('[Generic Parser] ✓ Title from product-specific pattern');
         break;
       }
     }
@@ -257,7 +234,6 @@ function parseGenericHTML(html: string, url: string): ScrapedProductData {
         title = title.replace(/\s*[|\-–]\s*.*(Buy|Shop|Store|Online|Website|India).*$/i, '');
         title = title.replace(/\s*[|\-–]\s*[A-Z][a-z]+\s*$/i, ''); // Remove trailing brand names
         data.productName = title.trim();
-        console.log('[Generic Parser] ✓ Title from og:title (cleaned)');
       }
     }
     
@@ -269,7 +245,6 @@ function parseGenericHTML(html: string, url: string): ScrapedProductData {
         title = title.replace(/\s*[|\-–]\s*.*(Buy|Shop|Store|Online|Website|India).*$/i, '');
         title = title.replace(/\s*[|\-–]\s*[A-Z][a-z]+\s*$/i, '');
         data.productName = title.trim();
-        console.log('[Generic Parser] ✓ Title from page title (cleaned)');
       }
     }
   }
@@ -277,7 +252,6 @@ function parseGenericHTML(html: string, url: string): ScrapedProductData {
   const ogDescription = html.match(/<meta[^>]*property=["']og:description["'][^>]*content=["']([^"']+)["']/i);
   if (ogDescription && !data.description) {
     data.description = ogDescription[1];
-    console.log('[Generic Parser] ✓ Description from og:description');
   }
   
   const ogImage = html.match(/<meta[^>]*property=["']og:image["'][^>]*content=["']([^"']+)["']/gi);
@@ -288,7 +262,6 @@ function parseGenericHTML(html: string, url: string): ScrapedProductData {
         data.images.push(imgMatch[1]);
       }
     });
-    console.log(`[Generic Parser] ✓ Found ${ogImage.length} og:image tags`);
   }
   
   // 3. Try meta description as fallback
@@ -296,7 +269,6 @@ function parseGenericHTML(html: string, url: string): ScrapedProductData {
     const metaDesc = html.match(/<meta[^>]*name=["']description["'][^>]*content=["']([^"']+)["']/i);
     if (metaDesc) {
       data.description = metaDesc[1];
-      console.log('[Generic Parser] ✓ Description from meta description');
     }
   }
   
@@ -315,7 +287,6 @@ function parseGenericHTML(html: string, url: string): ScrapedProductData {
       const match = html.match(pattern);
       if (match) {
         data.price = match[1].replace(/[,\s]/g, ''); // Remove commas and spaces
-        console.log('[Generic Parser] ✓ Price from pattern:', data.price);
         break;
       }
     }
@@ -343,7 +314,6 @@ function parseGenericHTML(html: string, url: string): ScrapedProductData {
         // Only use if MRP is higher than selling price
         if (data.price && parseFloat(mrpPrice) > parseFloat(data.price)) {
           data.compareAtPrice = mrpPrice;
-          console.log('[Generic Parser] ✓ MRP/Compare-at-Price from pattern:', data.compareAtPrice);
           break;
         }
       }
@@ -370,7 +340,6 @@ function parseGenericHTML(html: string, url: string): ScrapedProductData {
         }
       }
     }
-    console.log(`[Generic Parser] Total images found: ${data.images.length}`);
   }
   
   // Clean up images (remove duplicates, invalid URLs)
@@ -388,13 +357,6 @@ function parseGenericHTML(html: string, url: string): ScrapedProductData {
     data.weightUnit = weightParsed.unit;
   }
   
-  console.log('[Generic Parser] Final result:', {
-    name: data.productName.substring(0, 50),
-    price: data.price,
-    images: data.images.length,
-    description: data.description.substring(0, 100)
-  });
-  
   return data;
 }
 
@@ -402,7 +364,6 @@ function parseGenericHTML(html: string, url: string): ScrapedProductData {
  * Parse HTML using Google Gemini AI
  */
 async function parseWithGemini(html: string, url: string): Promise<ScrapedProductData> {
-  console.log('[Generic Scraper] Using Gemini AI to parse HTML...');
   
   try {
     // Get Gemini API key from environment
@@ -529,11 +490,12 @@ ${truncatedHtml}`;
 
 
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent`,
       {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'x-goog-api-key': apiKey,
         },
         body: JSON.stringify({
           contents: [{
@@ -556,7 +518,6 @@ ${truncatedHtml}`;
     const result = await response.json();
     const generatedText = result.candidates?.[0]?.content?.parts?.[0]?.text || "";
     
-    console.log('[Generic Scraper] Gemini response length:', generatedText.length);
     
     // Extract JSON from response (remove markdown code blocks if present)
     let jsonText = generatedText.trim();
@@ -565,7 +526,6 @@ ${truncatedHtml}`;
     }
     
     const parsedData = JSON.parse(jsonText);
-    console.log('[Generic Scraper] ✓ Gemini parsing successful');
     
     // Ensure all required fields exist
     const data: ScrapedProductData = {

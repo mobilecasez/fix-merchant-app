@@ -29,12 +29,10 @@ export function cleanProductName(productName: string): string {
 export function ensureCompareAtPrice(price: string, compareAtPrice: string): string {
   // If original price exists on the page (strikethrough), use it
   if (compareAtPrice && compareAtPrice.trim() !== '') {
-    console.log('Compare-at price found on page:', compareAtPrice);
     return compareAtPrice;
   }
   
   // Only if original price is missing, calculate 20% markup
-  console.log('Compare-at price missing, calculating 20% markup');
   const numericPrice = parseFloat(price.replace(/[^0-9.]/g, ''));
   if (!isNaN(numericPrice) && numericPrice > 0) {
     // Add 20% markup

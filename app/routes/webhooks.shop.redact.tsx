@@ -27,34 +27,20 @@ import db from "../db.server";
  * Reference: https://shopify.dev/docs/apps/build/privacy-law-compliance
  */
 export const action = async ({ request }: ActionFunctionArgs) => {
-  const { shop, topic, payload } = await authenticate.webhook(request);
-
-  console.log(`✅ Received ${topic} webhook for ${shop}`);
-
-  // GDPR: Shop data erasure request
+  const { shop, topic, payload } = await authenticate.webhook(request);// GDPR: Shop data erasure request
   // This webhook is sent by Shopify 48 hours after app uninstallation
   // We MUST delete all shop data immediately upon receiving this webhook
   // Reference: https://shopify.dev/docs/apps/build/privacy-law-compliance
   
   if (payload) {
-    const data = JSON.parse(payload.toString());
-    
-    console.log(`🗑️  Shop redaction request:`, {
-      shop,
-      shop_id: data.shop_id,
-    });
-
-    // Delete all data related to this shop
+    const data = JSON.parse(payload.toString());// Delete all data related to this shop
     await Promise.all([
       db.session.deleteMany({ where: { shop } }),
       db.shopSubscription.deleteMany({ where: { shop } }),
       db.usageHistory.deleteMany({ where: { shop } }),
       db.shopReview.deleteMany({ where: { shop } }),
       db.appSettings.deleteMany({ where: { shop } }),
-    ]);
-
-    console.log(`✅ All data permanently deleted for shop: ${shop}`);
-  }
+    ]);}
 
   return new Response(null, { status: 200 });
 };

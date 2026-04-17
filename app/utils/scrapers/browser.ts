@@ -50,13 +50,10 @@ export async function launchBrowser(): Promise<Browser> {
   // Use system Chromium if path is set (Railway/Docker)
   if (executablePath) {
     options.executablePath = executablePath;
-    console.log(`Using Chromium at: ${executablePath}`);
   }
 
   try {
-    console.log("Launching browser with options:", JSON.stringify({ ...options, args: options.args.length + " args" }));
     const browser = await puppeteer.launch(options);
-    console.log("Browser launched successfully");
     return browser;
   } catch (error) {
     console.error("Failed to launch browser:", error);

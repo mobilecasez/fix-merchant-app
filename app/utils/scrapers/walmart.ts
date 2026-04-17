@@ -4,14 +4,11 @@ import { MANUAL_HTML_REQUIRED } from "./generic";
 
 export async function scrapeWalmart(html: string, url: string): Promise<ScrapedProductData | typeof MANUAL_HTML_REQUIRED> {
   try {
-    console.log('[Walmart Scraper] Starting scrape for:', url);
-    console.log('[Walmart Scraper] HTML length provided:', html?.length || 0);
     
     // Use provided HTML if available, otherwise fetch
     let htmlContent = html;
     
     if (!htmlContent || htmlContent.length < 10000) {
-      console.log('[Walmart Scraper] Fetching page with HTTP request...');
       await new Promise(resolve => setTimeout(resolve, Math.random() * 1000 + 500));
       
       const response = await fetch(url, {
@@ -33,12 +30,10 @@ export async function scrapeWalmart(html: string, url: string): Promise<ScrapedP
       });
       
       if (!response.ok) {
-        console.log(`[Walmart Scraper] HTTP error: ${response.status}`);
         throw new Error(`Failed to fetch Walmart page: ${response.status}`);
       }
       
       htmlContent = await response.text();
-      console.log('[Walmart Scraper] Page fetched successfully, HTML length:', htmlContent.length);
     }
     
     // Check for CAPTCHA or bot detection
@@ -48,7 +43,6 @@ export async function scrapeWalmart(html: string, url: string): Promise<ScrapedP
                        htmlContent.length < 15000;
     
     if (hasCaptcha) {
-      console.log('[Walmart Scraper] CAPTCHA/Bot detection detected, HTML length:', htmlContent.length);
       
       // Check if provided HTML parameter is also CAPTCHA
       const providedHtmlHasCaptcha = html && (
@@ -60,19 +54,15 @@ export async function scrapeWalmart(html: string, url: string): Promise<ScrapedP
       
       // Try to use the provided HTML parameter as fallback ONLY if it's clean
       if (html && html.length > 15000 && !providedHtmlHasCaptcha) {
-        console.log('[Walmart Scraper] ✓ Using clean provided HTML parameter as fallback');
         htmlContent = html;
       } else {
         if (providedHtmlHasCaptcha) {
-          console.log('[Walmart Scraper] ⚠️ Provided HTML also has CAPTCHA, trying Puppeteer instead');
         }
         
         // Try Puppeteer fallback
-        console.log('[Walmart Scraper] Attempting Puppeteer fallback...');
         try {
           const puppeteerHTML = await scrapeWalmartWithPuppeteer(url);
           if (puppeteerHTML && puppeteerHTML.length > 10000) {
-            console.log('[Walmart Scraper] ✓ Puppeteer fetched HTML, length:', puppeteerHTML.length);
             
             // Check if Puppeteer HTML also has CAPTCHA
             const puppeteerHasCaptcha = puppeteerHTML.includes('Robot or human') || 
@@ -80,24 +70,19 @@ export async function scrapeWalmart(html: string, url: string): Promise<ScrapedP
                                        puppeteerHTML.includes('Activate and hold the button');
             
             if (!puppeteerHasCaptcha) {
-              console.log('[Walmart Scraper] ✓ Puppeteer HTML looks clean, using it');
               htmlContent = puppeteerHTML;
             } else {
-              console.log('[Walmart Scraper] ⚠️ Puppeteer also got CAPTCHA page, will trigger AI fallback');
               // Log title for debugging
               const titleMatch = puppeteerHTML.match(/<title>([^<]+)<\/title>/i);
               if (titleMatch) {
-                console.log('[Walmart Scraper] CAPTCHA page title:', titleMatch[1]);
               }
               htmlContent = puppeteerHTML; // Keep it anyway for AI to try
             }
           } else {
-            console.log('[Walmart Scraper] ⚠️ Puppeteer HTML too short, keeping original for AI fallback');
             // Don't throw error - keep the original HTML for AI fallback
           }
         } catch (puppeteerError) {
           console.error('[Walmart Scraper] Puppeteer error:', puppeteerError);
-          console.log('[Walmart Scraper] ⚠️ Keeping original HTML for AI fallback');
           // Don't throw error - keep the original HTML for AI fallback
         }
       }
@@ -110,9 +95,6 @@ export async function scrapeWalmart(html: string, url: string): Promise<ScrapedP
                            htmlContent.includes('<title>Robot or human?</title>');
     
     if (finalHasCaptcha) {
-      console.log('[Walmart Scraper] ❌ All attempts (HTTP + Puppeteer) returned CAPTCHA');
-      console.log('[Walmart Scraper] Walmart has strong bot detection - manual HTML import required');
-      console.log('[Walmart Scraper] Returning MANUAL_HTML_REQUIRED flag to show manual HTML input');
       return MANUAL_HTML_REQUIRED;
     }
     
@@ -125,7 +107,6 @@ export async function scrapeWalmart(html: string, url: string): Promise<ScrapedP
 
 async function parseWalmartHTML(htmlContent: string, url: string): Promise<ScrapedProductData> {
   try {
-    console.log('[Walmart Scraper] Parsing HTML...');
     
     // First try to extract from JSON-LD structured data
     let productData: any = null;
@@ -139,7 +120,6 @@ async function parseWalmartHTML(htmlContent: string, url: string): Promise<Scrap
           const product = json['@type'] === 'Product' ? json : json['@graph'].find((item: any) => item['@type'] === 'Product');
           if (product) {
             productData = product;
-            console.log('[Walmart Scraper] Found JSON-LD product data');
             break;
           }
         }
@@ -155,10 +135,8 @@ async function parseWalmartHTML(htmlContent: string, url: string): Promise<Scrap
     if (nextDataMatch) {
       try {
         const json = JSON.parse(nextDataMatch[1]);
-        console.log('[Walmart Scraper] Found __NEXT_DATA__');
         reactData = json;
       } catch (e) {
-        console.log('[Walmart Scraper] Failed to parse __NEXT_DATA__');
       }
     }
     
@@ -168,12 +146,10 @@ async function parseWalmartHTML(htmlContent: string, url: string): Promise<Scrap
     if (reduxMatch) {
       try {
         const json = JSON.parse(reduxMatch[1]);
-        console.log('[Walmart Scraper] Found __WML_REDUX_INITIAL_STATE__');
         if (json.product) {
           reactData = json;
         }
       } catch (e) {
-        console.log('[Walmart Scraper] Failed to parse __WML_REDUX_INITIAL_STATE__');
       }
     }
     
@@ -208,7 +184,6 @@ async function parseWalmartHTML(htmlContent: string, url: string): Promise<Scrap
         }
       }
     }
-    console.log('[Walmart Scraper] Product name:', productName);
     
     // Extract price
     let price = "";
@@ -219,7 +194,6 @@ async function parseWalmartHTML(htmlContent: string, url: string): Promise<Scrap
       const offers = Array.isArray(productData.offers) ? productData.offers[0] : productData.offers;
       if (offers.price) {
         price = offers.price.toString();
-        console.log('[Walmart Scraper] Price from JSON-LD:', price);
       }
       if (offers.priceValidUntil || offers.highPrice) {
         compareAtPrice = offers.highPrice?.toString() || "";
@@ -230,7 +204,6 @@ async function parseWalmartHTML(htmlContent: string, url: string): Promise<Scrap
       const priceInfo = reactData.props.pageProps.initialData.data.product.priceInfo;
       if (priceInfo.currentPrice?.price) {
         price = priceInfo.currentPrice.price.toString();
-        console.log('[Walmart Scraper] Price from React data:', price);
       }
       if (priceInfo.wasPrice?.price) {
         compareAtPrice = priceInfo.wasPrice.price.toString();
@@ -260,7 +233,6 @@ async function parseWalmartHTML(htmlContent: string, url: string): Promise<Scrap
           price = match[1] || match[0];
           price = price.replace(/<[^>]*>/g, '').replace(/\$/g, '').trim();
           if (price && parseFloat(price.replace(/,/g, '')) > 0) {
-            console.log('[Walmart Scraper] Price from HTML:', price);
             break;
           }
         }
@@ -282,8 +254,6 @@ async function parseWalmartHTML(htmlContent: string, url: string): Promise<Scrap
       }
     }
     
-    console.log('[Walmart Scraper] Final price:', price);
-    console.log('[Walmart Scraper] Compare at price:', compareAtPrice);
     
     // Extract description
     let description = "";
@@ -327,7 +297,6 @@ async function parseWalmartHTML(htmlContent: string, url: string): Promise<Scrap
           images.push(img);
         }
       });
-      console.log('[Walmart Scraper] Images from JSON-LD:', images.length);
     }
     
     // From React data
@@ -338,7 +307,6 @@ async function parseWalmartHTML(htmlContent: string, url: string): Promise<Scrap
           images.push(img.url);
         }
       });
-      console.log('[Walmart Scraper] Images from React data:', images.length);
     }
     else if (reactData?.product?.imageInfo?.allImages) {
       const allImages = reactData.product.imageInfo.allImages;
@@ -351,7 +319,6 @@ async function parseWalmartHTML(htmlContent: string, url: string): Promise<Scrap
     
     // From HTML - multiple patterns
     if (images.length === 0) {
-      console.log('[Walmart Scraper] No images from structured data, extracting from HTML...');
       
       // Pattern 1: i5.walmartimages.com with various paths
       const imgPatterns = [
@@ -401,11 +368,8 @@ async function parseWalmartHTML(htmlContent: string, url: string): Promise<Scrap
     }
     
     const uniqueImages = Array.from(new Set(images)).slice(0, 10);
-    console.log('[Walmart Scraper] Total unique images extracted:', uniqueImages.length);
     if (uniqueImages.length > 0) {
-      console.log('[Walmart Scraper] First 3 images:');
       uniqueImages.slice(0, 3).forEach((img, idx) => {
-        console.log(`  ${idx + 1}. ${img}`);
       });
     }
     
@@ -436,8 +400,6 @@ async function parseWalmartHTML(htmlContent: string, url: string): Promise<Scrap
       barcode = reactData.product.upc;
     }
     
-    console.log('[Walmart Scraper] SKU:', sku);
-    console.log('[Walmart Scraper] Barcode/UPC:', barcode);
     
     // Extract weight
     let weight = "";
@@ -466,7 +428,6 @@ async function parseWalmartHTML(htmlContent: string, url: string): Promise<Scrap
               weightUnit = "lb";
             }
           }
-          console.log('[Walmart Scraper] Weight found:', weight, weightUnit);
           break;
         }
       }
@@ -477,7 +438,6 @@ async function parseWalmartHTML(htmlContent: string, url: string): Promise<Scrap
     let finalWeightUnit = weightUnit;
     
     if (!weight) {
-      console.log('[Walmart Scraper] No weight found, estimating');
       const estimated = estimateWeight(productName);
       finalWeight = estimated.value;
       finalWeightUnit = estimated.unit;
@@ -485,16 +445,6 @@ async function parseWalmartHTML(htmlContent: string, url: string): Promise<Scrap
     
     const finalCompareAtPrice = ensureCompareAtPrice(price, compareAtPrice);
     
-    console.log('[Walmart Scraper] ========================================');
-    console.log('[Walmart Scraper] FINAL DATA SUMMARY:');
-    console.log('[Walmart Scraper] Product Name:', productName);
-    console.log('[Walmart Scraper] Price:', price);
-    console.log('[Walmart Scraper] Compare At Price:', finalCompareAtPrice);
-    console.log('[Walmart Scraper] Images:', uniqueImages.length);
-    console.log('[Walmart Scraper] SKU:', sku);
-    console.log('[Walmart Scraper] Barcode:', barcode);
-    console.log('[Walmart Scraper] Weight:', finalWeight, finalWeightUnit);
-    console.log('[Walmart Scraper] ========================================');
     
     return {
       productName: cleanProductName(productName),
@@ -521,7 +471,6 @@ async function parseWalmartHTML(htmlContent: string, url: string): Promise<Scrap
 
 // Puppeteer fallback for Walmart when HTTP requests get blocked
 async function scrapeWalmartWithPuppeteer(url: string): Promise<string> {
-  console.log('[Walmart Puppeteer] Launching headless browser...');
   
   try {
     const puppeteer = await import('puppeteer');
@@ -584,7 +533,6 @@ async function scrapeWalmartWithPuppeteer(url: string): Promise<string> {
       'upgrade-insecure-requests': '1',
     });
 
-    console.log('[Walmart Puppeteer] Navigating to:', url);
     
     // Navigate with longer timeout
     await page.goto(url, {
@@ -592,7 +540,6 @@ async function scrapeWalmartWithPuppeteer(url: string): Promise<string> {
       timeout: 45000,
     });
 
-    console.log('[Walmart Puppeteer] Page loaded, waiting for content...');
     
     // Wait longer for dynamic content to load
     await new Promise(resolve => setTimeout(resolve, 3000));
@@ -600,9 +547,7 @@ async function scrapeWalmartWithPuppeteer(url: string): Promise<string> {
     // Try to wait for product elements (but don't fail if not found)
     try {
       await page.waitForSelector('h1, [itemprop="name"], [data-testid="product-title"], script[type="application/ld+json"]', { timeout: 5000 });
-      console.log('[Walmart Puppeteer] ✓ Product elements found');
     } catch (e) {
-      console.log('[Walmart Puppeteer] ⚠️ Product elements not found, continuing anyway...');
     }
     
     // Scroll the page to trigger lazy loading
@@ -613,10 +558,8 @@ async function scrapeWalmartWithPuppeteer(url: string): Promise<string> {
 
     // Get the HTML content
     const html = await page.content();
-    console.log('[Walmart Puppeteer] Extracted HTML, length:', html.length);
 
     await browser.close();
-    console.log('[Walmart Puppeteer] Browser closed');
 
     return html;
   } catch (error) {

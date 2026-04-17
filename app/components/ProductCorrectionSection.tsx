@@ -29,14 +29,12 @@ export function ProductCorrectionSection() {
   const [isLoadingProducts, setIsLoadingProducts] = useState(false); // New local loading state for products
 
   useEffect(() => {
-    console.log("ProductCorrectionSection: fetcher.load triggered with cursor:", cursor);
     setIsLoadingProducts(true); // Set local loading to true when a fetch is initiated
     fetcher.load(`/api/seo-check?cursor=${cursor || ""}&count=${PRODUCTS_PER_PAGE}&dashboard=true`);
   }, [cursor]);
 
   useEffect(() => {
     if (fetcher.data) {
-      console.log("ProductCorrectionSection: fetcher.data received. State:", fetcher.state);
       const { products: newProducts, pageInfo: newPageInfo, totalCount: newTotalCount } = fetcher.data as any;
       setProducts(newProducts);
       setPageInfo(newPageInfo);
@@ -83,11 +81,6 @@ export function ProductCorrectionSection() {
   const productRows = useMemo(() => paginatedProducts.map(product => [
     product.title,
     <InlineStack gap="200">
-      <Button size="slim" onClick={() => console.log('Rewrite Title for', product.id)}>Rewrite Title</Button>
-      <Button size="slim" onClick={() => console.log('Rewrite Desc for', product.id)}>Rewrite Desc</Button>
-      <Button size="slim" onClick={() => console.log('Get GTIN for', product.id)}>Get GTIN</Button>
-      <Button size="slim" onClick={() => console.log('Get Tags for', product.id)}>Get Tags</Button>
-      <Button size="slim" variant="primary" onClick={() => console.log('Auto Fix for', product.id)}>Auto Fix</Button>
     </InlineStack>
   ]), [paginatedProducts]);
 

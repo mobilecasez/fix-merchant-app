@@ -318,7 +318,6 @@ export default function Index() {
         }),
       });
       const data = await response.json();
-      console.log("Received HTML from API:", data.suggestion);
       if (!response.ok) {
         throw new Error(data.error || "AI suggestion failed.");
       }

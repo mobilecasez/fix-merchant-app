@@ -39,10 +39,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
     "gtin": "195949909030"
   }
   `;
-
-  console.log("GTIN Search - Request Product Data:", JSON.stringify(product, null, 2));
-  console.log("GTIN Search - AI Prompt:", prompt);
-
   const maxRetries = 3;
   const initialRetryDelayMs = 1000;
 
@@ -63,7 +59,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
     const jsonString = aiResponseText.substring(startIndex, endIndex + 1);
     
     const aiResponse = JSON.parse(jsonString);
-    console.log("GTIN Search - AI Response:", JSON.stringify(aiResponse, null, 2));
     return json({ ...aiResponse, promptUsed: prompt }); // Include the prompt in the response
   } catch (error: any) {
     console.error(`Final attempt failed for GTIN search for product ${product.id}:`, error);

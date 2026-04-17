@@ -3,8 +3,6 @@ import { cleanProductName, ensureCompareAtPrice, parseWeight, estimateWeight } f
 
 export async function scrapeEbay(html: string, url: string): Promise<ScrapedProductData> {
   try {
-    console.log('[eBay Scraper] Starting scrape for:', url);
-    console.log('[eBay Scraper] Fetching page with HTTP request...');
     
     await new Promise(resolve => setTimeout(resolve, Math.random() * 1000 + 500));
     
@@ -18,7 +16,6 @@ export async function scrapeEbay(html: string, url: string): Promise<ScrapedProd
     });
     
     if (!response.ok) {
-      console.log(`[eBay Scraper] HTTP error: ${response.status}`);
       if (html && html.length > 10000) {
         return await parseEbayHTML(html, url);
       }
@@ -26,7 +23,6 @@ export async function scrapeEbay(html: string, url: string): Promise<ScrapedProd
     }
     
     const htmlContent = await response.text();
-    console.log('[eBay Scraper] Page fetched successfully, HTML length:', htmlContent.length);
     
     return await parseEbayHTML(htmlContent, url);
   } catch (error) {
@@ -53,7 +49,6 @@ export async function scrapeEbay(html: string, url: string): Promise<ScrapedProd
 
 async function parseEbayHTML(htmlContent: string, url: string): Promise<ScrapedProductData> {
   try {
-    console.log('[eBay Scraper] Parsing HTML...');
     
     // Extract product name
     let productName = "";
@@ -70,7 +65,6 @@ async function parseEbayHTML(htmlContent: string, url: string): Promise<ScrapedP
         if (productName) break;
       }
     }
-    console.log('[eBay Scraper] Product name:', productName);
     
     // Extract price
     let price = "";
@@ -89,7 +83,6 @@ async function parseEbayHTML(htmlContent: string, url: string): Promise<ScrapedP
         if (price.includes('$')) break;
       }
     }
-    console.log('[eBay Scraper] Price:', price);
     
     // Extract compare at price
     let compareAtPrice = "";
@@ -150,7 +143,6 @@ async function parseEbayHTML(htmlContent: string, url: string): Promise<ScrapedP
     }
     
     const uniqueImages = Array.from(new Set(images)).slice(0, 10);
-    console.log('[eBay Scraper] Images extracted:', uniqueImages.length);
     
     // Extract weight
     let weight = "";
@@ -179,7 +171,6 @@ async function parseEbayHTML(htmlContent: string, url: string): Promise<ScrapedP
               weightUnit = "lb";
             }
           }
-          console.log('[eBay Scraper] Weight found:', weight, weightUnit);
           break;
         }
       }
@@ -190,7 +181,6 @@ async function parseEbayHTML(htmlContent: string, url: string): Promise<ScrapedP
     let finalWeightUnit = weightUnit;
     
     if (!weight) {
-      console.log('[eBay Scraper] No weight found, estimating');
       const estimated = estimateWeight(productName);
       finalWeight = estimated.value;
       finalWeightUnit = estimated.unit;

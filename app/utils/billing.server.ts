@@ -9,7 +9,6 @@ import type { ShopSubscription, SubscriptionPlan } from "@prisma/client";
 export function getProductsUsed(subscription: any): number {
   if (!subscription) return 0;
   
-  console.log('[Billing] getProductsUsed - Status:', subscription.status, 'Returning:', subscription.productsUsed);
   
   return subscription.productsUsed;
 }
@@ -37,7 +36,6 @@ export async function getOrCreateSubscription(shop: string) {
 
     // Auto-create Free Plan if it doesn't exist (auto-recovery)
     if (!freePlan) {
-      console.log('[Billing] Free Plan not found - auto-creating to prevent failure...');
       try {
         freePlan = await prisma.subscriptionPlan.create({
           data: {
@@ -48,7 +46,6 @@ export async function getOrCreateSubscription(shop: string) {
             isActive: true,
           },
         });
-        console.log('[Billing] ✓ Auto-created Free Plan successfully');
       } catch (error) {
         console.error('[Billing] Failed to auto-create Free Plan:', error);
         throw new Error("Free Plan not found and could not be created. Please run: node seed-subscription-plans.js");
@@ -57,7 +54,6 @@ export async function getOrCreateSubscription(shop: string) {
 
     // If plan was "Free Trial", rename it to "Free Plan" for consistency
     if (freePlan.name === "Free Trial") {
-      console.log('[Billing] Renaming "Free Trial" to "Free Plan" for consistency...');
       freePlan = await prisma.subscriptionPlan.update({
         where: { id: freePlan.id },
         data: { name: "Free Plan" }
@@ -114,20 +110,16 @@ export async function canCreateProduct(shop: string): Promise<boolean> {
   });
 
   if (!subscription) {
-    console.log('[Billing] No subscription found');
     return false;
   }
 
-  console.log('[Billing] Checking limit - Status:', subscription.status, 'Used:', subscription.productsUsed, 'Limit:', subscription.plan.productLimit);
 
   if (subscription.status !== "active") {
-    console.log('[Billing] Subscription not active');
     return false;
   }
 
   // Check plan limit
   const canCreate = subscription.productsUsed < subscription.plan.productLimit;
-  console.log('[Billing] Subscription check:', canCreate, '(', subscription.productsUsed, '<', subscription.plan.productLimit, ')');
   return canCreate;
 }
 
@@ -144,7 +136,6 @@ export async function incrementProductUsage(shop: string) {
     throw new Error("No subscription found for shop");
   }
 
-  console.log('[Billing] Current usage:', subscription.productsUsed);
 
   // Increment products used
   await prisma.shopSubscription.update({
@@ -153,7 +144,6 @@ export async function incrementProductUsage(shop: string) {
       productsUsed: subscription.productsUsed + 1,
     },
   });
-  console.log('[Billing] Incremented productsUsed to:', subscription.productsUsed + 1);
 
   // Log to usage history (daily aggregation) - only for active subscriptions
   if (subscription.status === "active") {

@@ -7,7 +7,6 @@ import nodemailer from 'nodemailer';
 import { Buffer } from 'buffer'; // Explicitly import Buffer
 
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_GEMINI_API_KEY!);
-const IS_DEVELOPMENT = process.env.NODE_ENV === 'development';
 
 // Define a helper function for logging background errors, accessible globally
 const logBackgroundError = (error: any) => {
@@ -56,8 +55,6 @@ async function processAndSendReport(
 
   const concurrencyLimit = 5; // Limit to 5 concurrent AI requests
   const productAnalysisResults: any[] = [];
-  let samplePrompt: string | undefined;
-  let sampleAiResponse: any | undefined;
 
   for (let i = 0; i < products.length; i += concurrencyLimit) {
     const chunk = products.slice(i, i + concurrencyLimit);
@@ -152,10 +149,6 @@ async function processAndSendReport(
         
         const parsedResponse = JSON.parse(jsonString);
 
-        if (IS_DEVELOPMENT && !samplePrompt) {
-          samplePrompt = prompt;
-          sampleAiResponse = parsedResponse;
-        }
 
         return parsedResponse;
       } catch (error: any) {
@@ -254,47 +247,23 @@ async function processAndSendReport(
   const buffer = await workbook.xlsx.writeBuffer();
   const nodeBuffer = Buffer.from(buffer); // Convert ArrayBuffer to Node.js Buffer
 
-  if (IS_DEVELOPMENT && shopOwnerEmail) { // Only send email in development if email is found
-    const transporter = nodemailer.createTransport({
-      host: "smtp.zoho.in",
-      port: 465,
-      secure: true, // Use SSL
-      auth: {
-        user: process.env.SMTP_USER || "Shopify-app@mobilecasez.com",
-        pass: process.env.SMTP_PASS || "",
-      },
-    });
-
-    try {
-      await transporter.sendMail({
-        from: '"Shopify App" <Shopify-app@mobilecasez.com>',
-        to: shopOwnerEmail,
-        subject: 'Your Detailed AI Product Report',
-        html: '<p>Please find attached your detailed AI product report.</p>',
-        attachments: [{
-          filename: 'AI_Product_Report.xlsx',
-          content: nodeBuffer, // Use Node.js Buffer
-          contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-        }]
-      });
-      console.log(`Detailed AI Report sent to ${shopOwnerEmail}.`);
-    } catch (emailError: any) {
-      console.error("Error sending email:", emailError);
-    }
-  } else if (!IS_DEVELOPMENT) { // In production, always attempt to send email if email is found
-    if (shopOwnerEmail) {
+  if (shopOwnerEmail) {
+    const smtpUser = process.env.SMTP_USER;
+    const smtpPass = process.env.SMTP_PASS;
+    if (smtpUser && smtpPass) {
       const transporter = nodemailer.createTransport({
         host: "smtp.zoho.in",
         port: 465,
-        secure: true, // Use SSL
+        secure: true,
         auth: {
-          user: process.env.SMTP_USER || "Shopify-app@mobilecasez.com",
-          pass: process.env.SMTP_PASS || ""
+          user: smtpUser,
+          pass: smtpPass,
         },
       });
+
       try {
         await transporter.sendMail({
-          from: '"Shopify App" <Shopify-app@mobilecasez.com>',
+          from: `"Shopify App" <${smtpUser}>`,
           to: shopOwnerEmail,
           subject: 'Your Detailed AI Product Report',
           html: '<p>Please find attached your detailed AI product report.</p>',
@@ -304,22 +273,13 @@ async function processAndSendReport(
             contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
           }]
         });
-        console.log(`Detailed AI Report sent to ${shopOwnerEmail}.`);
       } catch (emailError: any) {
         console.error("Error sending email:", emailError);
       }
-    } else {
-      console.warn("Detailed AI Report generated. Shop owner email not found, so report cannot be sent via email.");
     }
-  } else {
-    console.warn("Detailed AI Report generated. Email not sent in development mode without a shop owner email.");
   }
 
-  // Return data for development mode downloads
-  if (IS_DEVELOPMENT) {
-    return { products, excelBuffer: nodeBuffer.toString('base64'), samplePrompt, sampleAiResponse };
-  }
-  return {}; // No return value needed in production for background process
+  return { products };
 }
 
 export async function action({ request }: ActionFunctionArgs) {

@@ -82,8 +82,6 @@ export default function ReportPage() {
   const [isModalOpen, setIsModalOpen] = useState(false); // For AI Report confirmation
   const [modalMessage, setModalMessage] = useState('');
   const [modalEmail, setModalEmail] = useState('');
-  const [promptDownloadUrl, setPromptDownloadUrl] = useState<string | null>(null);
-  const [aiResponseDownloadUrl, setAiResponseDownloadUrl] = useState<string | null>(null);
 
   const [isTestEmailModalOpen, setIsTestEmailModalOpen] = useState(false); // For Test Email
   const [testEmailRecipient, setTestEmailRecipient] = useState('');
@@ -131,7 +129,6 @@ export default function ReportPage() {
 
   useEffect(() => {
     if (gtinFetcher.data) {
-      console.log("GTIN Fetcher Data:", gtinFetcher.data);
       if ((gtinFetcher.data as { gtin?: string }).gtin) {
         setAutoFixProductData((prev: any) => ({
           ...prev,
@@ -141,14 +138,6 @@ export default function ReportPage() {
         console.error("GTIN Fetcher Error:", (gtinFetcher.data as { error?: string }).error);
         setAutoFixMessage(`GTIN search failed: ${(gtinFetcher.data as { error?: string }).error}`);
       }
-      if ((gtinFetcher.data as { promptUsed?: string }).promptUsed) {
-        console.log("GTIN Search - Prompt Used:", (gtinFetcher.data as { promptUsed?: string }).promptUsed);
-      }
-    }
-    if (gtinFetcher.state === 'idle' && gtinFetcher.data === undefined) {
-      // This block can be used to log when the fetcher is idle and has no data,
-      // which might indicate an initial state or a reset.
-      // console.log("GTIN Fetcher is idle with no data.");
     }
   }, [gtinFetcher.data, gtinFetcher.state]);
 
@@ -241,7 +230,6 @@ export default function ReportPage() {
       console.warn("No product data provided for GTIN search.");
       return;
     }
-    console.log("Initiating GTIN search for product:", productData);
     gtinFetcher.load(`/api/ai/find-gtin?product=${encodeURIComponent(JSON.stringify(productData))}`);
   }, [gtinFetcher]);
 
@@ -346,12 +334,8 @@ export default function ReportPage() {
   }, []);
 
   // Handler for "Run AI Check for All" button (now triggers background process)
-  const handleRunAllAICheck = useCallback(async () => {
-    console.log("handleRunAllAICheck called");
-    setProcessingAll(true); // Show button loading spinner
-    console.log("processingAll set to true");
-
-    if (!products || products.length === 0) {
+  const handleRunAllAICheck = useCallback(async () => {setProcessingAll(true); // Show button loading spinner
+  if (!products || products.length === 0) {
       console.warn("No products to generate report for.");
       setModalMessage("No products available to generate a report. Please ensure products are loaded.");
       setModalEmail('');
@@ -369,9 +353,6 @@ export default function ReportPage() {
       price: variants.nodes[0]?.price,
       compareAtPrice: variants.nodes[0]?.compareAtPrice,
     }));
-    console.log("Products for report:", productsForReport);
-
-    console.log("Attempting to fetch /api/ai/report...");
     try {
       const response = await fetch("/api/ai/report", {
         method: "POST",
@@ -380,47 +361,25 @@ export default function ReportPage() {
         },
         body: JSON.stringify(productsForReport), // Send products directly as JSON body
       });
-      console.log("Fetch response received:", response);
-
       if (!response.ok) {
-        console.error("API response not OK:", response.status, response.statusText);
         let errorText = await response.text();
-        console.error("API error response text:", errorText);
+        console.error("API error response:", response.status, errorText);
         setModalMessage(`Error generating report: ${errorText || 'Unknown error'}`);
         setModalEmail('');
         setIsModalOpen(true);
-        setPromptDownloadUrl(null);
-        setAiResponseDownloadUrl(null);
-        return; // Exit if response is not OK
+        return;
       }
 
       const result = await response.json();
-      console.log("API response JSON:", result);
 
-      if (result.success) { // Check for success property in the result
+      if (result.success) {
         setModalMessage(`A detailed AI Report will take time to process and will be sent to the email ${result.shopOwnerEmail || 'registered with your store'} once done.`);
         setModalEmail(result.shopOwnerEmail || '');
         setIsModalOpen(true);
-
-        // For development mode, store the sample prompt and AI response for download
-        if (result.samplePrompt && result.sampleAiResponse) {
-          const promptBlob = new Blob([result.samplePrompt], { type: 'text/plain' });
-          const promptUrl = URL.createObjectURL(promptBlob);
-          const aiResponseBlob = new Blob([JSON.stringify(result.sampleAiResponse, null, 2)], { type: 'application/json' });
-          const aiResponseUrl = URL.createObjectURL(aiResponseBlob);
-
-          setPromptDownloadUrl(promptUrl);
-          setAiResponseDownloadUrl(aiResponseUrl);
-
-          console.log("AI Request Prompt Download URL:", promptUrl);
-          console.log("AI Response JSON Download URL:", aiResponseUrl);
-        }
       } else {
         setModalMessage(`Error generating report: ${result.message || 'Unknown error'}`);
         setModalEmail('');
         setIsModalOpen(true);
-        setPromptDownloadUrl(null);
-        setAiResponseDownloadUrl(null);
       }
     } catch (error: any) {
       console.error("Error triggering AI report generation:", error);
@@ -434,9 +393,6 @@ export default function ReportPage() {
 
   const handleModalClose = useCallback(() => {
     setIsModalOpen(false);
-    setPromptDownloadUrl(null); // Clear URLs on close
-    setAiResponseDownloadUrl(null); // Clear URLs on close
-    // The button remains disabled until a new filter/pagination action
   }, []);
 
   const handleOpenTestEmailModal = useCallback(() => {
@@ -493,16 +449,6 @@ export default function ReportPage() {
           <Text as="p" variant="bodyMd">
             {modalMessage}
           </Text>
-          {promptDownloadUrl && (
-            <Button url={promptDownloadUrl} download="ai_request_prompt.txt" external>
-              Download AI Request Prompt
-            </Button>
-          )}
-          {aiResponseDownloadUrl && (
-            <Button url={aiResponseDownloadUrl} download="ai_response.json" external>
-              Download AI Response JSON
-            </Button>
-          )}
         </BlockStack>
       </Modal.Section>
     </Modal>
@@ -578,20 +524,14 @@ export default function ReportPage() {
       suggestions_for_sales_improvement: productToFix.suggestions_for_sales_improvement,
     } : null;
 
-    try {
-      console.log("Calling /api/ai/autofix with data:", { originalProductData, geminiAnalysis });
-      const response = await fetch("/api/ai/autofix", {
+    try {const response = await fetch("/api/ai/autofix", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ original_product_data: originalProductData, gemini_analysis: geminiAnalysis }),
       });
-      console.log("Response from /api/ai/autofix:", response);
-
       const result = await response.json();
-      console.log("Parsed result from /api/ai/autofix:", result);
-
       if (response.ok && result.success) {
         const aiSuggestedGtin = result.rewrittenData.gtin;
         const originalBarcode = productToFix?.barcode; // Access barcode directly from productToFix
@@ -616,9 +556,7 @@ export default function ReportPage() {
           tags: result.rewrittenData.tags || [], // Use AI-generated tags
         });
         setAutoFixAnalysisSummary(result.rewrittenData.analysis_summary);
-        setIsAutoFixReviewModalOpen(true);
-        console.log("Auto-fix review modal opened successfully.");
-      } else {
+        setIsAutoFixReviewModalOpen(true);} else {
         const errorMessage = result.error || result.message || 'Unknown error';
         setAutoFixMessage(`Auto-fix failed: ${errorMessage}`);
         setIsAutoFixReviewModalOpen(true); // Show modal with error message
@@ -627,12 +565,8 @@ export default function ReportPage() {
     } catch (error: any) {
       console.error("Error during auto-fix fetch (network/parsing error):", error);
       setAutoFixMessage(`Auto-fix failed: ${error.message}`);
-      setIsAutoFixReviewModalOpen(true); // Show modal with error message
-      console.log("Auto-fix review modal opened with network/parsing error.");
-    } finally {
-      setIsAutoFixingProduct(false);
-      console.log("isAutoFixingProduct set to false.");
-    }
+      setIsAutoFixReviewModalOpen(true); // Show modal with error message} finally {
+      setIsAutoFixingProduct(false);}
   }, []);
 
   const refreshProducts = useCallback(() => {
@@ -687,9 +621,7 @@ export default function ReportPage() {
         };
       }),
       tags: allTagsToSave, // Send the combined set of tags
-    };
-
-    console.log("Attempting to send payload to /api/products/update:", payload); // Updated log for clarity
+    };// Updated log for clarity
 
     try {
       const response = await fetch("/api/products/update", {

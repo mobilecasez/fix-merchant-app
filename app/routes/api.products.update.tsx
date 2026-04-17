@@ -5,8 +5,6 @@ import { convertMarkdownToHtml } from "../utils/markdown";
 export async function action({ request }: ActionFunctionArgs) {
   const { admin } = await authenticate.admin(request);
   const productData = await request.json();
-  console.log("API Product Update - Received productData:", JSON.stringify(productData, null, 2));
-
   if (!productData || !productData.id) {
     return json({ error: "Invalid product data" }, { status: 400 });
   }
@@ -107,8 +105,6 @@ export async function action({ request }: ActionFunctionArgs) {
     );
 
     const metafieldsSetData = await metafieldsSetResponse.json();
-    console.log("Shopify metafieldsSet full response:", JSON.stringify(metafieldsSetData, null, 2));
-
     if (
       metafieldsSetData.data.metafieldsSet.userErrors &&
       metafieldsSetData.data.metafieldsSet.userErrors.length > 0
@@ -143,9 +139,7 @@ export async function action({ request }: ActionFunctionArgs) {
       barcode: (variant.barcode && variant.barcode.trim() !== "null") ? variant.barcode.trim() : "",
       weight: variant.weight ? parseFloat(variant.weight) : null,
       weightUnit: variant.weightUnit,
-    }));
-
-    console.log("Variants to update payload:", JSON.stringify(variantsToUpdate, null, 2)); // Added log
+    }));// Added log
 
     const productVariantsBulkUpdateResponse = await admin.graphql(
       `#graphql
@@ -169,9 +163,7 @@ export async function action({ request }: ActionFunctionArgs) {
     );
 
     const productVariantsBulkUpdateData =
-      await productVariantsBulkUpdateResponse.json();
-
-    console.log("Shopify productVariantsBulkUpdate full response:", JSON.stringify(productVariantsBulkUpdateData, null, 2)); // Changed log to full response
+      await productVariantsBulkUpdateResponse.json();// Changed log to full response
 
     if (
       productVariantsBulkUpdateData.data.productVariantsBulkUpdate.userErrors &&

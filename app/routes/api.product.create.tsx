@@ -3,16 +3,9 @@ import { authenticate } from "../shopify.server";
 import { canCreateProduct } from "../utils/billing.server";
 
 export const action = async ({ request }: ActionFunctionArgs) => {
-  const { admin, session } = await authenticate.admin(request);
-
-  console.log('[API] Product create request from shop:', session.shop);
-
-  // Check subscription and product limit
+  const { admin, session } = await authenticate.admin(request);// Check subscription and product limit
   const canCreate = await canCreateProduct(session.shop);
-  console.log('[API] canCreateProduct result:', canCreate);
-  if (!canCreate) {
-    console.log('[API] Blocking creation - limit reached');
-    return json({ 
+  if (!canCreate) {return json({ 
       errors: [{ 
         message: "Product limit reached. Please upgrade your subscription or wait for the next billing cycle." 
       }] 
@@ -58,10 +51,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     seoDescription,
     seoUrl,
   } = payload;
-
-  console.log("Product Create API - Received category:", category);
-  console.log("Product Create API - Full payload:", JSON.stringify(payload, null, 2));
-
   if (!productName) {
     return json({ errors: [{ message: "Product name is required." }] }, { status: 400 });
   }
@@ -136,11 +125,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     }
   }
 
-  try {
-    console.log("Sending to Shopify - productInput:", JSON.stringify(productInput, null, 2));
-    console.log("Sending to Shopify - media:", JSON.stringify(media, null, 2));
-    
-    const response = await admin.graphql(
+  try {const response = await admin.graphql(
       `#graphql
       mutation productCreate($input: ProductCreateInput!, $media: [CreateMediaInput!]) {
         productCreate(product: $input, media: $media) {
@@ -173,9 +158,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     );
 
     const responseJson = await response.json();
-
-    console.log("Product Create Response:", JSON.stringify(responseJson, null, 2));
-
     if (responseJson.data.productCreate.userErrors.length > 0) {
       console.error("Product Create User Errors:", responseJson.data.productCreate.userErrors);
       return json({ errors: responseJson.data.productCreate.userErrors }, { status: 422 });
@@ -185,9 +167,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     const productId = createdProduct.id;
 
     // Set category using productSet mutation if provided
-    if (category && category.trim() !== '') {
-      console.log("Setting category for product", productId, "with category ID:", category);
-      try {
+    if (category && category.trim() !== '') {try {
         const categoryResponse = await admin.graphql(
           `#graphql
           mutation productSet($input: ProductSetInput!) {
@@ -215,8 +195,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         );
         
         const categoryResponseJson = await categoryResponse.json();
-        console.log("Category Set Response:", JSON.stringify(categoryResponseJson, null, 2));
-        
         if (categoryResponseJson.data.productSet.userErrors.length > 0) {
           console.error("Category Set Errors:", categoryResponseJson.data.productSet.userErrors);
           // Don't fail the whole product creation, just log the error

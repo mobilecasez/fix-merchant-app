@@ -93,8 +93,6 @@ const fetchProducts = async (
   );
 
   const data = await response.json();
-  console.log("GraphQL Raw Response Data:", JSON.stringify(data, null, 2));
-
   if (data.errors) {
     console.error("GraphQL Errors:", data.errors);
     throw new Error(`Failed to fetch products from Shopify: ${JSON.stringify(data.errors)}`);
@@ -321,9 +319,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
   // If sortKey is CREATED_AT, default reverse to false for newest first, otherwise use true for alphabetical Z-A or other descending
   const reverse = sortKey === "CREATED_AT" ? (url.searchParams.get("reverse") === "true" ? true : false) : (url.searchParams.get("reverse") || "true") === "true";
   const isDashboardRequest = url.searchParams.get("dashboard") === "true";
-
-  console.log("SEO Check Loader - Request Params:", { cursor, count, query, sortKey, reverse, isDashboardRequest });
-
   if (!session) {
     console.error("SEO Check Loader - Unauthorized: No session found.");
     return json({ error: 'Unauthorized' }, { status: 401 });
@@ -371,11 +366,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
       totalCount = totalProductsCount;
       finalPageInfo = pageInfo;
     }
-
-    console.log("SEO Check Loader - Final Products Count:", fetchedProducts.length);
-    console.log("SEO Check Loader - Final Page Info:", finalPageInfo);
-    console.log("SEO Check Loader - Final Total Count:", totalCount);
-
     return json({ products: fetchedProducts, pageInfo: finalPageInfo, totalCount });
   } catch (error: any) {
     console.error("SEO Check Loader - Error fetching products:", error);

@@ -46,9 +46,6 @@ export const loader: LoaderFunction = async ({ request }) => {
   // Calculate products used on server side
   const productsUsed = getProductsUsed(subscription);
   const productLimit = subscription.plan.productLimit;
-  
-  console.log('[Loader] Returning data - Shop:', session.shop, 'productsUsed:', productsUsed, 'productLimit:', productLimit, 'status:', subscription.status);
-  
   return json({ categories, productsUsed, productLimit, subscription });
 };
 
@@ -101,9 +98,7 @@ export default function AddProductReplica() {
   const revalidator = useRevalidator();
 
   // Sync local counter with loader data when it changes (after revalidation)
-  useEffect(() => {
-    console.log('[Loader Sync] Updating currentProductsUsed from loader:', productsUsed);
-    setCurrentProductsUsed(productsUsed);
+  useEffect(() => {setCurrentProductsUsed(productsUsed);
   }, [productsUsed]);
 
   // Loading states for ShopFlix animated loader
@@ -205,13 +200,6 @@ export default function AddProductReplica() {
     if (fetcher.state === 'idle' && fetcher.data) {
       const scrapedData = fetcher.data as any;
       
-      // Log the raw HTML if it's present in the response (for debugging)
-      if (scrapedData.debugHtml) {
-        console.log("📄 RAW HTML FROM SCRAPER (first 3000 chars):");
-        console.log(scrapedData.debugHtml.substring(0, 3000));
-        console.log("📄 HTML length:", scrapedData.debugHtml.length);
-      }
-      
       // CRITICAL: Handle manual HTML required response FIRST - must always work
       if (scrapedData.manualHtmlRequired) {
         if (progressIntervalRef.current) {
@@ -309,9 +297,6 @@ export default function AddProductReplica() {
 
       const scrapedData = fetcher.data as any;
       const { rewrittenTitle, rewrittenDescription, tags: rewrittenTags, seoTitle: seoTitleGenerated, seoDescription: seoDescriptionGenerated, productType: generatedProductType, category } = processedData;
-
-      console.log("Processed data received:", processedData);
-
       const {
         vendor,
         productType: scrapedProductType,
@@ -374,16 +359,9 @@ export default function AddProductReplica() {
       if (barcode) setBarcode(barcode);
       if (weight) setWeight(weight);
       if (weightUnit) setWeightUnit(weightUnit);
-      if (images && images.length > 0) {
-        console.log("🖼️ SCRAPER IMAGES RECEIVED:", images.length, "images");
-        console.log("🖼️ Image URLs from scraper:");
-        images.forEach((url: string, index: number) => {
-          console.log(`  ${index + 1}. ${url}`);
-        });
+      if (images && images.length > 0) {images.forEach((url: string, index: number) => {});
         setMedia(images);
-      } else {
-        console.log("⚠️ No images received from scraper");
-      }
+      } else {}
       if (scrapedOptions && scrapedOptions.length > 0) {
         setHasVariants(true);
         setOptions(scrapedOptions);
@@ -519,27 +497,22 @@ export default function AddProductReplica() {
     { label: "g", value: "g" },
   ];
 
+  const lastHandledData = useRef<any>(null);
   useEffect(() => {
-    if (saveFetcher.state === 'idle' && saveFetcher.data) {
-      console.log('[Product Creation] saveFetcher state is idle with data:', JSON.stringify(saveFetcher.data, null, 2));
+    if (saveFetcher.state === 'idle' && saveFetcher.data && saveFetcher.data !== lastHandledData.current) {
+      lastHandledData.current = saveFetcher.data;
       const { product, errors } = saveFetcher.data as any;
-      console.log('[Product Creation] Parsed - product:', !!product, 'errors:', !!errors);
       if (errors) {
-        console.log('[Product Creation] Has errors:', errors);
         setToastMessage(errors[0].message);
         setToastError(true);
       } else if (product) {
-        console.log('[Product Creation] Product created successfully:', product.id);
         setToastMessage(`Product "${product.title}" created successfully!`);
         setToastError(false);
-        // Revalidate loader to fetch updated counter from database
-        console.log('[Product Creation] Calling revalidator.revalidate()');
         revalidator.revalidate();
-        console.log('[Product Creation] Revalidator called');
       }
       setToastActive(true);
     }
-  }, [saveFetcher.state, saveFetcher.data, revalidator]);
+  }, [saveFetcher.state, saveFetcher.data]);
 
   const handleSubmit = () => {
     if (!productName) {
@@ -582,10 +555,6 @@ export default function AddProductReplica() {
       variants: hasVariants ? variants : [],
       images: media.filter(m => typeof m === 'string'),
     };
-
-    console.log("Frontend - Submitting product data with category:", category);
-    console.log("Frontend - Full product data:", JSON.stringify(productData, null, 2));
-
     const formData = new FormData();
     formData.append("productData", JSON.stringify(productData));
 
@@ -626,12 +595,7 @@ export default function AddProductReplica() {
     
     // If manual HTML is provided, include it
     if (manualHtml && manualHtml.trim()) {
-      formData.append("manualHtml", manualHtml);
-      console.log("[FRONTEND] Including manual HTML, length:", manualHtml.length);
-      console.log("[FRONTEND] First 500 chars:", manualHtml.substring(0, 500));
-    } else {
-      console.log("[FRONTEND] No manual HTML, will auto-fetch");
-    }
+      formData.append("manualHtml", manualHtml);} else {}
     
     fetcher.submit(formData, {
       method: "post",

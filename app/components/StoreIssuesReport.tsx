@@ -30,7 +30,6 @@ export function StoreIssuesReport({ onLoadingChange }: StoreIssuesReportProps) {
   }, []); // Empty dependency array ensures this runs once on mount
 
   useEffect(() => {
-    console.log("StoreIssuesReport: fetchHtmlFetcher.data changed. State:", fetchHtmlFetcher.state, "Data:", fetchHtmlFetcher.data);
     if (fetchHtmlFetcher.data && (fetchHtmlFetcher.data as any).rawHtmlContent) {
       setRawHtmlContent((fetchHtmlFetcher.data as any).rawHtmlContent);
     } else if (fetchHtmlFetcher.data && (fetchHtmlFetcher.data as any).error) {
@@ -41,9 +40,7 @@ export function StoreIssuesReport({ onLoadingChange }: StoreIssuesReportProps) {
   }, [fetchHtmlFetcher.data, fetchHtmlFetcher.state, onLoadingChange]);
 
   useEffect(() => {
-    console.log("StoreIssuesReport: rawHtmlContent or fetchHtmlFetcher.state changed. rawHtmlContent present:", !!rawHtmlContent, "fetchHtmlFetcher.state:", fetchHtmlFetcher.state);
     if (rawHtmlContent && fetchHtmlFetcher.state === "idle") {
-      console.log("StoreIssuesReport: Submitting to AI store check.");
       const storeUrl = "https://mobilecasez.com";
       storeCheckFetcher.submit(
         { store_url: storeUrl, raw_html_content: rawHtmlContent },
@@ -54,7 +51,6 @@ export function StoreIssuesReport({ onLoadingChange }: StoreIssuesReportProps) {
   }, [rawHtmlContent, fetchHtmlFetcher.state]);
 
   useEffect(() => {
-    console.log("StoreIssuesReport: storeCheckFetcher.data changed. State:", storeCheckFetcher.state, "Data:", storeCheckFetcher.data);
     if (storeCheckFetcher.data) {
       if ((storeCheckFetcher.data as any).pointers) {
         setStoreIssues((storeCheckFetcher.data as any).pointers);
@@ -63,9 +59,6 @@ export function StoreIssuesReport({ onLoadingChange }: StoreIssuesReportProps) {
         setStoreIssues({}); // Indicate no issues or error occurred
       }
       onLoadingChange(false); // Turn off loading when AI response is received (success or error)
-      if ((storeCheckFetcher.data as any).debugPrompt) {
-        console.log("AI Store Check Report Prompt (from response):", (storeCheckFetcher.data as any).debugPrompt);
-      }
     }
   }, [storeCheckFetcher.data, storeCheckFetcher.state, onLoadingChange]);
 

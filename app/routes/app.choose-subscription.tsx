@@ -24,25 +24,17 @@ import {
 } from "../utils/billing.server";
 
 export const loader: LoaderFunction = async ({ request }) => {
-  const { session } = await authenticate.admin(request);
-  console.log("[choose-subscription] Loading plans for shop:", session.shop);
-
-  // Get all active plans
+  const { session } = await authenticate.admin(request);// Get all active plans
   const plans = await prisma.subscriptionPlan.findMany({
     where: { 
       isActive: true
     },
     orderBy: { price: 'asc' },
-  });
-  console.log("[choose-subscription] Found plans:", plans.length, plans.map(p => p.name));
-
-  // Get current subscription
+  });// Get current subscription
   const currentSubscription = await prisma.shopSubscription.findUnique({
     where: { shop: session.shop },
     include: { plan: true },
   });
-  console.log("[choose-subscription] Current subscription:", currentSubscription?.id || "none");
-
   return json({ 
     plans, 
     currentSubscription, 
@@ -50,26 +42,16 @@ export const loader: LoaderFunction = async ({ request }) => {
   });
 };
 
-export const action: ActionFunction = async ({ request }) => {
-  console.log('[Choose Subscription Action] Starting...');
-  const { session, admin } = await authenticate.admin(request);
-  console.log('[Choose Subscription Action] Authenticated for shop:', session.shop);
-  
-  const formData = await request.formData();
+export const action: ActionFunction = async ({ request }) => {const { session, admin } = await authenticate.admin(request);
+const formData = await request.formData();
   const planId = formData.get("planId") as string;
   const actionType = formData.get("action") as string;
   const isTrial = formData.get("isTrial") === "true";
-
-  console.log('[Choose Subscription Action] Form data:', { planId, actionType, isTrial });
-
   try {
     // Get plan details
     const plan = await prisma.subscriptionPlan.findUnique({
       where: { id: planId },
     });
-
-    console.log('[Choose Subscription Action] Plan found:', plan?.name);
-
     if (!plan || !plan.isActive) {
       console.error('[Choose Subscription Action] Invalid plan');
       return json({ error: "Invalid plan" }, { status: 400 });
@@ -88,10 +70,7 @@ export const action: ActionFunction = async ({ request }) => {
       return redirect("/app/subscription-success?planId=" + planId);
     }
 
-    // For PAID plans, create Shopify recurring charge via GraphQL
-    console.log(`[Billing] Creating Shopify recurring charge for plan: ${plan.name} ($${plan.price})`);
-    
-    // Get API key for deep link
+    // For PAID plans, create Shopify recurring charge via GraphQL// Get API key for deep link
     const apiKey = process.env.SHOPIFY_API_KEY;
     if (!apiKey) {
       console.error("❌ CRITICAL ERROR: SHOPIFY_API_KEY is missing!");
@@ -104,10 +83,7 @@ export const action: ActionFunction = async ({ request }) => {
     // ✅ Use Shopify Admin Deep Link - this keeps us in the iframe and preserves session
     const returnUrl = `https://${session.shop}/admin/apps/${apiKey}/app/billing-callback?planId=${planId}&action=${actionType || 'new'}&shop=${session.shop}`;
     
-    // Log the URL to verify it's correct
-    console.log("👉 BILLING RETURN URL:", returnUrl);
-    
-    // Use test mode only in development
+    // Log the URL to verify it's correct// Use test mode only in development
     const isTest = process.env.NODE_ENV !== "production";
     
     const response = await admin.graphql(
@@ -150,7 +126,6 @@ export const action: ActionFunction = async ({ request }) => {
     );
 
     const responseJson = await response.json();
-    console.log('[Billing] GraphQL response:', JSON.stringify(responseJson, null, 2));
     const data = responseJson.data?.appSubscriptionCreate;
 
     if (!data || data.userErrors?.length > 0) {
@@ -165,12 +140,7 @@ export const action: ActionFunction = async ({ request }) => {
       return json({ 
         error: "No confirmation URL received from Shopify. Please try again." 
       }, { status: 500 });
-    }
-
-    console.log(`[Billing] Shopify charge created successfully:`, data.appSubscription?.id);
-    console.log(`[Billing] Redirecting to confirmation URL:`, data.confirmationUrl);
-    
-    // For embedded apps, return the URL and handle redirect on client side
+    }// For embedded apps, return the URL and handle redirect on client side
     // Return 200 (not error) to avoid flash of error page
     return json({ 
       redirectUrl: data.confirmationUrl,
@@ -195,11 +165,7 @@ export default function ChooseSubscription() {
   // useFetcher manages its own loading state
   const isLoading = fetcher.state !== "idle";
 
-  // DEBUG: Log what we receive from the fetcher
-  console.log('[Choose Subscription] Fetcher State:', fetcher.state);
-  console.log('[Choose Subscription] Fetcher Data:', fetcher.data);
-
-  // THE CLEAN BREAK - Watch for the billing URL and redirect
+  // DEBUG: Log what we receive from the fetcher// THE CLEAN BREAK - Watch for the billing URL and redirect
   useEffect(() => {
     // Only process when fetcher is idle (request complete) and has data
     if (fetcher.state === "idle" && fetcher.data) {
@@ -207,18 +173,10 @@ export default function ChooseSubscription() {
       
       // Check if we got a success status and a valid redirectUrl
       if ('redirectUrl' in data && data.redirectUrl) {
-        const url = data.redirectUrl;
-        
-        console.log('[Choose Subscription] Billing URL received:', url);
-        
-        // STRICT VALIDATION to prevent "string did not match pattern" error
+        const url = data.redirectUrl;// STRICT VALIDATION to prevent "string did not match pattern" error
         if (typeof url === 'string' && 
             url.startsWith('https://') && 
-            url.includes('shopify.com')) {
-          
-          console.log('[Choose Subscription] ✓ Valid Shopify URL, redirecting to:', url);
-          
-          // Set flag in sessionStorage for ErrorBoundary
+            url.includes('shopify.com')) {// Set flag in sessionStorage for ErrorBoundary
           sessionStorage.setItem('isRedirectingToBilling', 'true');
           
           // THE CLEAN BREAK: Force top-level window navigation
@@ -244,10 +202,7 @@ export default function ChooseSubscription() {
   }, [fetcher.state, fetcher.data]);
 
   // SUBMIT HANDLER - Uses fetcher.submit for non-navigational request
-  const handleSelectPlan = useCallback((planId: string, actionType: 'trial' | 'purchase' | 'change') => {
-    console.log('[Choose Subscription] User clicked plan:', { planId, actionType });
-    
-    setSelectedPlanId(planId);
+  const handleSelectPlan = useCallback((planId: string, actionType: 'trial' | 'purchase' | 'change') => {setSelectedPlanId(planId);
     setSelectedAction(actionType);
     
     const formData = new FormData();
@@ -257,11 +212,7 @@ export default function ChooseSubscription() {
       formData.append("action", "change");
     } else if (currentSubscription?.status === "trial" && actionType === 'purchase') {
       formData.append("action", "upgrade");
-    }
-    
-    console.log('[Choose Subscription] Submitting with useFetcher (non-navigational)');
-    
-    // useFetcher.submit automatically includes auth headers and doesn't trigger navigation
+    }// useFetcher.submit automatically includes auth headers and doesn't trigger navigation
     fetcher.submit(formData, { method: "post" });
   }, [fetcher, currentSubscription]);
 
@@ -443,17 +394,7 @@ export function ErrorBoundary() {
   
   // If we're redirecting to billing, suppress ALL errors (they're expected)
   const isRedirecting = typeof window !== 'undefined' && sessionStorage.getItem('isRedirectingToBilling') === 'true';
-  
-  console.log('[Choose Subscription ErrorBoundary] Error caught:', {
-    error,
-    errorType: error?.constructor?.name,
-    errorMessage: error instanceof Error ? error.message : 'Unknown',
-    isRedirecting
-  });
-  
-  if (isRedirecting) {
-    console.log('[Choose Subscription] Suppressing error during redirect');
-    return (
+  if (isRedirecting) {return (
       <Frame>
         <Page title="Redirecting..." narrowWidth>
           <Layout>

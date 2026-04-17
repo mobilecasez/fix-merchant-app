@@ -118,7 +118,6 @@ export function getScraper(url: string): ScraperFunction | null {
   
   // Generic scraper for all other URLs (with 60s timeout)
   // This handles any e-commerce site not explicitly supported above
-  console.log('[Scraper Router] Using generic scraper for:', url);
   return createTimeoutScraper(scrapeGeneric as ScraperFunction, 60000);
 }
 

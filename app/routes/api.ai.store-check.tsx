@@ -110,12 +110,11 @@ export async function action({ request }: ActionFunctionArgs) {
     const jsonString = aiResponseText.substring(startIndex, endIndex + 1);
     
     const aiResponse = JSON.parse(jsonString);
-    return json({ ...aiResponse, debugPrompt: prompt }); // Include the prompt in the response
+    return json(aiResponse);
   } catch (error: any) {
     console.error(`Final attempt failed for store URL ${storeUrl}:`, error);
     return json({
       error: `Failed to get AI response for store URL ${storeUrl} after multiple retries: ${error.message}`,
-      debugPrompt: prompt, // Include prompt even on error for debugging
     }, { status: 500 });
   }
 }

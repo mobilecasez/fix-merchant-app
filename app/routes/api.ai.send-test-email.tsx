@@ -14,24 +14,30 @@ export async function action({ request }: ActionFunctionArgs) {
     return json({ error: "Invalid recipient email address provided." }, { status: 400 });
   }
 
+  const smtpUser = process.env.SMTP_USER;
+  const smtpPass = process.env.SMTP_PASS;
+
+  if (!smtpUser || !smtpPass) {
+    return json({ error: "Email service not configured" }, { status: 500 });
+  }
+
   const transporter = nodemailer.createTransport({
     host: "smtp.zoho.in",
     port: 465,
-    secure: true, // Use SSL
+    secure: true,
     auth: {
-      user: process.env.SMTP_USER || "Shopify-app@mobilecasez.com",
-      pass: process.env.SMTP_PASS || ""
+      user: smtpUser,
+      pass: smtpPass,
     },
   });
 
   try {
     await transporter.sendMail({
-      from: '"Shopify App" <Shopify-app@mobilecasez.com>',
+      from: `"Shopify App" <${smtpUser}>`,
       to: recipientEmail,
       subject: 'Shopify App - Test Email',
       html: '<p>This is a test email from your Shopify App.</p><p>If you received this, the email sending functionality is working correctly.</p>',
     });
-    console.log(`Test email sent to ${recipientEmail}.`);
     return json({ success: true, message: `Test email sent to ${recipientEmail}.` });
   } catch (emailError: any) {
     console.error("Error sending test email:", emailError);

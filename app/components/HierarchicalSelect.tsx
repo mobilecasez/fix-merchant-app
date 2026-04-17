@@ -35,14 +35,10 @@ export default function HierarchicalSelect({ categories, onChange, path }: Hiera
 
     const selectedNode = findNode(categories, newPath.slice(0, level + 1) as string[]);
     
-    console.log("HierarchicalSelect - Selected node:", selectedNode);
-    console.log("HierarchicalSelect - Has children:", selectedNode?.children.length);
     
     if (selectedNode && selectedNode.children.length > 0) {
       newPath.push(null);
-      console.log("HierarchicalSelect - Node has children, not calling onChange yet");
     } else if (selectedNode) {
-      console.log("HierarchicalSelect - Leaf node selected, calling onChange with ID:", selectedNode.id);
       onChange(selectedNode.id);
     }
 

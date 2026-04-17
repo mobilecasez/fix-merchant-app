@@ -28,7 +28,7 @@ function parseCategoryList(fileContent: string): CategoryListItem[] {
 
 async function generateCategoryWithAI(title: string) {
   const apiKey = process.env.GOOGLE_GEMINI_API_KEY;
-  const apiUrl = `https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+  const apiUrl = `https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent`;
 
   const categoriesPath = path.resolve(process.cwd(), "categories.txt");
   const categoriesContent = fs.readFileSync(categoriesPath, "utf-8");
@@ -54,6 +54,7 @@ async function generateCategoryWithAI(title: string) {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        "x-goog-api-key": apiKey || "",
       },
       body: JSON.stringify(requestBody),
     });
@@ -66,8 +67,6 @@ async function generateCategoryWithAI(title: string) {
 
     const data = await response.json();
     const text = data.candidates[0].content.parts[0].text;
-
-    console.log("Raw AI Category Response:", text);
     return text.trim();
   } catch (error) {
     console.error("AI category generation failed:", error);

@@ -91,16 +91,12 @@ const DOMAIN_CURRENCY_MAP: Record<string, string> = {
  * Detect currency code from price string or website URL
  */
 export function detectCurrency(price: string, url?: string): string {
-  console.log('[Currency Detection] Starting detection...');
-  console.log('[Currency Detection] Price string:', price);
-  console.log('[Currency Detection] URL:', url);
   
   // Priority 1: Check for explicit currency codes (INR 1000, USD 50, etc.)
   for (const code of CURRENCY_CODES) {
     // Check for patterns like "INR 1000", "INR1000", "1000 INR"
     const codeRegex = new RegExp(`\\b${code}\\b|${code}(?=\\d)|(?<=\\d)${code}`, 'i');
     if (codeRegex.test(price)) {
-      console.log(`[Currency Detection] ✓ Found currency code "${code}" in price`);
       return code.toUpperCase();
     }
   }
@@ -108,34 +104,28 @@ export function detectCurrency(price: string, url?: string): string {
   // Priority 2: Check for currency symbols in price string
   for (const [symbol, code] of Object.entries(CURRENCY_SYMBOLS)) {
     if (price.includes(symbol)) {
-      console.log(`[Currency Detection] ✓ Found symbol "${symbol}" → ${code}`);
       return code;
     }
   }
   
-  console.log('[Currency Detection] No currency found in price string');
   
   // Priority 3: Try to detect from URL domain (fallback only)
   if (url) {
     try {
       const domain = new URL(url).hostname.toLowerCase();
-      console.log('[Currency Detection] Checking domain:', domain);
       
       for (const [siteDomain, currency] of Object.entries(DOMAIN_CURRENCY_MAP)) {
         if (domain.includes(siteDomain)) {
-          console.log(`[Currency Detection] ✓ Domain match "${siteDomain}" → ${currency} (fallback)`);
           return currency;
         }
       }
       
-      console.log('[Currency Detection] No domain match found');
     } catch (e) {
       console.warn('[Currency Detection] Invalid URL:', e);
     }
   }
   
   // Default to USD
-  console.log('[Currency Detection] Using default: USD');
   return 'USD';
 }
 
@@ -160,7 +150,6 @@ async function getExchangeRate(from: string, to: string): Promise<number> {
       return 1;
     }
     
-    console.log(`[Currency] Exchange rate ${from} -> ${to}: ${rate}`);
     return rate;
   } catch (error) {
     console.error('[Currency] Error fetching exchange rate:', error);
@@ -176,12 +165,9 @@ export async function convertPrice(
   sourceCurrency: string,
   targetCurrency: string
 ): Promise<string> {
-  console.log('[Currency Conversion] Converting price:', price);
-  console.log('[Currency Conversion] From:', sourceCurrency, 'To:', targetCurrency);
   
   // If currencies are the same, no conversion needed - return original price with symbol
   if (sourceCurrency === targetCurrency) {
-    console.log('[Currency Conversion] Same currency, no conversion needed');
     // Ensure the price has a currency symbol
     const numericPrice = parseFloat(price.replace(/[^0-9.]/g, ''));
     if (isNaN(numericPrice)) {
@@ -207,7 +193,6 @@ export async function convertPrice(
     return price;
   }
   
-  console.log('[Currency Conversion] Numeric value extracted:', numericPrice);
   
   // Get exchange rate
   const rate = await getExchangeRate(sourceCurrency, targetCurrency);
@@ -215,13 +200,11 @@ export async function convertPrice(
   // Convert price
   const convertedPrice = numericPrice * rate;
   
-  console.log(`[Currency Conversion] Calculation: ${numericPrice} × ${rate} = ${convertedPrice.toFixed(2)}`);
   
   // Get target currency symbol
   const targetSymbol = CURRENCY_CODE_TO_SYMBOL[targetCurrency] || targetCurrency + ' ';
   const formattedPrice = `${targetSymbol}${convertedPrice.toFixed(2)}`;
   
-  console.log(`[Currency Conversion] Result: ${sourceCurrency} ${numericPrice} → ${formattedPrice}`);
   
   // Return with currency symbol
   return formattedPrice;
@@ -241,7 +224,6 @@ export async function convertProductPrices(
     return { price, compareAtPrice };
   }
   
-  console.log(`[Currency] Converting prices from ${sourceCurrency} to ${targetCurrency}`);
   
   // Convert both prices in parallel
   const [convertedPrice, convertedCompareAtPrice] = await Promise.all([

@@ -15,6 +15,27 @@ export async function action({ request }: ActionFunctionArgs) {
     return json({ error: "Invalid request body: missing store_url" }, { status: 400 });
   }
 
+  // Validate URL format and block internal/private addresses (SSRF protection)
+  let parsedUrl: URL;
+  try {
+    parsedUrl = new URL(storeUrl);
+  } catch {
+    return json({ error: "Invalid URL format" }, { status: 400 });
+  }
+
+  if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
+    return json({ error: "Only HTTP/HTTPS URLs are allowed" }, { status: 400 });
+  }
+
+  const blockedHostnames = ['localhost', '127.0.0.1', '0.0.0.0', '[::1]'];
+  const blockedPrefixes = ['10.', '172.16.', '172.17.', '172.18.', '172.19.', '172.20.', '172.21.', '172.22.', '172.23.', '172.24.', '172.25.', '172.26.', '172.27.', '172.28.', '172.29.', '172.30.', '172.31.', '192.168.', '169.254.'];
+  if (
+    blockedHostnames.includes(parsedUrl.hostname) ||
+    blockedPrefixes.some(prefix => parsedUrl.hostname.startsWith(prefix))
+  ) {
+    return json({ error: "Internal or private URLs are not allowed" }, { status: 400 });
+  }
+
   let rawHtmlContent: string = "";
   try {
     const response = await fetch(storeUrl, {

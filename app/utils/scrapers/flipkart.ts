@@ -3,14 +3,11 @@ import { cleanProductName, ensureCompareAtPrice, parseWeight, estimateWeight } f
 
 export async function scrapeFlipkart(html: string, url: string): Promise<ScrapedProductData> {
   try {
-    console.log('[Flipkart Scraper] Starting scrape for:', url);
-    console.log('[Flipkart Scraper] HTML parameter provided:', !!html, 'Length:', html?.length || 0);
     
     let htmlContent = html;
     
     // Only fetch if HTML parameter is not provided or is too small
     if (!html || html.length < 10000) {
-      console.log('[Flipkart Scraper] Fetching page with HTTP request...');
       
       // Random delay to mimic human behavior
       await new Promise(resolve => setTimeout(resolve, Math.random() * 1000 + 500));
@@ -34,41 +31,33 @@ export async function scrapeFlipkart(html: string, url: string): Promise<Scraped
       
       // Check if we hit anti-bot protection (529 or similar errors)
       if (!response.ok) {
-        console.log(`[Flipkart Scraper] HTTP error: ${response.status} ${response.statusText}`);
         
         // Try to use the provided HTML parameter as fallback
         if (html && html.length > 10000) {
-          console.log('[Flipkart Scraper] Using provided HTML as fallback');
           htmlContent = html;
         } else if (response.status === 529 || response.status === 403 || response.status === 503) {
           // If 529 or 403 (anti-bot) and no HTML fallback, try Puppeteer
-          console.log('[Flipkart Scraper] Anti-bot detected, falling back to Puppeteer...');
           return await scrapeFlipkartWithPuppeteer(url);
         } else {
           throw new Error(`Failed to fetch Flipkart page: ${response.status}`);
         }
       } else {
         htmlContent = await response.text();
-        console.log('[Flipkart Scraper] Page fetched successfully, HTML length:', htmlContent.length);
         
         // Check if we got a CAPTCHA or error page despite 200 status
         if (htmlContent.includes('Access Denied') || 
             htmlContent.includes('Robot or human') || 
             htmlContent.length < 5000) {
-          console.log('[Flipkart Scraper] CAPTCHA/Bot detection page detected');
           
           // Try to use the provided HTML parameter as fallback
           if (html && html.length > 10000) {
-            console.log('[Flipkart Scraper] Using provided HTML parameter as fallback');
             htmlContent = html;
           } else {
-            console.log('[Flipkart Scraper] Falling back to Puppeteer...');
             return await scrapeFlipkartWithPuppeteer(url);
           }
         }
       }
     } else {
-      console.log('[Flipkart Scraper] Using provided HTML parameter (already fetched)');
     }
     
     return await parseFlipkartHTML(htmlContent, url);
@@ -77,7 +66,6 @@ export async function scrapeFlipkart(html: string, url: string): Promise<Scraped
     
     // Try to use provided HTML parameter as last resort before Puppeteer
     if (html && html.length > 10000) {
-      console.log('[Flipkart Scraper] Attempting to parse provided HTML as last resort...');
       try {
         return await parseFlipkartHTML(html, url);
       } catch (parseError) {
@@ -86,7 +74,6 @@ export async function scrapeFlipkart(html: string, url: string): Promise<Scraped
     }
     
     // Final fallback: try Puppeteer
-    console.log('[Flipkart Scraper] Attempting Puppeteer as final fallback...');
     try {
       return await scrapeFlipkartWithPuppeteer(url);
     } catch (puppeteerError) {
@@ -118,7 +105,6 @@ async function scrapeFlipkartWithPuppeteer(url: string): Promise<ScrapedProductD
   let browser;
   
   try {
-    console.log('[Flipkart Puppeteer] Launching browser with stealth mode...');
     browser = await puppeteer.default.launch({
       headless: true,
       args: [
@@ -153,7 +139,6 @@ async function scrapeFlipkartWithPuppeteer(url: string): Promise<ScrapedProductD
       }
     });
     
-    console.log('[Flipkart Puppeteer] Navigating to URL...');
     await page.goto(url, { 
       waitUntil: 'networkidle2',
       timeout: 30000 
@@ -162,7 +147,6 @@ async function scrapeFlipkartWithPuppeteer(url: string): Promise<ScrapedProductD
     // Wait for dynamic content to load
     await new Promise(resolve => setTimeout(resolve, 3000));
     
-    console.log('[Flipkart Puppeteer] Extracting product data from DOM...');
     
     // Get page title - most reliable source for product name
     const pageTitle = await page.title();
@@ -227,7 +211,6 @@ async function scrapeFlipkartWithPuppeteer(url: string): Promise<ScrapedProductD
       
       // If we found the rating, search for prices AFTER it in the DOM
       if (ratingElement) {
-        console.log('[Flipkart Puppeteer] Found star rating, searching for prices after it...');
         
         // Get all strikethrough elements
         const allStrikethroughs = Array.from(document.querySelectorAll('[style*="line-through"]'));
@@ -274,7 +257,6 @@ async function scrapeFlipkartWithPuppeteer(url: string): Promise<ScrapedProductD
                 
                 // If we found both prices, we're done
                 if (mrp && price) {
-                  console.log('[Flipkart Puppeteer] Found prices after rating - MRP:', mrp, 'Price:', price);
                   break;
                 }
               }
@@ -285,7 +267,6 @@ async function scrapeFlipkartWithPuppeteer(url: string): Promise<ScrapedProductD
       
       // Fallback: If star rating method didn't work, try text-based search
       if (!price) {
-        console.log('[Flipkart Puppeteer] Star rating method failed, using fallback...');
         const textLines = bodyText.split('\n').map(l => l.trim()).slice(0, 100);
         
         for (let i = 0; i < textLines.length; i++) {
@@ -354,13 +335,6 @@ async function scrapeFlipkartWithPuppeteer(url: string): Promise<ScrapedProductD
       };
     }, pageTitle);
     
-    console.log('[Flipkart Puppeteer] Extracted:', {
-      name: productData.productName,
-      price: productData.price,
-      mrp: productData.mrp,
-      images: productData.images.length
-    });
-    
     await browser.close();
     
     // Validate and return
@@ -397,220 +371,292 @@ async function scrapeFlipkartWithPuppeteer(url: string): Promise<ScrapedProductD
 
 async function parseFlipkartHTML(htmlContent: string, url: string): Promise<ScrapedProductData> {
   try {
-    console.log('[Flipkart Scraper] Parsing HTML...');
-    
-    // Extract product name
+    // =============================================
+    // 1. PRODUCT NAME - Use <title> tag (most reliable, never changes)
+    // =============================================
     let productName = "";
-    const namePatterns = [
-      /<span class="VU-ZEz">(.*?)<\/span>/s,
-      /<span class="B_NuCI">(.*?)<\/span>/s,
-      /<h1[^>]*><span[^>]*class="[^"]*VU-[^"]*"[^>]*>(.*?)<\/span>/s,
-      /<h1[^>]*>(.*?)<\/h1>/s
-    ];
     
-    for (const pattern of namePatterns) {
-      const match = htmlContent.match(pattern);
-      if (match) {
-        productName = match[1].replace(/<[^>]*>/g, '').trim();
-        if (productName) break;
+    // Strategy 1: <title> tag — "Product Name | Flipkart.com" or "Buy Product Name Online..."
+    const titleMatch = htmlContent.match(/<title[^>]*>(.*?)<\/title>/si);
+    if (titleMatch) {
+      productName = titleMatch[1]
+        .replace(/<[^>]*>/g, '')
+        .replace(/\s*[\|–-]\s*Flipkart\.com.*$/i, '')
+        .replace(/\s*Online at Best Price.*$/i, '')
+        .replace(/^\s*Buy\s+/i, '')
+        .replace(/\s*at\s+Flipkart.*$/i, '')
+        .trim();
+    }
+    
+    // Strategy 2: JSON-LD structured data
+    let jsonLdData: any = null;
+    const jsonLdMatches = htmlContent.match(/<script[^>]*type\s*=\s*["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi);
+    if (jsonLdMatches) {
+      for (const block of jsonLdMatches) {
+        try {
+          const jsonText = block.replace(/<script[^>]*>|<\/script>/gi, '').trim();
+          const parsed = JSON.parse(jsonText);
+          // Look for Product type
+          if (parsed['@type'] === 'Product' || (Array.isArray(parsed['@graph']) && parsed['@graph'].find((g: any) => g['@type'] === 'Product'))) {
+            jsonLdData = parsed['@type'] === 'Product' ? parsed : parsed['@graph'].find((g: any) => g['@type'] === 'Product');
+            break;
+          }
+        } catch { /* skip invalid JSON-LD */ }
       }
     }
-    console.log('[Flipkart Scraper] Product name:', productName);
     
-    // Extract prices - Flipkart shows selling price and MRP (original price)
+    // Use JSON-LD name if title extraction gave poor result
+    if (jsonLdData?.name && (!productName || productName.length < 10)) {
+      productName = jsonLdData.name;
+    }
+    
+    // Strategy 3: og:title meta tag
+    if (!productName || productName.length < 10) {
+      const ogTitle = htmlContent.match(/<meta[^>]*property\s*=\s*["']og:title["'][^>]*content\s*=\s*["'](.*?)["']/i);
+      if (ogTitle) {
+        productName = ogTitle[1]
+          .replace(/\s*[\|–-]\s*Flipkart\.com.*$/i, '')
+          .replace(/\s*Online at Best Price.*$/i, '')
+          .trim();
+      }
+    }
+    
+    // Strategy 4: Flipkart-specific class patterns (fallback)
+    if (!productName || productName.length < 10) {
+      const namePatterns = [
+        /<span class="VU-ZEz">([\s\S]*?)<\/span>/,
+        /<span class="B_NuCI">([\s\S]*?)<\/span>/,
+        /<h1[^>]*>([\s\S]*?)<\/h1>/,
+      ];
+      for (const pattern of namePatterns) {
+        const match = htmlContent.match(pattern);
+        if (match) {
+          const name = match[1].replace(/<[^>]*>/g, '').trim();
+          if (name.length > productName.length) {
+            productName = name;
+            break;
+          }
+        }
+      }
+    }
+
+    // =============================================
+    // 2. PRICES - Multiple strategies, broadest patterns first
+    // =============================================
     let price = "";
     let compareAtPrice = "";
     
-    console.log('[Flipkart Scraper] ========================================');
-    console.log('[Flipkart Scraper] Starting price extraction...');
-    
-    // SMART STRATEGY: Find star rating first, then look for prices AFTER it
-    // This avoids capturing prices from ads that appear before the product details
-    
-    // Pattern 1: Find star rating SVG (14x14 with green star #008042)
-    // Then capture the FIRST strikethrough price and selling price AFTER the rating
-    const starRatingPattern = /<svg[^>]+width="14"[^>]+height="14"[^>]*>[\s\S]*?<path[^>]+fill[^>]*#008042[^>]*>[\s\S]*?<\/svg>/i;
-    const starMatch = htmlContent.match(starRatingPattern);
-    
-    if (starMatch) {
-      console.log('[Flipkart Scraper] ✓ Found star rating anchor');
-      
-      // Get the HTML content AFTER the star rating
-      const starIndex = htmlContent.indexOf(starMatch[0]);
-      const contentAfterRating = htmlContent.substring(starIndex);
-      
-      // Now look for the first price pattern after the rating
-      const priceAfterRatingPattern = /text-decoration-line:\s*line-through[^>]*>([0-9,]+)<\/[^>]+>[\s\S]{0,150}?₹\s*([0-9,]+)/i;
-      const priceMatch = contentAfterRating.match(priceAfterRatingPattern);
-      
-      if (priceMatch) {
-        const mrp = priceMatch[1];
-        const sellingPrice = priceMatch[2];
-        
-        console.log('[Flipkart Scraper] ✓ Found prices AFTER star rating:');
-        console.log('[Flipkart Scraper]   MRP (strikethrough):', mrp);
-        console.log('[Flipkart Scraper]   Selling price:', sellingPrice);
-        
-        price = '₹' + sellingPrice;
-        compareAtPrice = '₹' + mrp;
+    // Strategy 1: JSON-LD structured data (most reliable when available)
+    if (jsonLdData?.offers) {
+      const offers = Array.isArray(jsonLdData.offers) ? jsonLdData.offers[0] : jsonLdData.offers;
+      if (offers?.price) {
+        price = '₹' + offers.price.toString().replace(/[^\d,]/g, '');
+      }
+      if (offers?.highPrice && offers.highPrice !== offers.price) {
+        compareAtPrice = '₹' + offers.highPrice.toString().replace(/[^\d,]/g, '');
       }
     }
     
-    // Pattern 2: Fallback - Look for GREEN discount (#008042) if star rating not found
+    // Strategy 2: Find the main price section using star rating as anchor
+    // The star rating is unique to the main product (not ads)
     if (!price) {
-      console.log('[Flipkart Scraper] Star rating not found, trying green discount pattern...');
-      const greenDiscountPattern = /#008042[^>]*>[\s\S]{0,300}?(\d+)%[\s\S]{0,300}?text-decoration-line:\s*line-through[^>]*>([0-9,]+)<\/[^>]+>[\s\S]{0,150}?₹\s*([0-9,]+)/i;
-      const greenMatch = htmlContent.match(greenDiscountPattern);
-    
-      if (greenMatch) {
-        const discount = greenMatch[1];
-        const mrp = greenMatch[2];
-        const sellingPrice = greenMatch[3];
+      const starRatingPattern = /<svg[^>]+width="14"[^>]+height="14"[^>]*>[\s\S]*?<path[^>]+fill[^>]*#008042[^>]*>[\s\S]*?<\/svg>/i;
+      const starMatch = htmlContent.match(starRatingPattern);
+      
+      if (starMatch) {
+        const starIndex = htmlContent.indexOf(starMatch[0]);
+        // Search within 5000 chars after the star rating for prices
+        const contentAfterRating = htmlContent.substring(starIndex, starIndex + 5000);
         
-        console.log('[Flipkart Scraper] ✓ Found price with green discount:');
-        console.log('[Flipkart Scraper]   Discount:', discount + '%');
-        console.log('[Flipkart Scraper]   MRP (strikethrough):', mrp);
-        console.log('[Flipkart Scraper]   Selling price:', sellingPrice);
+        // Look for MRP (strikethrough) — multiple formats
+        const mrpPatterns = [
+          /text-decoration(?:-line)?:\s*line-through[^>]*>(?:₹\s*)?([\d,]+)/i,
+          /line-through[^>]*>(?:<[^>]*>)*\s*₹?\s*([\d,]+)/i,
+        ];
         
-        price = '₹' + sellingPrice;
-        compareAtPrice = '₹' + mrp;
+        let mrpValue = '';
+        for (const p of mrpPatterns) {
+          const m = contentAfterRating.match(p);
+          if (m) {
+            mrpValue = m[1].replace(/,/g, '');
+            if (parseInt(mrpValue) > 100) {
+              compareAtPrice = '₹' + m[1];
+              break;
+            }
+          }
+        }
+        
+        // Look for selling price — any ₹X,XX,XXX that is NOT the MRP
+        const priceRegex = /₹\s*([\d,]+)/g;
+        const allPrices: RegExpExecArray[] = [];
+        let priceExec: RegExpExecArray | null;
+        while ((priceExec = priceRegex.exec(contentAfterRating)) !== null) {
+          allPrices.push(priceExec);
+        }
+        for (const pm of allPrices) {
+          const val = pm[1].replace(/,/g, '');
+          const numVal = parseInt(val);
+          // Must be > 100 (avoid small numbers), and different from MRP
+          if (numVal > 100 && val !== mrpValue) {
+            // If we have MRP, selling price should be less than MRP
+            if (mrpValue && numVal < parseInt(mrpValue)) {
+              price = '₹' + pm[1];
+              break;
+            } else if (!mrpValue) {
+              price = '₹' + pm[1];
+              break;
+            }
+          }
+        }
+        
+        // If we found MRP but not selling price, the first ₹ amount may be the selling price
+        if (compareAtPrice && !price) {
+          for (const pm of allPrices) {
+            const val = pm[1].replace(/,/g, '');
+            if (parseInt(val) > 100 && val !== mrpValue) {
+              price = '₹' + pm[1];
+              break;
+            }
+          }
+        }
       }
     }
     
-    // Pattern 3: Last resort - discount percentage followed by prices (tightened range)
+    // Strategy 3: Look for price near discount percentage (e.g., "6% off")
     if (!price) {
-      console.log('[Flipkart Scraper] Trying discount pattern fallback...');
-      const discountPattern = /(\d+)%<\/[^>]+>[\s\S]{0,150}?text-decoration-line:\s*line-through[^>]*>([0-9,]+)<\/[^>]+>[\s\S]{0,80}?₹\s*([0-9,]+)/i;
-      const discountMatch = htmlContent.match(discountPattern);
-      
-      if (discountMatch) {
-        const discount = discountMatch[1];
-        const mrp = discountMatch[2];
-        const sellingPrice = discountMatch[3];
-        
-        console.log('[Flipkart Scraper] ✓ Found price group with discount pattern:');
-        console.log('[Flipkart Scraper]   Discount:', discount + '%');
-        console.log('[Flipkart Scraper]   MRP (strikethrough):', mrp);
-        console.log('[Flipkart Scraper]   Selling price:', sellingPrice);
-        
-        price = '₹' + sellingPrice;
-        compareAtPrice = '₹' + mrp;
+      const discountSection = htmlContent.match(/(\d{1,2})%\s*off[\s\S]{0,500}/i);
+      if (discountSection) {
+        const section = discountSection[0];
+        const discPriceRegex = /₹\s*([\d,]+)/g;
+        const prices: RegExpExecArray[] = [];
+        let discExec: RegExpExecArray | null;
+        while ((discExec = discPriceRegex.exec(section)) !== null) {
+          prices.push(discExec);
+        }
+        if (prices.length >= 1) {
+          // First price is usually the selling price
+          price = '₹' + prices[0][1];
+        }
+        // Look for MRP in strikethrough near discount
+        const mrpMatch = section.match(/text-decoration(?:-line)?:\s*line-through[^>]*>(?:₹\s*)?([\d,]+)/i);
+        if (mrpMatch) {
+          compareAtPrice = '₹' + mrpMatch[1];
+        }
       }
     }
     
-    // Pattern 3: Strikethrough followed by price (last resort fallback)
+    // Strategy 4: Broad price sweep — find ₹ amounts near strikethrough
     if (!price) {
-      console.log('[Flipkart Scraper] Trying strikethrough + price pattern...');
-      const strikeAndPricePattern = /text-decoration-line:\s*line-through[^>]*>([0-9,]+)<\/[^>]+>[\s\S]{0,80}?₹\s*([0-9,]+)/i;
-      const strikeMatch = htmlContent.match(strikeAndPricePattern);
-      
+      const strikePattern = /text-decoration(?:-line)?:\s*line-through[^>]*>(?:<[^>]*>)*\s*₹?\s*([\d,]+)[\s\S]{0,200}?₹\s*([\d,]+)/i;
+      const strikeMatch = htmlContent.match(strikePattern);
       if (strikeMatch) {
-        const mrp = strikeMatch[1];
-        const sellingPrice = strikeMatch[2];
-        
-        console.log('[Flipkart Scraper] ✓ Found strikethrough + price:');
-        console.log('[Flipkart Scraper]   MRP (strikethrough):', mrp);
-        console.log('[Flipkart Scraper]   Selling price:', sellingPrice);
-        
-        price = '₹' + sellingPrice;
-        compareAtPrice = '₹' + mrp;
+        const mrp = parseInt(strikeMatch[1].replace(/,/g, ''));
+        const sell = parseInt(strikeMatch[2].replace(/,/g, ''));
+        if (mrp > 100 && sell > 100) {
+          if (sell < mrp) {
+            price = '₹' + strikeMatch[2];
+            compareAtPrice = '₹' + strikeMatch[1];
+          } else {
+            price = '₹' + strikeMatch[1];
+          }
+        }
       }
     }
     
-    // Pattern 4: Class-based extraction (final fallback)
+    // Strategy 5: Class-based extraction (Flipkart-specific, may break)
     if (!price) {
-      console.log('[Flipkart Scraper] Trying class-based extraction...');
-      
       const pricePatterns = [
-        /<div class="Nx9bqj CxhGGd"[^>]*>(.*?)<\/div>/s,
-        /<div class="_30jeq3 _16Jk6d"[^>]*>(.*?)<\/div>/s,
-        /<div class="_30jeq3"[^>]*>(.*?)<\/div>/s,
+        /<div class="Nx9bqj[^"]*"[^>]*>(.*?)<\/div>/s,
+        /<div class="[^"]*CxhGGd[^"]*"[^>]*>(.*?)<\/div>/s,
+        /<div class="_30jeq3[^"]*"[^>]*>(.*?)<\/div>/s,
       ];
       
       for (const pattern of pricePatterns) {
         const patternMatch = htmlContent.match(pattern);
         if (patternMatch) {
-          const priceNum = patternMatch[1].match(/₹?([\d,]+)/);
-          if (priceNum) {
+          const priceNum = patternMatch[1].match(/₹?\s*([\d,]+)/);
+          if (priceNum && parseInt(priceNum[1].replace(/,/g, '')) > 100) {
             price = '₹' + priceNum[1];
-            console.log('[Flipkart Scraper] ✓ Price from class pattern:', price);
-            break;
-          }
-        }
-      }
-      
-      // Try to find compare at price separately
-      const comparePatterns = [
-        /<div class="yRaY8j ZYYwLA"[^>]*>(.*?)<\/div>/s,
-        /<div class="yRaY8j"[^>]*>(.*?)<\/div>/s,
-        /<div class="_3I9_wc _2p6lqe"[^>]*>(.*?)<\/div>/s,
-      ];
-      
-      for (const pattern of comparePatterns) {
-        const patternMatch = htmlContent.match(pattern);
-        if (patternMatch) {
-          const compareNum = patternMatch[1].match(/₹?([\d,]+)/);
-          if (compareNum) {
-            compareAtPrice = '₹' + compareNum[1];
-            console.log('[Flipkart Scraper] ✓ Compare price from class pattern:', compareAtPrice);
             break;
           }
         }
       }
     }
     
-    console.log('[Flipkart Scraper] Final prices - Selling:', price, 'MRP:', compareAtPrice);
-    console.log('[Flipkart Scraper] ========================================');
-    
-    // Extract description
+    // Strategy 6: og:price meta tags
+    if (!price) {
+      const ogPrice = htmlContent.match(/<meta[^>]*property\s*=\s*["'](?:og:price:amount|product:price:amount)["'][^>]*content\s*=\s*["']([\d,.]+)["']/i);
+      if (ogPrice) {
+        price = '₹' + ogPrice[1];
+      }
+    }
+
+    // =============================================
+    // 3. DESCRIPTION - Multiple strategies
+    // =============================================
     let description = "";
-    const descPatterns = [
-      /<div class="_6VBbE3"[^>]*>(.*?)<\/div>/s,
-      /<div class="_1mXcCf"[^>]*>(.*?)<\/div>/s,
-      /<div class="_3WHvuP"[^>]*>(.*?)<\/div>/s
-    ];
     
-    for (const pattern of descPatterns) {
-      const match = htmlContent.match(pattern);
-      if (match) {
-        description = match[1].trim();
-        if (description.length > 50) break;
+    // Strategy 1: JSON-LD description
+    if (jsonLdData?.description) {
+      description = jsonLdData.description;
+    }
+    
+    // Strategy 2: og:description meta tag
+    if (!description) {
+      const ogDesc = htmlContent.match(/<meta[^>]*(?:property\s*=\s*["']og:description["']|name\s*=\s*["']description["'])[^>]*content\s*=\s*["']([\s\S]*?)["']/i);
+      if (ogDesc) {
+        description = ogDesc[1].trim();
       }
     }
     
-    // Extract images from rukminim CDN
+    // Strategy 3: Flipkart-specific class patterns
+    if (!description || description.length < 50) {
+      const descPatterns = [
+        /<div class="_6VBbE3"[^>]*>([\s\S]*?)<\/div>/,
+        /<div class="_1mXcCf"[^>]*>([\s\S]*?)<\/div>/,
+        /<div class="_3WHvuP"[^>]*>([\s\S]*?)<\/div>/,
+      ];
+      for (const pattern of descPatterns) {
+        const match = htmlContent.match(pattern);
+        if (match && match[1].trim().length > description.length) {
+          description = match[1].trim();
+        }
+      }
+    }
+    
+    // =============================================
+    // 4. IMAGES - Extract from rukminim CDN
+    // =============================================
     const images: string[] = [];
     const imagePattern = /https:\/\/rukminim[12]\.flixcart\.com\/image\/[^"'\s<>]+\.(jpg|jpeg|png|webp)/gi;
     const imageMatches = htmlContent.match(imagePattern);
     
     if (imageMatches) {
       imageMatches.forEach(imgUrl => {
-        // Clean URL - remove any HTML fragments
         const cleanUrl = imgUrl.split('>')[0].split('<')[0].split('"')[0].split("'")[0];
         
-        // Convert to high-res by changing dimensions
-        let highResUrl = cleanUrl;
-        // Replace small dimensions with large ones
-        highResUrl = highResUrl.replace(/\/128\/128\//, '/832/832/');
-        highResUrl = highResUrl.replace(/\/416\/416\//, '/832/832/');
-        highResUrl = highResUrl.replace(/\/200\/200\//, '/832/832/');
-        highResUrl = highResUrl.replace(/\/312\/312\//, '/832/832/');
+        // Convert to high-res
+        let highResUrl = cleanUrl
+          .replace(/\/\d+\/\d+\//, '/832/832/');
         
-        if (!images.includes(highResUrl) && !highResUrl.includes('/128/') && !highResUrl.includes('/64/')) {
+        if (!images.includes(highResUrl) && !highResUrl.includes('/30/30/') && !highResUrl.includes('/24/24/')) {
           images.push(highResUrl);
         }
       });
     }
     
     const uniqueImages = Array.from(new Set(images)).slice(0, 10);
-    console.log('[Flipkart Scraper] Images extracted:', uniqueImages.length);
     
-    // Extract weight
+    // =============================================
+    // 5. WEIGHT
+    // =============================================
     let weight = "";
     let weightUnit = "kg";
     const weightPatterns = [
-      /(?:Item Weight|Product Weight|Weight)[:\s]*<\/td>\s*<td[^>]*>(.*?)<\/td>/si,
-      /(?:weight|Weight)[:\s]*([\d.]+)\s*(kg|g|grams?|kilograms?|lbs?|pounds?)/i
+      /(?:Item Weight|Product Weight|Weight|Net Quantity)[:\s]*<\/td>\s*<td[^>]*>(.*?)<\/td>/si,
+      /(?:weight|Weight)[:\s]*([\d.]+)\s*(kg|g|grams?|kilograms?|lbs?|pounds?)/i,
+      // Flipkart specs: look for weight in specification tables
+      />([\d.]+)\s*(kg|g)\s*<\/(?:td|li|div|span)/i,
     ];
     
     for (const pattern of weightPatterns) {
@@ -628,18 +674,15 @@ async function parseFlipkartHTML(htmlContent: string, url: string): Promise<Scra
             else if (unit === 'g' || unit.includes('gram')) weightUnit = "g";
             else if (unit.includes('lb') || unit.includes('pound')) weightUnit = "lb";
           }
-          console.log('[Flipkart Scraper] Weight found:', weight, weightUnit);
           break;
         }
       }
     }
     
-    // Parse weight or estimate
+    // Estimate weight if not found
     let finalWeight = weight;
     let finalWeightUnit = weightUnit;
-    
     if (!weight) {
-      console.log('[Flipkart Scraper] No weight found, estimating');
       const estimated = estimateWeight(productName);
       finalWeight = estimated.value;
       finalWeightUnit = estimated.unit;

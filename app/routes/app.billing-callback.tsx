@@ -18,9 +18,6 @@ export const loader: LoaderFunction = async ({ request }) => {
   // ✅ Use authenticate.admin - we're in the iframe so session cookies work
   const { session, admin } = await authenticate.admin(request);
   const shop = session.shop;
-
-  console.log(`[Billing Callback] Received callback - Shop: ${shop}, Plan: ${planId}, Charge: ${chargeId}`);
-
   if (!planId || !chargeId) {
     console.error("[Billing Callback] Missing required parameters");
     return json({ 
@@ -43,8 +40,6 @@ export const loader: LoaderFunction = async ({ request }) => {
     }
 
     // Verify the charge is active using GraphQL
-    console.log("[Billing Callback] Verifying charge status with Shopify GraphQL...");
-    
     const response = await admin.graphql(`
       query {
         currentAppInstallation {
@@ -70,11 +65,7 @@ export const loader: LoaderFunction = async ({ request }) => {
     `);
 
     const data = await response.json();
-    const activeSubscriptions = data.data?.currentAppInstallation?.activeSubscriptions || [];
-    
-    console.log(`[Billing Callback] Found ${activeSubscriptions.length} active subscriptions`);
-    
-    // Find the subscription matching our plan
+    const activeSubscriptions = data.data?.currentAppInstallation?.activeSubscriptions || [];// Find the subscription matching our plan
     const activeSubscription = activeSubscriptions.find(
       (sub: any) => sub.name === plan.name && sub.status === "ACTIVE"
     );
@@ -82,28 +73,19 @@ export const loader: LoaderFunction = async ({ request }) => {
     if (!activeSubscription) {
       console.error("[Billing Callback] No active subscription found for plan:", plan.name);
       return redirect("/app/choose-subscription?error=billing_not_active");
-    }
-
-    console.log("[Billing Callback] Subscription verified as ACTIVE");
-    console.log(`[Billing Callback] Subscription ID: ${activeSubscription.id}`);
-
-    // Extract Shopify charge ID from the subscription ID
+    }// Extract Shopify charge ID from the subscription ID
     const shopifyChargeId = activeSubscription.id.split("/").pop();
 
     // Handle different action types
     if (actionType === "change" || actionType === "upgrade") {
       // Update existing subscription to new plan
-      console.log(`[Billing Callback] Updating subscription to new plan: ${plan.name}`);
       await changePlan(shop, planId);
       
       // Store the Shopify charge ID
       await prisma.shopSubscription.update({
         where: { shop: shop },
         data: { chargeId: shopifyChargeId },
-      });
-      
-      console.log("✅ [Billing Callback] Plan updated successfully");
-      // ✅ Return JSON - client will handle navigation
+      });// ✅ Return JSON - client will handle navigation
       return json({ 
         success: true, 
         shop,
@@ -114,11 +96,7 @@ export const loader: LoaderFunction = async ({ request }) => {
     }
 
     // Create new subscription
-    console.log(`[Billing Callback] Creating new subscription for plan: ${plan.name}`);
-    await createSubscription(shop, planId, shopifyChargeId);
-    
-    console.log("✅ [Billing Callback] Subscription created successfully");
-    // ✅ Return JSON - client will handle navigation
+    await createSubscription(shop, planId, shopifyChargeId);// ✅ Return JSON - client will handle navigation
     return json({ 
       success: true, 
       shop,

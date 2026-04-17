@@ -19,7 +19,6 @@ export function StoreIssuesSection() {
   const [isStoreCheckLoading, setIsStoreCheckLoading] = useState(false);
 
   useEffect(() => {
-    console.log("StoreIssuesSection: fetchHtmlFetcher.data changed. State:", fetchHtmlFetcher.state, "Data:", fetchHtmlFetcher.data);
     if (fetchHtmlFetcher.data && (fetchHtmlFetcher.data as any).rawHtmlContent) {
       setRawHtmlContent((fetchHtmlFetcher.data as any).rawHtmlContent);
     } else if (fetchHtmlFetcher.data && (fetchHtmlFetcher.data as any).error) {
@@ -29,9 +28,7 @@ export function StoreIssuesSection() {
   }, [fetchHtmlFetcher.data, fetchHtmlFetcher.state]); // Added fetchHtmlFetcher.state to dependencies
 
   useEffect(() => {
-    console.log("StoreIssuesSection: rawHtmlContent or fetchHtmlFetcher.state changed. rawHtmlContent present:", !!rawHtmlContent, "fetchHtmlFetcher.state:", fetchHtmlFetcher.state);
     if (rawHtmlContent && fetchHtmlFetcher.state === "idle") {
-      console.log("StoreIssuesSection: Submitting to AI store check.");
       const storeUrl = "https://mobilecasez.com";
       storeCheckFetcher.submit(
         { store_url: storeUrl, raw_html_content: rawHtmlContent },
@@ -42,19 +39,12 @@ export function StoreIssuesSection() {
   }, [rawHtmlContent, fetchHtmlFetcher.state]);
 
   useEffect(() => {
-    console.log("StoreIssuesSection: storeCheckFetcher.data changed. State:", storeCheckFetcher.state, "Data:", storeCheckFetcher.data);
     if (storeCheckFetcher.data && (storeCheckFetcher.data as any).pointers) {
       setStoreIssues((storeCheckFetcher.data as any).pointers);
       setIsStoreCheckLoading(false);
-      if ((storeCheckFetcher.data as any).debugPrompt) {
-        console.log("AI Store Check Prompt (from response):", (storeCheckFetcher.data as any).debugPrompt);
-      }
     } else if (storeCheckFetcher.data && (storeCheckFetcher.data as any).error) {
       console.error("StoreIssuesSection: Error from AI store check:", (storeCheckFetcher.data as any).error);
       setIsStoreCheckLoading(false);
-      if ((storeCheckFetcher.data as any).debugPrompt) {
-        console.log("AI Store Check Prompt (from error response):", (storeCheckFetcher.data as any).debugPrompt);
-      }
     }
   }, [storeCheckFetcher.data, storeCheckFetcher.state]); // Added storeCheckFetcher.state to dependencies
 
