@@ -273,22 +273,19 @@ export async function changePlan(shop: string, newPlanId: string) {
     throw new Error("Invalid plan");
   }
 
-  const updates: any = {
-    planId: newPlanId,
-    status: "active",
-  };
-
-  // Reset product counter only if moving to a higher limit plan, or if upgrading from Free Plan
-  if (newPlan.productLimit > subscription.plan.productLimit || subscription.plan.name === "Free Plan") {
-    updates.productsUsed = 0;
-    const now = new Date();
-    updates.billingCycleStart = now;
-    updates.billingCycleEnd = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
-  }
+  const now = new Date();
 
   return await prisma.shopSubscription.update({
     where: { shop },
-    data: updates,
+    data: {
+      planId: newPlanId,
+      status: "active",
+      productsUsed: 0,
+      billingCycleStart: now,
+      billingCycleEnd: new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000),
+      // Clear the Shopify charge ID when moving to the free plan
+      ...(newPlan.price === 0 ? { chargeId: null } : {}),
+    },
   });
 }
 

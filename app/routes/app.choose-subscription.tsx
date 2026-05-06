@@ -65,9 +65,29 @@ const formData = await request.formData();
     // For PAID plans (except Free Plan), create Shopify recurring charge via GraphQL
     // Free Plan users are automatically on active status, no charge needed
     if (plan.price === 0) {
-      // Free plan - just assign it
+      // Free plan downgrade: cancel any existing Shopify paid subscription first
+      if (currentSubscription?.chargeId) {
+        try {
+          await admin.graphql(
+            `#graphql
+            mutation AppSubscriptionCancel($id: ID!) {
+              appSubscriptionCancel(id: $id) {
+                appSubscription { id status }
+                userErrors { field message }
+              }
+            }`,
+            {
+              variables: {
+                id: `gid://shopify/AppSubscription/${currentSubscription.chargeId}`,
+              }
+            }
+          );
+        } catch (_) {
+          // Ignore cancellation errors — subscription may already be cancelled
+        }
+      }
       await changePlan(session.shop, planId);
-      return redirect("/app/subscription-success?planId=" + planId);
+      return redirect(`/app?success=true&changed=true&planId=${planId}`);
     }
 
     // For PAID plans, create Shopify recurring charge via GraphQL// Get API key for deep link
