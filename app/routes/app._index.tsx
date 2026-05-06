@@ -23,7 +23,7 @@ import {
 import { TitleBar } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
-import { getOrCreateSubscription, getProductsUsed } from "../utils/billing.server";
+import { getOrCreateSubscription, getProductsUsed, getEffectiveProductLimit } from "../utils/billing.server";
 import RichTextEditor from "../components/RichTextEditor";
 import "../styles/modal-overrides.css";
 import "../styles/dashboard.css";
@@ -36,13 +36,14 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   
   // Calculate products used on server side
   const productsUsed = getProductsUsed(subscription);
+  const effectiveProductLimit = getEffectiveProductLimit(subscription);
   
   // Get review status
   const review = await prisma.shopReview.findUnique({
     where: { shop: session.shop },
   });
   
-  return json({ subscription, review, productsUsed });
+  return json({ subscription, review, productsUsed, effectiveProductLimit });
 };
 
 // Action to handle updating a product
@@ -192,6 +193,7 @@ export default function Index() {
   const subscription = loaderData?.subscription;
   const initialReview = loaderData?.review;
   const productsUsed = loaderData?.productsUsed ?? 0;
+  const effectiveProductLimit = loaderData?.effectiveProductLimit ?? (subscription?.plan?.productLimit ?? 2);
   
   // Get success parameter from URL (set by billing callback)
   const [searchParams, setSearchParams] = useSearchParams();
@@ -599,7 +601,7 @@ export default function Index() {
                       className="progress-bar-fill" 
                       style={{ 
                         width: subscription ? 
-                          `${(productsUsed / subscription.plan.productLimit) * 100}%` : 
+                          `${Math.min(100, (productsUsed / effectiveProductLimit) * 100)}%` : 
                           '0%' 
                       }}
                     ></div>
@@ -607,7 +609,7 @@ export default function Index() {
                 </div>
                 <div className="usage-label-bottom">
                   {subscription ? 
-                    `${productsUsed} / ${subscription.plan.productLimit} Used` : 
+                    `${productsUsed} / ${effectiveProductLimit} Used` : 
                     '0 / 2 Used'
                   }
                 </div>

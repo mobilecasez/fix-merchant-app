@@ -4,7 +4,7 @@ import { json, LoaderFunction } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { getProductCategories } from "../utils/categories.server";
-import { getOrCreateSubscription, incrementProductUsage, getProductsUsed } from "../utils/billing.server";
+import { getOrCreateSubscription, incrementProductUsage, getProductsUsed, getEffectiveProductLimit } from "../utils/billing.server";
 import {
   Page,
   Layout,
@@ -45,7 +45,7 @@ export const loader: LoaderFunction = async ({ request }) => {
   
   // Calculate products used on server side
   const productsUsed = getProductsUsed(subscription);
-  const productLimit = subscription.plan.productLimit;
+  const productLimit = getEffectiveProductLimit(subscription);
   return json({ categories, productsUsed, productLimit, subscription });
 };
 

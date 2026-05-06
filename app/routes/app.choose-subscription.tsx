@@ -20,7 +20,8 @@ import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { 
   createSubscription, 
-  changePlan
+  changePlan,
+  getEffectiveProductLimit
 } from "../utils/billing.server";
 
 export const loader: LoaderFunction = async ({ request }) => {
@@ -38,7 +39,8 @@ export const loader: LoaderFunction = async ({ request }) => {
   return json({ 
     plans, 
     currentSubscription, 
-    shop: session.shop
+    shop: session.shop,
+    currentEffectiveLimit: currentSubscription ? getEffectiveProductLimit(currentSubscription) : null,
   });
 };
 
@@ -177,15 +179,16 @@ const formData = await request.formData();
 
 export default function ChooseSubscription() {
   // ALL HOOKS AT THE TOP - NEVER CONDITIONALLY CALLED
-  const { plans, currentSubscription, shop } = useLoaderData<typeof loader>();
+  const { plans, currentSubscription, shop, currentEffectiveLimit } = useLoaderData<typeof loader>();
   const fetcher = useFetcher<typeof action>();
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
   const [selectedAction, setSelectedAction] = useState<'trial' | 'purchase' | 'change' | null>(null);
+  const [pendingDowngrade, setPendingDowngrade] = useState<{ plan: any } | null>(null);
 
   // useFetcher manages its own loading state
   const isLoading = fetcher.state !== "idle";
 
-  // DEBUG: Log what we receive from the fetcher// THE CLEAN BREAK - Watch for the billing URL and redirect
+  // THE CLEAN BREAK - Watch for the billing URL and redirect
   useEffect(() => {
     // Only process when fetcher is idle (request complete) and has data
     if (fetcher.state === "idle" && fetcher.data) {
@@ -221,10 +224,10 @@ export default function ChooseSubscription() {
     }
   }, [fetcher.state, fetcher.data]);
 
-  // SUBMIT HANDLER - Uses fetcher.submit for non-navigational request
-  const handleSelectPlan = useCallback((planId: string, actionType: 'trial' | 'purchase' | 'change') => {setSelectedPlanId(planId);
+  // Submit the plan change (called directly or after downgrade confirmation)
+  const submitPlan = useCallback((planId: string, actionType: 'trial' | 'purchase' | 'change') => {
+    setSelectedPlanId(planId);
     setSelectedAction(actionType);
-    
     const formData = new FormData();
     formData.append("planId", planId);
     formData.append("isTrial", actionType === 'trial' ? "true" : "false");
@@ -232,9 +235,25 @@ export default function ChooseSubscription() {
       formData.append("action", "change");
     } else if (currentSubscription?.status === "trial" && actionType === 'purchase') {
       formData.append("action", "upgrade");
-    }// useFetcher.submit automatically includes auth headers and doesn't trigger navigation
+    }
     fetcher.submit(formData, { method: "post" });
   }, [fetcher, currentSubscription]);
+
+  // SUBMIT HANDLER - intercepts downgrades to show confirmation first
+  const handleSelectPlan = useCallback((planId: string, actionType: 'trial' | 'purchase' | 'change') => {
+    if (!currentSubscription) {
+      submitPlan(planId, actionType);
+      return;
+    }
+    const plan = plans.find((p: any) => p.id === planId);
+    const isDowngrade = plan && plan.productLimit < currentSubscription.plan.productLimit;
+    if (isDowngrade && actionType === 'change') {
+      // Show confirmation banner instead of immediately submitting
+      setPendingDowngrade({ plan });
+      return;
+    }
+    submitPlan(planId, actionType);
+  }, [submitPlan, currentSubscription, plans]);
 
   // Early return for redirect - AFTER all hooks to maintain consistent hook order
   if (fetcher.data && 'redirectUrl' in fetcher.data && fetcher.data.redirectUrl) {
@@ -281,6 +300,52 @@ export default function ChooseSubscription() {
               </Banner>
             </Layout.Section>
           )}
+
+          {pendingDowngrade && currentSubscription && (() => {
+            const effectiveLimit = currentEffectiveLimit ?? currentSubscription.plan.productLimit;
+            const remaining = effectiveLimit - currentSubscription.productsUsed;
+            const pluralImports = (n: number) => n === 1 ? "import" : "imports";
+            return (
+              <Layout.Section>
+                <Banner
+                  title={`Downgrade to ${pendingDowngrade.plan.name}?`}
+                  tone="warning"
+                  onDismiss={() => setPendingDowngrade(null)}
+                >
+                  <BlockStack gap="300">
+                    <Text as="p">
+                      You have <strong>{remaining}</strong> unused{" "}
+                      {pluralImports(remaining)} remaining in your current billing period.
+                      These credits will <strong>carry over</strong> to your new plan — you won't lose them.
+                    </Text>
+                    <Text as="p">
+                      Starting from your <strong>next billing cycle</strong>, you'll be on the{" "}
+                      <strong>{pendingDowngrade.plan.name}</strong> with{" "}
+                      <strong>{pendingDowngrade.plan.productLimit} {pluralImports(pendingDowngrade.plan.productLimit)}</strong>{" "}
+                      per month.
+                    </Text>
+                    <InlineStack gap="200">
+                      <Button
+                        variant="primary"
+                        tone="critical"
+                        loading={isLoading}
+                        onClick={() => {
+                          const plan = pendingDowngrade.plan;
+                          setPendingDowngrade(null);
+                          submitPlan(plan.id, 'change');
+                        }}
+                      >
+                        Confirm Downgrade
+                      </Button>
+                      <Button onClick={() => setPendingDowngrade(null)} disabled={isLoading}>
+                        Cancel
+                      </Button>
+                    </InlineStack>
+                  </BlockStack>
+                </Banner>
+              </Layout.Section>
+            );
+          })()}
 
 
 

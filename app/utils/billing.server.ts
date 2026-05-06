@@ -8,9 +8,17 @@ import type { ShopSubscription, SubscriptionPlan } from "@prisma/client";
  */
 export function getProductsUsed(subscription: any): number {
   if (!subscription) return 0;
-  
-  
   return subscription.productsUsed;
+}
+
+/**
+ * Get the effective product limit for the current billing period.
+ * After a downgrade, periodProductLimit stores the old plan's limit so
+ * remaining credits carry over until the next billing cycle reset.
+ */
+export function getEffectiveProductLimit(subscription: any): number {
+  if (!subscription) return 0;
+  return subscription.periodProductLimit ?? subscription.plan.productLimit;
 }
 
 /**
@@ -64,7 +72,7 @@ export async function getOrCreateSubscription(shop: string) {
     subscription = await prisma.shopSubscription.create({
       data: {
         shop,
-        planId: freePlan.id,
+        plan: { connect: { id: freePlan.id } },
         status: "active",
         productsUsed: 0,
         trialProductsUsed: 0,
@@ -118,8 +126,9 @@ export async function canCreateProduct(shop: string): Promise<boolean> {
     return false;
   }
 
-  // Check plan limit
-  const canCreate = subscription.productsUsed < subscription.plan.productLimit;
+  // Check effective limit (may differ from plan.productLimit after a downgrade)
+  const effectiveLimit = getEffectiveProductLimit(subscription);
+  const canCreate = subscription.productsUsed < effectiveLimit;
   return canCreate;
 }
 
@@ -191,6 +200,7 @@ export async function resetMonthlyUsage(shop: string) {
     where: { shop },
     data: {
       productsUsed: 0,
+      periodProductLimit: null, // Clear carry-over limit; new plan's limit now applies
       billingCycleStart: now,
       billingCycleEnd: new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000), // 30 days from now
     },
@@ -216,10 +226,11 @@ export async function createSubscription(
     return await prisma.shopSubscription.update({
       where: { shop },
       data: {
-        planId,
+        plan: { connect: { id: planId } },
         chargeId,
         status: "active",
         productsUsed: 0,
+        periodProductLimit: null,
         billingCycleStart: now,
         billingCycleEnd: endDate,
       },
@@ -229,10 +240,11 @@ export async function createSubscription(
   return await prisma.shopSubscription.create({
     data: {
       shop,
-      planId,
+      plan: { connect: { id: planId } },
       chargeId,
       status: "active",
       productsUsed: 0,
+      periodProductLimit: null,
       billingCycleStart: now,
       billingCycleEnd: endDate,
     },
@@ -273,19 +285,35 @@ export async function changePlan(shop: string, newPlanId: string) {
     throw new Error("Invalid plan");
   }
 
-  const now = new Date();
+  const isUpgrade = newPlan.productLimit > subscription.plan.productLimit;
+
+  const updates: any = {
+    plan: { connect: { id: newPlanId } },
+    status: "active",
+    // Clear the Shopify charge ID when moving to the free plan
+    ...(newPlan.price === 0 ? { chargeId: null } : {}),
+  };
+
+  if (isUpgrade) {
+    // Upgrade: start a fresh billing cycle with zero usage and clear any
+    // carry-over limit from a previous downgrade.
+    const now = new Date();
+    updates.productsUsed = 0;
+    updates.periodProductLimit = null;
+    updates.billingCycleStart = now;
+    updates.billingCycleEnd = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+  } else {
+    // Downgrade: keep productsUsed and billingCycleEnd as-is so the merchant
+    // retains their remaining credits for the current period.
+    // Preserve the highest periodProductLimit seen (handles multiple downgrades
+    // in the same period — always keep the best carry-over limit).
+    const currentEffectiveLimit = subscription.periodProductLimit ?? subscription.plan.productLimit;
+    updates.periodProductLimit = currentEffectiveLimit;
+  }
 
   return await prisma.shopSubscription.update({
     where: { shop },
-    data: {
-      planId: newPlanId,
-      status: "active",
-      productsUsed: 0,
-      billingCycleStart: now,
-      billingCycleEnd: new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000),
-      // Clear the Shopify charge ID when moving to the free plan
-      ...(newPlan.price === 0 ? { chargeId: null } : {}),
-    },
+    data: updates,
   });
 }
 
@@ -337,19 +365,20 @@ export async function getUsageWarning(shop: string): Promise<{
     return { percentage: 0, level: 'none', message: '' };
   }
 
-  const percentage = (subscription.productsUsed / subscription.plan.productLimit) * 100;
+  const effectiveLimit = getEffectiveProductLimit(subscription);
+  const percentage = (subscription.productsUsed / effectiveLimit) * 100;
 
   if (percentage >= 100) {
     return {
       percentage,
       level: 'critical',
-      message: `You've reached your limit of ${subscription.plan.productLimit} products. Upgrade your plan to continue.`,
+      message: `You've reached your limit of ${effectiveLimit} products. Upgrade your plan to continue.`,
     };
   } else if (percentage >= 80) {
     return {
       percentage,
       level: 'warning',
-      message: `You've used ${subscription.productsUsed} of ${subscription.plan.productLimit} products (${Math.round(percentage)}%). Consider upgrading soon.`,
+      message: `You've used ${subscription.productsUsed} of ${effectiveLimit} products (${Math.round(percentage)}%). Consider upgrading soon.`,
     };
   }
 

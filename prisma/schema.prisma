@@ -55,9 +55,10 @@ model ShopSubscription {
   planId            String
   status            String           @default("active")
   chargeId          String?          @unique
-  productsUsed      Int              @default(0)
-  billingCycleStart DateTime         @default(now())
-  billingCycleEnd   DateTime?
+  productsUsed          Int              @default(0)
+  periodProductLimit    Int?
+  billingCycleStart     DateTime         @default(now())
+  billingCycleEnd       DateTime?
   trialProductsUsed Int              @default(0)
   triedPlanIds      String           @default("")
   cancelledAt       DateTime?
