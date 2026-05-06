@@ -13,6 +13,7 @@ export async function scrapeAmazon(html: string, url: string): Promise<ScrapedPr
     let htmlContent = "";
     let originalHTTPContent = ""; // Backup of original HTTP response
     let fetchSuccessful = false;
+    let usedProxyFallback = false;
     
     // STEP 1: Try fast HTTP request first (works ~30% of the time)
     try {
@@ -84,6 +85,22 @@ export async function scrapeAmazon(html: string, url: string): Promise<ScrapedPr
       } else {
       }
     }
+
+    // STEP 2.5: Production-safe fallback via Jina proxy.
+    // Railway/datacenter IPs are frequently blocked by Amazon; this path helps
+    // recover product data without requiring manual HTML paste.
+    if (!fetchSuccessful) {
+      try {
+        const proxyContent = await fetchAmazonViaJinaProxy(url);
+        if (proxyContent && proxyContent.length > 1000) {
+          htmlContent = proxyContent;
+          fetchSuccessful = true;
+          usedProxyFallback = true;
+        }
+      } catch (proxyError) {
+        console.error('[Amazon Scraper] Proxy fallback failed:', proxyError);
+      }
+    }
     
     // STEP 3: If still no valid HTML, use enhanced Puppeteer stealth mode with retries
     if (!fetchSuccessful) {
@@ -150,6 +167,9 @@ export async function scrapeAmazon(html: string, url: string): Promise<ScrapedPr
       }
     }
     
+    if (usedProxyFallback) {
+      return parseAmazonProxyContent(htmlContent, url, domain);
+    }
 
     return await parseAmazonHTML(htmlContent, url, domain);
   } catch (error) {
@@ -176,6 +196,110 @@ export async function scrapeAmazon(html: string, url: string): Promise<ScrapedPr
       variants: [],
     };
   }
+}
+
+async function fetchAmazonViaJinaProxy(url: string): Promise<string> {
+  // r.jina.ai fetches and normalizes pages server-side and is far less likely
+  // to be blocked than direct datacenter-origin requests.
+  const proxyUrl = `https://r.jina.ai/http://${url}`;
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 20000);
+
+  try {
+    const response = await fetch(proxyUrl, {
+      method: 'GET',
+      signal: controller.signal,
+      headers: {
+        'accept': 'text/plain,text/markdown,text/html;q=0.9,*/*;q=0.8',
+        'user-agent': 'Mozilla/5.0 (compatible; ShopFlixAI/1.0)',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Jina proxy HTTP ${response.status}`);
+    }
+
+    return await response.text();
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+function parseAmazonProxyContent(content: string, url: string, domain: string): ScrapedProductData {
+  // Product name: prefer explicit Title line, fallback to markdown H1.
+  const titleMatch = content.match(/^Title:\s*(.+)$/m) || content.match(/^#\s+(.+)$/m);
+  let productName = titleMatch ? titleMatch[1].trim() : '';
+  productName = productName
+    .replace(/\s+:\s+Amazon\.[^:]+:\s+.*$/i, '')
+    .replace(/\s+-\s+Amazon\.[^\s]+.*$/i, '')
+    .trim();
+
+  // Price: prefer canonical JSON price from proxy output.
+  let price = '';
+  const jsonPriceMatch = content.match(/"displayPrice"\s*:\s*"([^\"]+)"/i);
+  if (jsonPriceMatch) {
+    price = jsonPriceMatch[1].trim();
+  }
+  if (!price) {
+    const rupeePriceMatch = content.match(/₹\s?[\d,]+(?:\.\d{2})?/);
+    if (rupeePriceMatch) {
+      price = rupeePriceMatch[0].replace(/\s+/g, '');
+    }
+  }
+
+  let compareAtPrice = '';
+  const compareMatch = content.match(/M\.R\.P\.:?\s*(₹\s?[\d,]+(?:\.\d{2})?)/i);
+  if (compareMatch) {
+    compareAtPrice = compareMatch[1].replace(/\s+/g, '');
+  }
+
+  // Extract image URLs from markdown image links.
+  const imageRegex = /!\[[^\]]*\]\((https?:\/\/[^)\s]+)\)/g;
+  const imageCandidates: string[] = [];
+  let imageMatch;
+  while ((imageMatch = imageRegex.exec(content)) !== null) {
+    const img = imageMatch[1];
+    if (
+      img.includes('m.media-amazon.com') ||
+      img.includes('images-eu.ssl-images-amazon.com')
+    ) {
+      imageCandidates.push(img);
+    }
+  }
+
+  // Build a short HTML description from markdown bullets when available.
+  const lines = content.split('\n');
+  const bulletLines = lines
+    .filter((line) => /^\s*[-*]\s+/.test(line))
+    .map((line) => line.replace(/^\s*[-*]\s+/, '').trim())
+    .filter((line) => line.length > 0)
+    .slice(0, 8);
+
+  const description = bulletLines.length
+    ? `<ul>${bulletLines.map((b) => `<li>${b}</li>`).join('')}</ul>`
+    : '<p>Imported from Amazon product page.</p>';
+
+  const finalCompareAtPrice = ensureCompareAtPrice(price, compareAtPrice);
+  const estimated = estimateWeight(cleanProductName(productName) || url);
+
+  return {
+    productName: cleanProductName(productName),
+    description,
+    price,
+    compareAtPrice: finalCompareAtPrice,
+    images: Array.from(new Set(imageCandidates)).slice(0, 8),
+    vendor: 'Amazon',
+    productType: '',
+    tags: '',
+    costPerItem: '',
+    sku: '',
+    barcode: '',
+    weight: estimated.value,
+    weightUnit: estimated.unit,
+    options: [],
+    variants: [],
+  };
 }
 
 // Extract parsing logic into a separate function
