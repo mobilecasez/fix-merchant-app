@@ -227,6 +227,79 @@ async function fetchAmazonViaJinaProxy(url: string): Promise<string> {
 }
 
 function parseAmazonProxyContent(content: string, url: string, domain: string): ScrapedProductData {
+  const extractAsin = (inputUrl: string): string | null => {
+    const match = inputUrl.match(/\/dp\/([A-Z0-9]{10})/i);
+    return match ? match[1].toUpperCase() : null;
+  };
+
+  const normalizeAmazonImageUrl = (rawUrl: string): string => {
+    let cleaned = rawUrl.split('?')[0].split('#')[0];
+    cleaned = cleaned
+      .replace(/\._[^.]+(?=\.(?:jpe?g|webp|png)$)/i, '')
+      .replace(/\.__[^.]+(?=\.(?:jpe?g|webp|png)$)/i, '')
+      .replace(/\.SX[^.]+(?=\.(?:jpe?g|webp|png)$)/i, '')
+      .replace(/\.SY[^.]+(?=\.(?:jpe?g|webp|png)$)/i, '')
+      .replace(/\.UX[^.]+(?=\.(?:jpe?g|webp|png)$)/i, '')
+      .replace(/\.UY[^.]+(?=\.(?:jpe?g|webp|png)$)/i, '')
+      .replace(/\.{2,}(?=\.(?:jpe?g|webp|png)$)/i, '.');
+    return cleaned;
+  };
+
+  const collectProductImagesFromSection = (section: string, asin: string | null): string[] => {
+    const regex = /!?\[([^\]]*)\]\((https:\/\/m\.media-amazon\.com\/images\/I\/[^)\s]+)\)(?:\]\((https?:\/\/[^)\s]+)\))?/g;
+    const out: string[] = [];
+    let match;
+    while ((match = regex.exec(section)) !== null) {
+      const alt = (match[1] || '').toLowerCase();
+      const imageUrl = match[2] || '';
+      const linkedUrl = (match[3] || '').toLowerCase();
+      const lowerImage = imageUrl.toLowerCase();
+
+      if (!/\.(jpg|jpeg|webp|png)(\?|$)/i.test(imageUrl)) continue;
+      if (lowerImage.endsWith('.png') || lowerImage.includes('/images/g/')) continue;
+      if (lowerImage.includes('community-reviews') || alt.includes('customer image')) continue;
+
+      // Exclude obvious non-product decorative/media assets.
+      if (
+        lowerImage.includes('nav-sprite') ||
+        lowerImage.includes('iconfarm') ||
+        lowerImage.includes('sprite') ||
+        lowerImage.includes('dp-play-icon-overlay')
+      ) {
+        continue;
+      }
+
+      // If this image is wrapped with a product link, ensure it is for the same ASIN.
+      if (asin && linkedUrl.includes('/dp/')) {
+        const linkedAsin = extractAsin(linkedUrl);
+        if (linkedAsin && linkedAsin !== asin) continue;
+      }
+
+      out.push(normalizeAmazonImageUrl(imageUrl));
+    }
+    return out;
+  };
+
+  const extractPrimaryGalleryFromProxy = (section: string): string[] => {
+    const out: string[] = [];
+
+    // The main gallery thumbnails in Amazon markdown commonly appear as
+    // _SX38_SY50_ image URLs. These are the most reliable product-image set.
+    const thumbMatches = section.match(/https:\/\/m\.media-amazon\.com\/images\/I\/[^)\s]+(?:\._SX38_SY50[^)\s]*|\.SX38_SY50[^)\s]*)\.jpg/gi) || [];
+    for (const raw of thumbMatches) {
+      if (raw.toLowerCase().includes('dp-play-icon-overlay')) continue;
+      out.push(normalizeAmazonImageUrl(raw));
+    }
+
+    // Also include a large hero image when available.
+    const heroMatch = section.match(/https:\/\/m\.media-amazon\.com\/images\/I\/[^)\s]+(?:\._SX\d{3,}_[^)\s]*|\._AC_[^)\s]*)\.jpg/i);
+    if (heroMatch) {
+      out.push(normalizeAmazonImageUrl(heroMatch[0]));
+    }
+
+    return Array.from(new Set(out));
+  };
+
   // Product name: prefer explicit Title line, fallback to markdown H1.
   const titleMatch = content.match(/^Title:\s*(.+)$/m) || content.match(/^#\s+(.+)$/m);
   let productName = titleMatch ? titleMatch[1].trim() : '';
@@ -254,19 +327,21 @@ function parseAmazonProxyContent(content: string, url: string, domain: string): 
     compareAtPrice = compareMatch[1].replace(/\s+/g, '');
   }
 
-  // Extract image URLs from markdown image links.
-  const imageRegex = /!\[[^\]]*\]\((https?:\/\/[^)\s]+)\)/g;
-  const imageCandidates: string[] = [];
-  let imageMatch;
-  while ((imageMatch = imageRegex.exec(content)) !== null) {
-    const img = imageMatch[1];
-    if (
-      img.includes('m.media-amazon.com') ||
-      img.includes('images-eu.ssl-images-amazon.com')
-    ) {
-      imageCandidates.push(img);
-    }
+  // Extract product images by scoping to the top product section first
+  // (closest to local scraper behavior), then fallback to pre-review content.
+  const asin = extractAsin(url);
+  const aboutItemIndex = content.search(/##\s*About this item/i);
+  const topSection = aboutItemIndex > 0 ? content.slice(0, aboutItemIndex) : content;
+  const preReviews = content.split(/##\s*Customer reviews/i)[0];
+
+  let imageCandidates = extractPrimaryGalleryFromProxy(topSection);
+  if (imageCandidates.length < 3) {
+    imageCandidates = collectProductImagesFromSection(topSection, asin);
   }
+  if (imageCandidates.length < 2) {
+    imageCandidates = imageCandidates.concat(collectProductImagesFromSection(preReviews, asin));
+  }
+  imageCandidates = Array.from(new Set(imageCandidates));
 
   // Build a short HTML description from markdown bullets when available.
   const lines = content.split('\n');
@@ -288,7 +363,7 @@ function parseAmazonProxyContent(content: string, url: string, domain: string): 
     description,
     price,
     compareAtPrice: finalCompareAtPrice,
-    images: Array.from(new Set(imageCandidates)).slice(0, 8),
+    images: imageCandidates.slice(0, 12),
     vendor: 'Amazon',
     productType: '',
     tags: '',
