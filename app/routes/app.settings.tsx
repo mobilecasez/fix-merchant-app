@@ -38,10 +38,10 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       data: {
         shop: session.shop,
         addProductReplicaEnabled: true,
-        dashboardEnabled: false,
-        additionalEnabled: false,
-        reportEnabled: false,
-        storeErrorReportEnabled: false,
+        dashboardEnabled: true,
+        additionalEnabled: true,
+        reportEnabled: true,
+        storeErrorReportEnabled: true,
       },
     });
   }

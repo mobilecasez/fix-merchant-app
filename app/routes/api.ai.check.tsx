@@ -2,6 +2,7 @@ import { json, type ActionFunctionArgs } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { retryOperation } from "../utils/retry.js";
+import prisma from "../db.server";
 
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_GEMINI_API_KEY!);
 
@@ -121,7 +122,7 @@ export async function action({ request }: ActionFunctionArgs) {
   The product is:
   ${JSON.stringify(productForAI, null, 2)}
 
-  Please ensure your analysis is based on current product availability as of ${currentMonth} ${currentDay}, ${currentYear}, and avoid making assumptions about unreleased or hypothetical product models.
+  Do NOT fact-check the existence of the product, the product model, or its specifications. Assume the product is a real, valid product being sold by the merchant. Focus purely on SEO, styling, formatting, and Google Merchant Center compliance (like length limits, missing GTIN, missing description, keyword stuffing, capitalization).
 
   Example response format for a single product (ensure your response is only the JSON object):
   {
@@ -159,6 +160,22 @@ export async function action({ request }: ActionFunctionArgs) {
     const jsonString = aiResponseText.substring(startIndex, endIndex + 1);
     
     const aiResponse = JSON.parse(jsonString);
+
+    // Save to database so it persists
+    await prisma.productAICheck.upsert({
+      where: { productId: product.id },
+      update: {
+        issues: JSON.stringify(aiResponse.issues || []),
+        suggestions: JSON.stringify(aiResponse.suggestions_for_sales_improvement || []),
+      },
+      create: {
+        productId: product.id,
+        shop: session.shop,
+        issues: JSON.stringify(aiResponse.issues || []),
+        suggestions: JSON.stringify(aiResponse.suggestions_for_sales_improvement || []),
+      },
+    });
+
     return json(aiResponse);
   } catch (error: any) {
     console.error(`Final attempt failed for product ${product.id}:`, error);

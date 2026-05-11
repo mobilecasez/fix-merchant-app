@@ -542,21 +542,23 @@ export default function Index() {
             </Link>
           </div>
 
-          {/* Middle Card - Coming Soon: GMC Compliance */}
+          {/* Middle Card - GMC Compliance */}
           <div className="feature-card">
             <div className="feature-card-header">
               <div className="feature-card-icon">🛡️</div>
-              <h3 className="feature-card-title">Google Merchant Center Compliance</h3>
+              <h3 className="feature-card-title">GMC Compliance</h3>
             </div>
             <p className="feature-card-description">
-              Automatically scan your entire store inventory to identify and flag GMC policy errors before they cause suspensions.
+              Scan your store for Google Merchant Center (GMC) policy errors to prevent suspensions and keep your products listed.
             </p>
-            <button className="feature-card-button" disabled>
-              Coming Soon
-            </button>
+            <Link to="/app/store-error-report" style={{ textDecoration: 'none' }}>
+              <button className="feature-card-button">
+                View Report
+              </button>
+            </Link>
           </div>
 
-          {/* Right Card - Coming Soon: SEO Rewrite */}
+          {/* Right Card - AI SEO & GMC Rewrite */}
           <div className="feature-card">
             <div className="feature-card-header">
               <div className="feature-card-icon">✨</div>
@@ -565,9 +567,11 @@ export default function Index() {
             <p className="feature-card-description">
               Utilize AI to rewrite product titles and details specifically optimized for Google's search and merchant standards.
             </p>
-            <button className="feature-card-button" disabled>
-              Coming Soon
-            </button>
+            <Link to="/app/report" style={{ textDecoration: 'none' }}>
+              <button className="feature-card-button" style={{opacity: 1, pointerEvents: 'auto', cursor: 'pointer'}}>
+                Get Started
+              </button>
+            </Link>
           </div>
         </div>
 
@@ -585,43 +589,45 @@ export default function Index() {
 
         {/* 6. Subscription & Usage Card */}
         <div className="subscription-card">
-          <div className="subscription-content">
-            <div className="subscription-left">
-              <h2 className="subscription-title">Subscription Plan</h2>
-              <p className="subscription-value-prop">
-                You're on the Free Tier with 2 product imports. Upgrade now to increase your product import limit and gain early access to Google Merchant Center compliance automation and AI-powered SEO rewriting.
-              </p>
-            </div>
-            <div className="subscription-right">
-              <div className="usage-tracker">
-                <div className="usage-label-top">Monthly Imports</div>
-                <div className="progress-bar-container">
-                  <div className="progress-bar-track">
-                    <div 
-                      className="progress-bar-fill" 
-                      style={{ 
-                        width: subscription ? 
-                          `${Math.min(100, (productsUsed / effectiveProductLimit) * 100)}%` : 
-                          '0%' 
-                      }}
-                    ></div>
+          {loaderData ? (
+            <div className="subscription-content">
+              <div className="subscription-left">
+                <h2 className="subscription-title">Subscription Plan</h2>
+                <p className="subscription-value-prop">
+                  You're on the {subscription?.plan?.name || 'Free'} Tier. Upgrade now to increase your product import limit and gain early access to new features.
+                </p>
+              </div>
+              <div className="subscription-right">
+                <div className="usage-tracker">
+                  <div className="usage-label-top">Monthly Imports</div>
+                  <div className="progress-bar-container">
+                    <div className="progress-bar-track">
+                      <div 
+                        className="progress-bar-fill" 
+                        style={{ 
+                          width: `${Math.min(100, (productsUsed / effectiveProductLimit) * 100)}%`
+                        }}
+                      ></div>
+                    </div>
+                  </div>
+                  <div className="usage-label-bottom">
+                    {`${productsUsed} / ${effectiveProductLimit} Used`}
                   </div>
                 </div>
-                <div className="usage-label-bottom">
-                  {subscription ? 
-                    `${productsUsed} / ${effectiveProductLimit} Used` : 
-                    '0 / 2 Used'
-                  }
-                </div>
+                <Link to="/app/choose-subscription" style={{ textDecoration: 'none' }}>
+                  <button className="upgrade-button">
+                    <span className="crown-icon">👑</span>
+                    Upgrade to Pro
+                  </button>
+                </Link>
               </div>
-              <Link to="/app/choose-subscription" style={{ textDecoration: 'none' }}>
-                <button className="upgrade-button">
-                  <span className="crown-icon">👑</span>
-                  Upgrade to Pro
-                </button>
-              </Link>
             </div>
-          </div>
+          ) : (
+            <div style={{ textAlign: 'center' }}>
+              <Spinner accessibilityLabel="Loading subscription details" size="large" />
+              <p>Loading subscription details...</p>
+            </div>
+          )}
         </div>
         <div className="cta-section">
           {!subscription ? (

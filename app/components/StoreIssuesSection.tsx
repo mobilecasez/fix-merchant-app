@@ -12,125 +12,53 @@ import {
 } from "@shopify/polaris";
 
 export function StoreIssuesSection() {
-  const storeCheckFetcher = useFetcher();
-  const fetchHtmlFetcher = useFetcher();
-  const [storeIssues, setStoreIssues] = useState<any>(null);
-  const [rawHtmlContent, setRawHtmlContent] = useState<string | null>(null);
-  const [isStoreCheckLoading, setIsStoreCheckLoading] = useState(false);
+  const [issues, setIssues] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const fetcher = useFetcher();
 
   useEffect(() => {
-    if (fetchHtmlFetcher.data && (fetchHtmlFetcher.data as any).rawHtmlContent) {
-      setRawHtmlContent((fetchHtmlFetcher.data as any).rawHtmlContent);
-    } else if (fetchHtmlFetcher.data && (fetchHtmlFetcher.data as any).error) {
-      console.error("StoreIssuesSection: Error fetching HTML:", (fetchHtmlFetcher.data as any).error);
-      setIsStoreCheckLoading(false);
-    }
-  }, [fetchHtmlFetcher.data, fetchHtmlFetcher.state]); // Added fetchHtmlFetcher.state to dependencies
+    fetcher.load("/api/store-issues");
+  }, []);
 
   useEffect(() => {
-    if (rawHtmlContent && fetchHtmlFetcher.state === "idle") {
-      const storeUrl = "https://mobilecasez.com";
-      storeCheckFetcher.submit(
-        { store_url: storeUrl, raw_html_content: rawHtmlContent },
-        { method: "post", action: "/api/ai/store-check" }
-      );
-      setRawHtmlContent(null);
+    if (fetcher.data) {
+      setIssues((fetcher.data as any).issues);
+      setLoading(false);
     }
-  }, [rawHtmlContent, fetchHtmlFetcher.state]);
-
-  useEffect(() => {
-    if (storeCheckFetcher.data && (storeCheckFetcher.data as any).pointers) {
-      setStoreIssues((storeCheckFetcher.data as any).pointers);
-      setIsStoreCheckLoading(false);
-    } else if (storeCheckFetcher.data && (storeCheckFetcher.data as any).error) {
-      console.error("StoreIssuesSection: Error from AI store check:", (storeCheckFetcher.data as any).error);
-      setIsStoreCheckLoading(false);
-    }
-  }, [storeCheckFetcher.data, storeCheckFetcher.state]); // Added storeCheckFetcher.state to dependencies
-
-  const getBadgeTone = (severity: string) => {
-    switch (severity) {
-      case "High":
-        return "critical";
-      case "Medium":
-        return "warning";
-      case "Low":
-        return "attention";
-    }
-  };
+  }, [fetcher.data]);
 
   return (
     <Card>
       <BlockStack gap="500">
         <Text as="h2" variant="headingMd">
-          Store Related Issues
+          Store-Wide Issues
         </Text>
-        <div className="store-issues-box" style={{ height: '500px', overflowY: 'auto', position: 'relative' }}>
-          {isStoreCheckLoading && (
-            <div style={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              width: '100%',
-              height: '100%',
-              backgroundColor: 'rgba(255, 255, 255, 0.7)',
-              display: 'flex',
-              justifyContent: 'center',
-              alignItems: 'center',
-              zIndex: 10,
-            }}>
-              <Spinner />
-            </div>
-          )}
-          {storeIssues ? (
-            <BlockStack gap="200">
-              {Object.entries(storeIssues).map(([category, issues]: [string, any]) => (
-                <Card key={category}>
-                  <BlockStack gap="200">
-                    <Text as="h3" variant="headingSm">
-                      <b>{category.replace(/_/g, ' ').toUpperCase()}</b>
-                    </Text>
-                    <List type="bullet">
-                      {issues.length > 0 ? (
-                        issues.map((issue: any, index: number) => (
-                          <List.Item key={index}>
-                            <Badge tone={getBadgeTone(issue.severity)}>
-                              {issue.severity}
-                            </Badge>{" "}
-                            {issue.message}
-                          </List.Item>
-                        ))
-                      ) : (
-                        <List.Item>No issues found for this category.</List.Item>
-                      )}
-                    </List>
-                  </BlockStack>
-                </Card>
-              ))}
-            </BlockStack>
-          ) : (
-            <Text as="p" variant="bodyMd">
-              Click "Run Store Check" to analyze store-related issues.
-            </Text>
-          )}
-        </div>
-        <InlineStack align="center">
-          <Button
-            variant="primary"
-            onClick={() => {
-              setIsStoreCheckLoading(true);
-              setStoreIssues(null);
-              const storeUrl = "https://mobilecasez.com";
-              fetchHtmlFetcher.submit(
-                { store_url: storeUrl },
-                { method: "post", action: "/api/fetch-store-html" }
-              );
-            }}
-            loading={isStoreCheckLoading}
-          >
-            Run Store Check
-          </Button>
-        </InlineStack>
+        {loading ? (
+          <Spinner accessibilityLabel="Loading store issues" size="large" />
+        ) : (
+          <List type="bullet">
+            {issues.map((issue, index) => (
+              <List.Item key={index}>
+                <BlockStack gap="200">
+                  <Text as="p" variant="bodyMd">
+                    <b>{issue.title}</b>
+                  </Text>
+                  <Text as="p" variant="bodySm">
+                    {issue.description}
+                  </Text>
+                  <Button
+                    url={issue.actionUrl}
+                    target="_blank"
+                    variant="primary"
+                    size="slim"
+                  >
+                    {issue.actionTitle}
+                  </Button>
+                </BlockStack>
+              </List.Item>
+            ))}
+          </List>
+        )}
       </BlockStack>
     </Card>
   );

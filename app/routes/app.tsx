@@ -29,10 +29,25 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       data: {
         shop: session.shop,
         addProductReplicaEnabled: true,
-        dashboardEnabled: false,
-        additionalEnabled: false,
-        reportEnabled: false,
-        storeErrorReportEnabled: false,
+        dashboardEnabled: true,
+        additionalEnabled: true,
+        reportEnabled: true,
+        storeErrorReportEnabled: true,
+      },
+    });
+  } else if (
+    !settings.dashboardEnabled ||
+    !settings.additionalEnabled ||
+    !settings.reportEnabled ||
+    !settings.storeErrorReportEnabled
+  ) {
+    settings = await prisma.appSettings.update({
+      where: { shop: session.shop },
+      data: {
+        dashboardEnabled: true,
+        additionalEnabled: true,
+        reportEnabled: true,
+        storeErrorReportEnabled: true,
       },
     });
   }

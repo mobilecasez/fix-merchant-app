@@ -1,6 +1,7 @@
 import { json, type ActionFunctionArgs } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
 import { convertMarkdownToHtml } from "../utils/markdown";
+import prisma from "../db.server";
 
 export async function action({ request }: ActionFunctionArgs) {
   const { admin } = await authenticate.admin(request);
@@ -180,6 +181,15 @@ export async function action({ request }: ActionFunctionArgs) {
         { status: 400 }
       );
     }
+  }
+
+  // After successful update, delete any saved AI check so that it reflects the new state
+  try {
+    await prisma.productAICheck.delete({
+      where: { productId: id }
+    });
+  } catch (e) {
+    // Ignore error if it doesn't exist
   }
 
   return json({ success: true });

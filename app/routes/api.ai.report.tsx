@@ -110,7 +110,7 @@ async function processAndSendReport(
       The product is:
       ${JSON.stringify(productForAI, null, 2)}
 
-      Please ensure your analysis is based on current product availability as of ${currentMonth} ${currentDay}, ${currentYear}, and avoid making assumptions about unreleased or hypothetical product models.
+      Do NOT fact-check the existence of the product, the product model, or its specifications. Assume the product is a real, valid product being sold by the merchant. Focus purely on SEO, styling, formatting, and Google Merchant Center compliance (like length limits, missing GTIN, missing description, keyword stuffing, capitalization).
 
       Example response format for a single product (ensure your response is only the JSON object):
       {

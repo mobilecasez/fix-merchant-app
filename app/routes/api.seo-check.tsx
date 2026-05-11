@@ -1,5 +1,6 @@
 import { json, type LoaderFunctionArgs } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
+import prisma from "../db.server";
 
 interface Product {
   id: string;
@@ -329,43 +330,45 @@ export async function loader({ request }: LoaderFunctionArgs) {
     let totalCount = 0;
     let finalPageInfo: any = {};
 
-    if (isDashboardRequest) {
-      // For dashboard, fetch products and apply SEO check, then paginate.
-      // No filtering by issues.length > 0 for dashboard requests.
-      const [{ products, pageInfo }, totalProductsCount] = await Promise.all([
-        fetchProducts(admin, count, cursor, query, sortKey, reverse),
-        getTotalProductCount(admin, query),
-      ]);
-      
-      fetchedProducts = products.map(product => {
-        const { issues, suggestions_for_sales_improvement } = checkSeo(product);
+    const [{ products, pageInfo }, totalProductsCount] = await Promise.all([
+      fetchProducts(admin, count, cursor, query, sortKey, reverse),
+      getTotalProductCount(admin, query),
+    ]);
+
+    const productIds = products.map((p) => p.id);
+    const savedAiChecks = await prisma.productAICheck.findMany({
+      where: {
+        shop: session.shop,
+        productId: { in: productIds }
+      }
+    });
+
+    const savedAiChecksMap = new Map();
+    savedAiChecks.forEach((check: { productId: string; }) => {
+      savedAiChecksMap.set(check.productId, check);
+    });
+
+    fetchedProducts = products.map(product => {
+      if (savedAiChecksMap.has(product.id)) {
+        const savedCheck = savedAiChecksMap.get(product.id);
         return {
           ...product,
-          issues: issues,
-          suggestions_for_sales_improvement: suggestions_for_sales_improvement,
+          issues: JSON.parse(savedCheck.issues),
+          suggestions_for_sales_improvement: JSON.parse(savedCheck.suggestions),
         };
-      });
-      totalCount = totalProductsCount;
-      finalPageInfo = pageInfo;
+      }
 
-    } else {
-      // For the detailed report, fetch and process as before (no filtering of products without issues)
-      const [{ products, pageInfo }, totalProductsCount] = await Promise.all([
-        fetchProducts(admin, count, cursor, query, sortKey, reverse),
-        getTotalProductCount(admin, query),
-      ]);
+      const { issues, suggestions_for_sales_improvement } = checkSeo(product);
+      return {
+        ...product,
+        issues: issues,
+        suggestions_for_sales_improvement: suggestions_for_sales_improvement,
+      };
+    });
+    
+    totalCount = totalProductsCount;
+    finalPageInfo = pageInfo;
 
-      fetchedProducts = products.map(product => {
-        const { issues, suggestions_for_sales_improvement } = checkSeo(product);
-        return {
-          ...product,
-          issues: issues,
-          suggestions_for_sales_improvement: suggestions_for_sales_improvement,
-        };
-      });
-      totalCount = totalProductsCount;
-      finalPageInfo = pageInfo;
-    }
     return json({ products: fetchedProducts, pageInfo: finalPageInfo, totalCount });
   } catch (error: any) {
     console.error("SEO Check Loader - Error fetching products:", error);

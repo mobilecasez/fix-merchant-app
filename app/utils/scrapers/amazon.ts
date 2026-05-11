@@ -1,7 +1,10 @@
 import { ScrapedProductData } from "./types";
 import { cleanProductName, ensureCompareAtPrice, parseWeight, estimateWeight } from "./helpers";
+import { MANUAL_HTML_REQUIRED } from "./generic";
+import axios from 'axios';
+import UserAgent from 'user-agents';
 
-export async function scrapeAmazon(html: string, url: string): Promise<ScrapedProductData> {
+export async function scrapeAmazon(html: string = "", url: string): Promise<ScrapedProductData | typeof MANUAL_HTML_REQUIRED> {
   try {
     
     // Detect Amazon domain for domain-specific handling
@@ -19,11 +22,12 @@ export async function scrapeAmazon(html: string, url: string): Promise<ScrapedPr
     try {
       await new Promise(resolve => setTimeout(resolve, Math.random() * 1000 + 500));
       
-      const response = await fetch(url, {
+      const userAgent = new UserAgent({ deviceCategory: 'desktop' });
+      const response = await axios.get(url, {
         headers: {
           'accept-language': 'en-US,en;q=0.9',
           'accept-encoding': 'gzip, deflate, br',
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'User-Agent': userAgent.toString(),
           'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
           'sec-ch-ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
           'sec-ch-ua-mobile': '?0',
@@ -33,11 +37,14 @@ export async function scrapeAmazon(html: string, url: string): Promise<ScrapedPr
           'sec-fetch-site': 'none',
           'sec-fetch-user': '?1',
           'upgrade-insecure-requests': '1',
+          'Cache-Control': 'max-age=0',
         },
+        timeout: 10000,
+        validateStatus: () => true // Resolve on all statuses to handle redirects and blocks manually
       });
       
-      if (response.ok) {
-        htmlContent = await response.text();
+      if (response.status === 200) {
+        htmlContent = response.data;
         originalHTTPContent = htmlContent; // Save backup before any validation
         
         // Verify it has price elements
@@ -92,10 +99,21 @@ export async function scrapeAmazon(html: string, url: string): Promise<ScrapedPr
     if (!fetchSuccessful) {
       try {
         const proxyContent = await fetchAmazonViaJinaProxy(url);
-        if (proxyContent && proxyContent.length > 1000) {
+        
+        // Ensure proxy hasn't just returned Amazon's bot check Markdown
+        const isCaptcha = (
+          proxyContent.includes('Type the characters you see in this picture') ||
+          proxyContent.includes('Enter the characters you see below') ||
+          proxyContent.toLowerCase().includes('robot check') ||
+          proxyContent.includes('To discuss automated access to Amazon data please contact')
+        );
+
+        if (proxyContent && proxyContent.length > 500 && !isCaptcha) {
           htmlContent = proxyContent;
           fetchSuccessful = true;
           usedProxyFallback = true;
+        } else {
+          console.warn('[Amazon Scraper] ⚠️ Jina proxy returned CAPTCHA or blocked page.');
         }
       } catch (proxyError) {
         console.error('[Amazon Scraper] Proxy fallback failed:', proxyError);
@@ -163,38 +181,30 @@ export async function scrapeAmazon(html: string, url: string): Promise<ScrapedPr
       if (!fetchSuccessful) {
         console.error('[Amazon Scraper] ❌ All automatic methods failed after', maxRetries, 'Puppeteer attempts');
         console.error('[Amazon Scraper] 📋 Manual HTML paste required as last resort');
-        throw new Error(`Amazon auto-scraping failed after ${maxRetries} attempts. Please use manual HTML paste. Error: ${lastError?.message || 'Unknown error'}`);
+        return MANUAL_HTML_REQUIRED;
       }
     }
     
     if (usedProxyFallback) {
-      return parseAmazonProxyContent(htmlContent, url, domain);
+      const data = parseAmazonProxyContent(htmlContent, url, domain);
+      const nameLower = (data.productName || "").trim().toLowerCase();
+      if (!nameLower || nameLower === "amazon.in" || nameLower === "amazon.com" || nameLower.includes("robot check") || nameLower.includes("captcha")) {
+         return MANUAL_HTML_REQUIRED;
+      }
+      return data;
     }
 
-    return await parseAmazonHTML(htmlContent, url, domain);
+    const htmlData = await parseAmazonHTML(htmlContent, url, domain);
+    const nameLowerHtml = (htmlData.productName || "").trim().toLowerCase();
+    if (!nameLowerHtml || nameLowerHtml === "amazon.in" || nameLowerHtml === "amazon.com" || nameLowerHtml.includes("robot check") || nameLowerHtml.includes("captcha")) {
+         return MANUAL_HTML_REQUIRED;
+    }
+    return htmlData;
   } catch (error) {
     console.error("[Amazon Scraper] Error during Amazon scraping:", error);
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    console.error("[Amazon Scraper] Error details:", errorMessage);
     
-    // Return empty data to trigger AI fallback
-    return {
-      productName: "",
-      description: "",
-      price: "",
-      images: [],
-      vendor: "Amazon",
-      productType: "",
-      tags: "",
-      compareAtPrice: "",
-      costPerItem: "",
-      sku: "",
-      barcode: "",
-      weight: "",
-      weightUnit: "",
-      options: [],
-      variants: [],
-    };
+    // Instead of failing over to an AI prompt on a CAPTCHA page, force the manual HTML flow
+    return MANUAL_HTML_REQUIRED;
   }
 }
 
