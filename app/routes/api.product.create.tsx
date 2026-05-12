@@ -99,6 +99,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     vendor: vendor,
     productType: productType,
     tags: tags ? tags.split(",").map((tag: string) => tag.trim()) : [],
+    optionNames: options.map((opt: any) => opt.name).filter(Boolean),
     seo: {
       title: seoTitle || productName,
       description: seoDescription || null,
@@ -108,13 +109,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   if (seoUrl) {
     productInput.handle = seoUrl;
   }
-
-  // Note: Options and variants are handled after product creation
-  // as ProductCreateInput doesn't support options directly
   
-  // Note: Category will be set after product creation using productSet mutation
-  // as it's not supported in ProductCreateInput
-
   const media = [];
   if (images && images.length > 0) {
     for (const image of images) {
@@ -151,7 +146,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       }`,
       {
         variables: {
-          input: productInput,
+          input: {
+            ...productInput,
+            options: productInput.optionNames, // Pass option names here
+          },
           media,
         },
       }
@@ -235,7 +233,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         },
         inventoryPolicy: firstVariant.continueSellingOutOfStock ? 'CONTINUE' : 'DENY',
         taxable: firstVariant.chargeTaxes,
-        options: firstVariant.options,
+        optionValues: firstVariant.options,
       };
 
       const variantUpdateResponse = await admin.graphql(
@@ -278,7 +276,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           },
           inventoryPolicy: variant.continueSellingOutOfStock ? 'CONTINUE' : 'DENY',
           taxable: variant.chargeTaxes,
-          options: variant.options,
+          optionValues: variant.options,
         }));
 
         const createVariantsResponse = await admin.graphql(
