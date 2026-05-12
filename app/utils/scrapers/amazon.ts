@@ -871,6 +871,11 @@ async function parseAmazonHTML(htmlContent: string, url: string, domain: string 
       finalComparePrice = `${currencySymbol}${finalComparePrice}`;
     }
 
+    // Final validation: Ensure price has a digit and is not just a symbol
+    if (price && !/\d/.test(price)) {
+      price = ""; // Reset if invalid
+    }
+    
     const result = {
       productName: cleanProductName(productName),
       description: finalDescription,
