@@ -208,22 +208,38 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     const createdVariants = createdProduct.variants.edges.map((edge: any) => edge.node);
 
     if (variants && variants.length > 0) {
-      const variantsToUpdate = variants.map((variant: any, index: number) => ({
-        id: createdVariants[index].id,
-        price: variant.price,
-        compareAtPrice: variant.compareAtPrice,
-        barcode: variant.barcode,
-        inventoryItem: {
-          cost: parseCost(variant.costPerItem),
-          sku: variant.sku,
-          tracked: variant.trackQuantity,
-        },
-        inventoryPolicy: variant.continueSellingOutOfStock ? 'CONTINUE' : 'DENY',
-        taxable: variant.chargeTaxes,
-        options: variant.options,
-      }));
+      // Validate we have enough created variants for the provided variants
+      if (createdVariants.length < variants.length) {
+        console.error(`Variant mismatch: expected ${variants.length} variants but got ${createdVariants.length}`);
+        return json({ 
+          errors: [{ 
+            message: `Product created but variant count mismatch: expected ${variants.length} but got ${createdVariants.length}. Please manually add the missing variants.` 
+          }] 
+        }, { status: 422 });
+      }
 
-      await admin.graphql(
+      const variantsToUpdate = variants.map((variant: any, index: number) => {
+        if (!createdVariants[index] || !createdVariants[index].id) {
+          console.error(`Variant ${index} missing ID:`, createdVariants[index]);
+          throw new Error(`Variant ${index} ID is missing or null`);
+        }
+        return {
+          id: createdVariants[index].id,
+          price: variant.price,
+          compareAtPrice: variant.compareAtPrice,
+          barcode: variant.barcode,
+          inventoryItem: {
+            cost: parseCost(variant.costPerItem),
+            sku: variant.sku,
+            tracked: variant.trackQuantity,
+          },
+          inventoryPolicy: variant.continueSellingOutOfStock ? 'CONTINUE' : 'DENY',
+          taxable: variant.chargeTaxes,
+          options: variant.options,
+        };
+      });
+
+      const variantUpdateResponse = await admin.graphql(
         `#graphql
           mutation productVariantsBulkUpdate($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
             productVariantsBulkUpdate(productId: $productId, variants: $variants) {
@@ -243,8 +259,23 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           },
         }
       );
+
+      const variantUpdateData = await variantUpdateResponse.json();
+      if (variantUpdateData.data.productVariantsBulkUpdate.userErrors.length > 0) {
+        console.error("Variant Update Errors:", variantUpdateData.data.productVariantsBulkUpdate.userErrors);
+        return json({ errors: variantUpdateData.data.productVariantsBulkUpdate.userErrors }, { status: 422 });
+      }
     } else {
       // Handle single-variant product update
+      if (!createdVariants[0] || !createdVariants[0].id) {
+        console.error('Default variant missing ID:', createdVariants[0]);
+        return json({ 
+          errors: [{ 
+            message: "Product created but default variant ID is missing. Please try again or manually update the product." 
+          }] 
+        }, { status: 422 });
+      }
+
       const variantToUpdate = {
         id: createdVariants[0].id,
         price: price,
@@ -258,7 +289,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         inventoryPolicy: continueSellingOutOfStock ? 'CONTINUE' : 'DENY',
         taxable: chargeTaxes,
       };
-      await admin.graphql(
+      const variantUpdateResponse = await admin.graphql(
         `#graphql
           mutation productVariantsBulkUpdate($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
             productVariantsBulkUpdate(productId: $productId, variants: $variants) {
@@ -278,6 +309,12 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           },
         }
       );
+
+      const variantUpdateData = await variantUpdateResponse.json();
+      if (variantUpdateData.data.productVariantsBulkUpdate.userErrors.length > 0) {
+        console.error("Single Variant Update Errors:", variantUpdateData.data.productVariantsBulkUpdate.userErrors);
+        return json({ errors: variantUpdateData.data.productVariantsBulkUpdate.userErrors }, { status: 422 });
+      }
     }
 
     // Note: Usage counter is incremented in fetch-product endpoint (when AI processes data)
