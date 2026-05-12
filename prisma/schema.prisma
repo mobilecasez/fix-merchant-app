@@ -107,13 +107,20 @@ model ContactMessage {
 }
 
 model ProductAICheck {
-  id          String   @id @default(cuid())
-  productId   String   @unique
-  shop        String
-  issues      String   // JSON string of issues
-  suggestions String   // JSON string of suggestions
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id        String   @id @default(uuid())
+  productId String
+  shop      String
+  status    String // e.g., 'PENDING', 'COMPLETE', 'ERROR'
+  result    Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
+  @@index([productId])
   @@index([shop])
+}
+
+enum AdminBannerState {
+  PENDING
+  COMPLETE
+  ERROR
 }

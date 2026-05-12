@@ -268,42 +268,45 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
       // Create additional variants if there are more than 1
       if (variants.length > 1) {
-        for (let i = 1; i < variants.length; i++) {
-          const additionalVariant = variants[i];
-          const createVariantResponse = await admin.graphql(
-            `#graphql
-              mutation productVariantCreate($input: ProductVariantInput!) {
-                productVariantCreate(input: $input) {
-                  productVariant {
-                    id
-                  }
-                  userErrors {
-                    field
-                    message
-                  }
-                }
-              }`,
-            {
-              variables: {
-                input: {
-                  productId: productId,
-                  price: additionalVariant.price,
-                  compareAtPrice: additionalVariant.compareAtPrice,
-                  barcode: additionalVariant.barcode,
-                  sku: additionalVariant.sku,
-                  taxable: additionalVariant.chargeTaxes,
-                  inventoryPolicy: additionalVariant.continueSellingOutOfStock ? 'CONTINUE' : 'DENY',
-                  options: additionalVariant.options,
-                },
-              },
-            }
-          );
+        const variantsToCreate = variants.slice(1).map((variant: any) => ({
+          price: variant.price,
+          compareAtPrice: variant.compareAtPrice,
+          barcode: variant.barcode,
+          inventoryItem: {
+            cost: parseCost(variant.costPerItem),
+            sku: variant.sku,
+            tracked: variant.trackQuantity,
+          },
+          inventoryPolicy: variant.continueSellingOutOfStock ? 'CONTINUE' : 'DENY',
+          taxable: variant.chargeTaxes,
+          options: variant.options,
+        }));
 
-          const createVariantData = await createVariantResponse.json();
-          if (createVariantData.data.productVariantCreate.userErrors.length > 0) {
-            console.error(`Variant ${i} Creation Errors:`, createVariantData.data.productVariantCreate.userErrors);
-            return json({ errors: createVariantData.data.productVariantCreate.userErrors }, { status: 422 });
+        const createVariantsResponse = await admin.graphql(
+          `#graphql
+            mutation productVariantsBulkCreate($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
+              productVariantsBulkCreate(productId: $productId, variants: $variants) {
+                product {
+                  id
+                }
+                userErrors {
+                  field
+                  message
+                }
+              }
+            }`,
+          {
+            variables: {
+              productId: productId,
+              variants: variantsToCreate,
+            },
           }
+        );
+
+        const createVariantsData = await createVariantsResponse.json();
+        if (createVariantsData.data.productVariantsBulkCreate.userErrors.length > 0) {
+          console.error(`Variant Creation Errors:`, createVariantsData.data.productVariantsBulkCreate.userErrors);
+          return json({ errors: createVariantsData.data.productVariantsBulkCreate.userErrors }, { status: 422 });
         }
       }
     } else {
@@ -333,9 +336,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
       const variantUpdateResponse = await admin.graphql(
         `#graphql
-          mutation productVariantUpdate($input: ProductVariantInput!) {
-            productVariantUpdate(input: $input) {
-              productVariant {
+          mutation productVariantsBulkUpdate($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
+            productVariantsBulkUpdate(productId: $productId, variants: $variants) {
+              product {
                 id
               }
               userErrors {
@@ -346,15 +349,16 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           }`,
         {
           variables: {
-            input: variantToUpdate,
+            productId: productId,
+            variants: [variantToUpdate],
           },
         }
       );
 
       const variantUpdateData = await variantUpdateResponse.json();
-      if (variantUpdateData.data.productVariantUpdate.userErrors.length > 0) {
-        console.error("Single Variant Update Errors:", variantUpdateData.data.productVariantUpdate.userErrors);
-        return json({ errors: variantUpdateData.data.productVariantUpdate.userErrors }, { status: 422 });
+      if (variantUpdateData.data.productVariantsBulkUpdate.userErrors.length > 0) {
+        console.error("Single Variant Update Errors:", variantUpdateData.data.productVariantsBulkUpdate.userErrors);
+        return json({ errors: variantUpdateData.data.productVariantsBulkUpdate.userErrors }, { status: 422 });
       }
     }
 

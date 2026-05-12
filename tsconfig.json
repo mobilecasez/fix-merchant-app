@@ -16,7 +16,7 @@
     "moduleResolution": "Bundler",
     "target": "ES2022",
     "baseUrl": ".",
-    "types": ["@shopify/remix-oxygen", "node"],
-    "ignoreDeprecations": "5.0"
+    "types": ["@shopify/polaris/dist/types/latestAPI.json"],
+    "ignoreDeprecations": "6.0"
   }
 }
