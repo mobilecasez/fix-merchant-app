@@ -233,7 +233,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         },
         inventoryPolicy: firstVariant.continueSellingOutOfStock ? 'CONTINUE' : 'DENY',
         taxable: firstVariant.chargeTaxes,
-        optionValues: firstVariant.options,
       };
 
       const variantUpdateResponse = await admin.graphql(
@@ -276,7 +275,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           },
           inventoryPolicy: variant.continueSellingOutOfStock ? 'CONTINUE' : 'DENY',
           taxable: variant.chargeTaxes,
-          optionValues: variant.options,
+          options: variant.options,
         }));
 
         const createVariantsResponse = await admin.graphql(
