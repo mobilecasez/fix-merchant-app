@@ -1,6 +1,13 @@
 import prisma from "../db.server";
 import type { ShopSubscription, SubscriptionPlan } from "@prisma/client";
 
+const FREE_TRIAL_LIMIT = 5;
+
+// List of developer stores that have unlimited access
+const DEV_STORES = [
+  "your-store-name.myshopify.com", // <-- Add your store's domain here
+];
+
 /**
  * Calculate the current products used
  * @param subscription - Subscription object with plan included (can be from loader JSON)
@@ -17,8 +24,16 @@ export function getProductsUsed(subscription: any): number {
  * remaining credits carry over until the next billing cycle reset.
  */
 export function getEffectiveProductLimit(subscription: any): number {
-  if (!subscription) return 0;
-  return subscription.periodProductLimit ?? subscription.plan.productLimit;
+  // If the store is in the DEV_STORES list, grant unlimited access
+  if (DEV_STORES.includes(subscription.shop)) {
+    return 999999;
+  }
+
+  if (subscription?.status === 'active' && subscription.plan?.productLimit) {
+    return subscription.periodProductLimit ?? subscription.plan.productLimit;
+  }
+
+  return 0;
 }
 
 /**
