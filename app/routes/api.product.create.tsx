@@ -99,7 +99,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     vendor: vendor,
     productType: productType,
     tags: tags ? tags.split(",").map((tag: string) => tag.trim()) : [],
-    options: options.map((opt: any) => opt.name).filter(Boolean),
     seo: {
       title: seoTitle || productName,
       description: seoDescription || null,
