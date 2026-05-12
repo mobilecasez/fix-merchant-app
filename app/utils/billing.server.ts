@@ -5,7 +5,7 @@ const FREE_TRIAL_LIMIT = 5;
 
 // List of developer stores that have unlimited access
 const DEV_STORES = [
-  "your-store-name.myshopify.com", // <-- Add your store's domain here
+  "9a34b8.myshopify.com", // <-- Added developer store domain here
 ];
 
 /**
