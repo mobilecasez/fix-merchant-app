@@ -365,8 +365,9 @@ async function parseWithGemini(html: string, url: string): Promise<ScrapedProduc
       throw new Error('GOOGLE_GEMINI_API_KEY not configured');
     }
     
-    // Truncate HTML to avoid token limits (keep first 50k chars)
-    const truncatedHtml = html.substring(0, 50000);
+    // Pass a much larger chunk to Gemini (Gemini 2.5 Flash has a 1M token context window)
+    // 300,000 chars is roughly 75k tokens, easily fitting in context while capturing deep JSON-LD
+    const truncatedHtml = html.substring(0, 300000);
     
     const prompt = `You are a professional e-commerce data extraction expert. Your task is to analyze this product page HTML and extract ACCURATE product information.
 

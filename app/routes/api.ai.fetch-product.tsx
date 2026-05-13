@@ -275,11 +275,33 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           // Only fall back to AI if we have HTML content
           if (fetchSuccess && html && html.trim().length > 0) {
             const aiData = await extractProductDataWithAI(url, html);
-            productData = aiData;
+            // Merge scraper data with AI data where AI has better variant parsing
+            productData = {
+              ...productData,
+              ...aiData,
+              images: aiData.images.length > productData.images.length ? aiData.images : productData.images,
+              options: aiData.options.length > 0 ? aiData.options : productData.options,
+              variants: aiData.variants.length > 0 ? aiData.variants : productData.variants,
+            };
           } else {
             throw new Error("Unable to extract product data. Please try again or add the product manually.");
           }
         } else if (typeof productData !== 'string' && (!productData.productName || productData.productName.trim() === "")) {}
+        
+        // If scraper succeeded but missed variants, use AI on the HTML to fetch them
+        if (typeof productData !== 'string' && productData.productName && (!productData.variants || productData.variants.length === 0)) {
+           if (fetchSuccess && html && html.trim().length > 0) {
+              const aiData = await extractProductDataWithAI(url, html);
+              if (aiData.variants && aiData.variants.length > 0) {
+                 productData.variants = aiData.variants;
+                 productData.options = aiData.options;
+                 // Merge images if AI found more (often finds high-res gallery)
+                 if (aiData.images && aiData.images.length > productData.images.length) {
+                    productData.images = aiData.images;
+                 }
+              }
+           }
+        }
       } catch (scraperError) {
         console.error("Local scraper failed, falling back to AI:", scraperError);
         // Fall back to AI extraction on scraper error
