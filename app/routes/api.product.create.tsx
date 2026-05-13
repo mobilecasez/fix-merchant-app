@@ -99,7 +99,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     vendor: vendor,
     productType: productType,
     tags: tags ? tags.split(",").map((tag: string) => tag.trim()) : [],
-    optionNames: options.map((opt: any) => opt.name).filter(Boolean),
     seo: {
       title: seoTitle || productName,
       description: seoDescription || null,
@@ -146,10 +145,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       }`,
       {
         variables: {
-          input: {
-            ...productInput,
-            options: productInput.optionNames, // Pass option names here
-          },
+          input: productInput,
           media,
         },
       }
@@ -223,8 +219,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       const firstVariant = variants[0];
       const variantToUpdate = {
         id: createdVariants[0].id,
-        price: firstVariant.price,
-        compareAtPrice: firstVariant.compareAtPrice,
+        price: firstVariant.price || price,
+        compareAtPrice: firstVariant.compareAtPrice || compareAtPrice,
         barcode: firstVariant.barcode,
         inventoryItem: {
           cost: parseCost(firstVariant.costPerItem),
@@ -265,8 +261,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       // Create additional variants if there are more than 1
       if (variants.length > 1) {
         const variantsToCreate = variants.slice(1).map((variant: any) => ({
-          price: variant.price,
-          compareAtPrice: variant.compareAtPrice,
+          price: variant.price || price,
+          compareAtPrice: variant.compareAtPrice || compareAtPrice,
           barcode: variant.barcode,
           inventoryItem: {
             cost: parseCost(variant.costPerItem),
