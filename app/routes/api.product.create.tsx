@@ -281,7 +281,14 @@ export const action = async ({ request }: ActionFunctionArgs) => {
             },
             inventoryPolicy: variant.continueSellingOutOfStock ? 'CONTINUE' : 'DENY',
             taxable: variant.chargeTaxes,
-            options: variant.options,
+            optionValues: (variant.options || []).map((optValue: string, index: number) => {
+              // Ensure we pass the option name along with its value to map correctly
+              const optionName = productInput.optionNames && productInput.optionNames[index] ? productInput.optionNames[index] : \`Option \${index + 1}\`;
+              return { 
+                optionName: optionName, 
+                name: optValue.trim()
+              };
+            }),
           };
         });
 
