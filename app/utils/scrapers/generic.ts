@@ -365,9 +365,31 @@ async function parseWithGemini(html: string, url: string): Promise<ScrapedProduc
       throw new Error('GOOGLE_GEMINI_API_KEY not configured');
     }
     
-    // Pass a much larger chunk to Gemini (Gemini 2.5 Flash has a 1M token context window)
-    // 1,000,000 chars is roughly 250k tokens, easily fitting in context while capturing deep JSON-LD
-    const truncatedHtml = html.substring(0, 1000000);
+    // Clean up HTML before sending to AI to prevent timeouts and token limit issues
+    const { parse } = require("node-html-parser");
+    const root = parse(html);
+    
+    // Remove massive visual elements that AI doesn't need
+    root.querySelectorAll("style, noscript, svg, path, iframe, canvas, map").forEach((el: any) => el.remove());
+    
+    // Remove heavy tracking/ad scripts but KEEP data scripts (like window.__myx or JSON-LD)
+    root.querySelectorAll("script").forEach((el: any) => {
+      const src = el.getAttribute("src") || "";
+      const content = el.text || "";
+      if (
+        src.includes("googletag") || 
+        src.includes("facebook") || 
+        src.includes("analytics") || 
+        src.includes("tracker") ||
+        (content && !content.includes("{") && !content.includes("["))
+      ) {
+        el.remove();
+      }
+    });
+    
+    // Pass a heavily cleaned chunk to Gemini. 150k is large enough for deep JSON but small enough to process fast.
+    const cleanedHtml = root.toString().replace(/\s\s+/g, " ").replace(/>\s+</g, "><").trim();
+    const truncatedHtml = cleanedHtml.substring(0, 150000);
     
     const prompt = `You are a professional e-commerce data extraction expert. Your task is to analyze this product page HTML and extract ACCURATE product information.
 

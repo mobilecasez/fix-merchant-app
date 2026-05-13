@@ -52,15 +52,33 @@ async function extractProductDataWithAI(url: string, htmlContent: string) {
 
   // Clean HTML by removing styles, and excess whitespace, but KEEP scripts as they often contain JSON-LD and product state (like Myntra's window.__myx)
   const root = parse(htmlContent);
-  root.querySelectorAll("style, noscript, svg").forEach((el) => el.remove());
   
-  // Truncate to ensure we don't blow up token limits, but keep it large enough (1M chars) to catch deep JSON
+  // Remove visual noise and tracking scripts to drastically reduce payload size
+  root.querySelectorAll("style, noscript, svg, path, iframe, canvas, map").forEach((el) => el.remove());
+  
+  // Remove generic tracking/ads scripts but keep application/ld+json and window state scripts
+  root.querySelectorAll("script").forEach((el) => {
+    const src = el.getAttribute("src") || "";
+    const content = el.text || "";
+    if (
+      src.includes("googletag") || 
+      src.includes("facebook") || 
+      src.includes("analytics") || 
+      src.includes("tracker") ||
+      (content && !content.includes("{") && !content.includes("[")) // Remove empty/simple scripts
+    ) {
+      el.remove();
+    }
+  });
+  
+  // Truncate to ensure we don't blow up token limits. 150k chars is plenty to catch deep JSON
+  // without causing the AI request to time out
   const htmlString = root.toString();
   const cleanedHtml = htmlString
     .replace(/\s\s+/g, " ") // Replace multiple spaces with single space
     .replace(/>\s+</g, "><") // Remove whitespace between tags
     .trim()
-    .substring(0, 1000000);
+    .substring(0, 150000);
 
   const prompt = `
     From the HTML content of "${url}", extract the product information into a JSON object.
