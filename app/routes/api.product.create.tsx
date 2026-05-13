@@ -72,6 +72,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     const parsed = parseFloat(priceValue);
     return isNaN(parsed) ? null : parsed;
   };
+  
+  const parseCost = parsePrice; // Alias for parsePrice
 
   // Clean up description HTML - remove spacing paragraphs around headings
   const cleanDescription = (html: string) => {

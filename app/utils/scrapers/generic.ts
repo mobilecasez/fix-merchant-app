@@ -366,8 +366,8 @@ async function parseWithGemini(html: string, url: string): Promise<ScrapedProduc
     }
     
     // Pass a much larger chunk to Gemini (Gemini 2.5 Flash has a 1M token context window)
-    // 300,000 chars is roughly 75k tokens, easily fitting in context while capturing deep JSON-LD
-    const truncatedHtml = html.substring(0, 300000);
+    // 1,000,000 chars is roughly 250k tokens, easily fitting in context while capturing deep JSON-LD
+    const truncatedHtml = html.substring(0, 1000000);
     
     const prompt = `You are a professional e-commerce data extraction expert. Your task is to analyze this product page HTML and extract ACCURATE product information.
 

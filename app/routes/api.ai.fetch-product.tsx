@@ -54,13 +54,13 @@ async function extractProductDataWithAI(url: string, htmlContent: string) {
   const root = parse(htmlContent);
   root.querySelectorAll("style, noscript, svg").forEach((el) => el.remove());
   
-  // Truncate to ensure we don't blow up token limits, but keep it large enough (300k chars) to catch deep JSON
+  // Truncate to ensure we don't blow up token limits, but keep it large enough (1M chars) to catch deep JSON
   const htmlString = root.toString();
   const cleanedHtml = htmlString
     .replace(/\s\s+/g, " ") // Replace multiple spaces with single space
     .replace(/>\s+</g, "><") // Remove whitespace between tags
     .trim()
-    .substring(0, 300000);
+    .substring(0, 1000000);
 
   const prompt = `
     From the HTML content of "${url}", extract the product information into a JSON object.
@@ -201,12 +201,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     let html = manualHtml || ""; // Use manual HTML if provided
     let fetchSuccess = !!manualHtml; // If manual HTML provided, skip auto-fetch// Only try auto-fetch if no manual HTML was provided
     if (!manualHtml) {
-      try {// Add random delay to mimic human behavior
-        await new Promise(resolve => setTimeout(resolve, Math.random() * 1000 + 500));
-        
-        // Fetch with 30 second timeout to prevent hanging
+      try {
+        // Fetch with 15 second timeout to prevent hanging and improve speed
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 30000);
+        const timeoutId = setTimeout(() => controller.abort(), 15000);
         
         try {
           const response = await fetch(url, {
