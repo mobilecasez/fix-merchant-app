@@ -113,15 +113,8 @@ export async function scrapeGeneric(
       return await parseWithGemini(htmlContent, url);
     }
     
-    // For auto-fetched HTML, try pattern-based parsing first (faster)
-    const parsedData = parseGenericHTML(htmlContent, url);
-    
-    // If we got good data (title + at least one image), return it
-    if (parsedData.productName && parsedData.images.length > 0) {
-      return parsedData;
-    }
-    
-    // Otherwise, fall back to AI
+    // Always prefer AI parsing for generic websites to ensure high-quality extraction 
+    // including variants and options, which pattern parsing cannot reliably extract.
     return await parseWithGemini(htmlContent, url);
     
   } catch (error) {
@@ -389,7 +382,19 @@ Return ONLY a valid JSON object (no markdown code blocks, no explanations, no ex
   "productType": "product category/type",
   "sku": "SKU code",
   "weight": "weight value",
-  "weightUnit": "unit"
+  "weightUnit": "unit",
+  "options": [
+    { "name": "string", "values": "string (comma-separated)" }
+  ],
+  "variants": [
+    {
+      "title": "string",
+      "price": "string",
+      "sku": "string",
+      "barcode": "string",
+      "quantity": "string"
+    }
+  ]
 }
 
 EXTRACTION RULES (FOLLOW EXACTLY):
@@ -484,6 +489,11 @@ EXTRACTION RULES (FOLLOW EXACTLY):
    • Look in product specifications table
    • Only if explicitly stated
    • Empty string if not found
+
+9. OPTIONS & VARIANTS - CRITICAL:
+   • Identify all product options (e.g., "Size", "Color") and their values.
+   • Extract variant combinations and list them in the variants array.
+   • Put the main product price in each variant's price if not explicitly different.
 
 HTML to analyze:
 ${truncatedHtml}`;
