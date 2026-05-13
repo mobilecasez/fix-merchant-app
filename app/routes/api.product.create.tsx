@@ -239,7 +239,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
       if (firstVariant.options && firstVariant.options.length > 0) {
         variantToUpdate.optionValues = firstVariant.options.map((optValue: string, index: number) => {
-          const optionName = productInput.optionNames && productInput.optionNames[index] ? productInput.optionNames[index] : \`Option \${index + 1}\`;
+          const optionName = productInput.optionNames && productInput.optionNames[index] ? productInput.optionNames[index] : `Option ${index + 1}`;
           return { 
             optionName: optionName, 
             name: optValue.trim()
@@ -301,7 +301,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           
           if (variant.options && variant.options.length > 0) {
             variantPayload.optionValues = variant.options.map((optValue: string, index: number) => {
-              const optionName = productInput.optionNames && productInput.optionNames[index] ? productInput.optionNames[index] : \`Option \${index + 1}\`;
+              const optionName = productInput.optionNames && productInput.optionNames[index] ? productInput.optionNames[index] : `Option ${index + 1}`;
               return { 
                 optionName: optionName, 
                 name: optValue.trim()
