@@ -223,7 +223,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       const variantPrice = parsePrice(firstVariant.price) || parsePrice(price);
       const variantCompareAtPrice = parsePrice(firstVariant.compareAtPrice) || parsePrice(compareAtPrice);
       
-      const variantToUpdate = {
+      const variantToUpdate: any = {
         id: createdVariants[0].id,
         price: variantPrice,
         compareAtPrice: variantCompareAtPrice,
@@ -236,9 +236,20 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         inventoryPolicy: firstVariant.continueSellingOutOfStock ? 'CONTINUE' : 'DENY',
         taxable: firstVariant.chargeTaxes,
       };
+
+      if (firstVariant.options && firstVariant.options.length > 0) {
+        variantToUpdate.optionValues = firstVariant.options.map((optValue: string, index: number) => {
+          const optionName = productInput.optionNames && productInput.optionNames[index] ? productInput.optionNames[index] : \`Option \${index + 1}\`;
+          return { 
+            optionName: optionName, 
+            name: optValue.trim()
+          };
+        });
+      }
+
       // Explicitly delete any options array if it exists on firstVariant just to be absolutely safe
       if ('options' in variantToUpdate) {
-         delete (variantToUpdate as any).options;
+         delete variantToUpdate.options;
       }
 
       const variantUpdateResponse = await admin.graphql(
@@ -275,7 +286,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           const varCompareAtPrice = parsePrice(variant.compareAtPrice) || parsePrice(compareAtPrice);
           
           // Remove the raw options array from the payload, GraphQL only accepts optionValues
-          const variantPayload = {
+          const variantPayload: any = {
             price: varPrice,
             compareAtPrice: varCompareAtPrice,
             barcode: variant.barcode || '',
@@ -286,15 +297,23 @@ export const action = async ({ request }: ActionFunctionArgs) => {
             },
             inventoryPolicy: variant.continueSellingOutOfStock ? 'CONTINUE' : 'DENY',
             taxable: variant.chargeTaxes,
-            optionValues: (variant.options || []).map((optValue: string, index: number) => {
-              // Ensure we pass the option name along with its value to map correctly
+          };
+          
+          if (variant.options && variant.options.length > 0) {
+            variantPayload.optionValues = variant.options.map((optValue: string, index: number) => {
               const optionName = productInput.optionNames && productInput.optionNames[index] ? productInput.optionNames[index] : \`Option \${index + 1}\`;
               return { 
                 optionName: optionName, 
                 name: optValue.trim()
               };
-            }),
-          };
+            });
+          }
+          
+          // Triple check to ensure options is never attached
+          if ('options' in variantPayload) {
+            delete variantPayload.options;
+          }
+          
           return variantPayload;
         });
 
