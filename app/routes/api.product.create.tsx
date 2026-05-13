@@ -236,6 +236,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         inventoryPolicy: firstVariant.continueSellingOutOfStock ? 'CONTINUE' : 'DENY',
         taxable: firstVariant.chargeTaxes,
       };
+      // Explicitly delete any options array if it exists on firstVariant just to be absolutely safe
+      if ('options' in variantToUpdate) {
+         delete (variantToUpdate as any).options;
+      }
 
       const variantUpdateResponse = await admin.graphql(
         `#graphql
@@ -270,7 +274,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           const varPrice = parsePrice(variant.price) || parsePrice(price);
           const varCompareAtPrice = parsePrice(variant.compareAtPrice) || parsePrice(compareAtPrice);
           
-          return {
+          // Remove the raw options array from the payload, GraphQL only accepts optionValues
+          const variantPayload = {
             price: varPrice,
             compareAtPrice: varCompareAtPrice,
             barcode: variant.barcode || '',
@@ -290,6 +295,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
               };
             }),
           };
+          return variantPayload;
         });
 
         const createVariantsResponse = await admin.graphql(
