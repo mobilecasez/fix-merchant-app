@@ -67,10 +67,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     }
   };
 
-  const parseCost = (cost: any) => {
-    if (cost === null || cost === undefined || cost === '') return null;
-    const parsedCost = parseFloat(cost);
-    return isNaN(parsedCost) ? null : parsedCost;
+  const parsePrice = (priceValue: any) => {
+    if (priceValue === null || priceValue === undefined || priceValue === '') return null;
+    const parsed = parseFloat(priceValue);
+    return isNaN(parsed) ? null : parsed;
   };
 
   // Clean up description HTML - remove spacing paragraphs around headings
@@ -217,14 +217,18 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
       // Update the first (default) variant
       const firstVariant = variants[0];
+      
+      const variantPrice = parsePrice(firstVariant.price) || parsePrice(price);
+      const variantCompareAtPrice = parsePrice(firstVariant.compareAtPrice) || parsePrice(compareAtPrice);
+      
       const variantToUpdate = {
         id: createdVariants[0].id,
-        price: firstVariant.price || price,
-        compareAtPrice: firstVariant.compareAtPrice || compareAtPrice,
-        barcode: firstVariant.barcode,
+        price: variantPrice,
+        compareAtPrice: variantCompareAtPrice,
+        barcode: firstVariant.barcode || '',
         inventoryItem: {
           cost: parseCost(firstVariant.costPerItem),
-          sku: firstVariant.sku,
+          sku: firstVariant.sku || '',
           tracked: firstVariant.trackQuantity,
         },
         inventoryPolicy: firstVariant.continueSellingOutOfStock ? 'CONTINUE' : 'DENY',
@@ -260,19 +264,24 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
       // Create additional variants if there are more than 1
       if (variants.length > 1) {
-        const variantsToCreate = variants.slice(1).map((variant: any) => ({
-          price: variant.price || price,
-          compareAtPrice: variant.compareAtPrice || compareAtPrice,
-          barcode: variant.barcode,
-          inventoryItem: {
-            cost: parseCost(variant.costPerItem),
-            sku: variant.sku,
-            tracked: variant.trackQuantity,
-          },
-          inventoryPolicy: variant.continueSellingOutOfStock ? 'CONTINUE' : 'DENY',
-          taxable: variant.chargeTaxes,
-          options: variant.options,
-        }));
+        const variantsToCreate = variants.slice(1).map((variant: any) => {
+          const varPrice = parsePrice(variant.price) || parsePrice(price);
+          const varCompareAtPrice = parsePrice(variant.compareAtPrice) || parsePrice(compareAtPrice);
+          
+          return {
+            price: varPrice,
+            compareAtPrice: varCompareAtPrice,
+            barcode: variant.barcode || '',
+            inventoryItem: {
+              cost: parseCost(variant.costPerItem),
+              sku: variant.sku || '',
+              tracked: variant.trackQuantity,
+            },
+            inventoryPolicy: variant.continueSellingOutOfStock ? 'CONTINUE' : 'DENY',
+            taxable: variant.chargeTaxes,
+            options: variant.options,
+          };
+        });
 
         const createVariantsResponse = await admin.graphql(
           `#graphql

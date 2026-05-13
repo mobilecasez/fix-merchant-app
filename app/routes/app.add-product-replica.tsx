@@ -434,10 +434,15 @@ export default function AddProductReplica() {
       return {
         title: title,
         options: singleCombination,
-        price: existingVariant?.price || '',
+        price: existingVariant?.price || price || '',
+        compareAtPrice: existingVariant?.compareAtPrice || compareAtPrice || '',
         sku: existingVariant?.sku || '',
         barcode: existingVariant?.barcode || '',
         quantity: existingVariant?.quantity || '',
+        costPerItem: existingVariant?.costPerItem || costPerItem || '',
+        chargeTaxes: existingVariant?.chargeTaxes !== undefined ? existingVariant.chargeTaxes : chargeTaxes,
+        trackQuantity: existingVariant?.trackQuantity !== undefined ? existingVariant.trackQuantity : trackQuantity,
+        continueSellingOutOfStock: existingVariant?.continueSellingOutOfStock !== undefined ? existingVariant.continueSellingOutOfStock : continueSellingOutOfStock,
       };
     });
 
