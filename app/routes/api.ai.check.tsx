@@ -165,18 +165,19 @@ export async function action({ request }: ActionFunctionArgs) {
     await prisma.productAICheck.upsert({
       where: { productId: product.id },
       update: {
-        issues: JSON.stringify(aiResponse.issues || []),
-        suggestions: JSON.stringify(aiResponse.suggestions_for_sales_improvement || []),
+        status: 'COMPLETE',
+        result: { issues: aiResponse.issues },
       },
       create: {
         productId: product.id,
         shop: session.shop,
-        issues: JSON.stringify(aiResponse.issues || []),
-        suggestions: JSON.stringify(aiResponse.suggestions_for_sales_improvement || []),
+        status: 'COMPLETE',
+        result: { issues: aiResponse.issues },
       },
     });
 
-    return json(aiResponse);
+    // Don't return the full result here to save bandwidth
+    return json({ success: true, issues: aiResponse.issues });
   } catch (error: any) {
     console.error(`Final attempt failed for product ${product.id}:`, error);
     return json({

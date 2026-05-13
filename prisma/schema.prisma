@@ -108,7 +108,7 @@ model ContactMessage {
 
 model ProductAICheck {
   id        String   @id @default(uuid())
-  productId String
+  productId String   @unique
   shop      String
   status    String // e.g., 'PENDING', 'COMPLETE', 'ERROR'
   result    Json?
