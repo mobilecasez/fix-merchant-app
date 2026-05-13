@@ -50,13 +50,17 @@ async function extractProductDataWithAI(url: string, htmlContent: string) {
     .filter((line) => line.trim() !== "" && !line.startsWith("#"))
     .map((line) => line.split(" : ")[1].trim());
 
-  // Clean HTML by removing scripts, styles, and excess whitespace
+  // Clean HTML by removing styles, and excess whitespace, but KEEP scripts as they often contain JSON-LD and product state (like Myntra's window.__myx)
   const root = parse(htmlContent);
-  root.querySelectorAll("script, style, noscript").forEach((el) => el.remove());
-  const cleanedHtml = root.toString()
+  root.querySelectorAll("style, noscript, svg").forEach((el) => el.remove());
+  
+  // Truncate to ensure we don't blow up token limits, but keep it large enough (300k chars) to catch deep JSON
+  const htmlString = root.toString();
+  const cleanedHtml = htmlString
     .replace(/\s\s+/g, " ") // Replace multiple spaces with single space
     .replace(/>\s+</g, "><") // Remove whitespace between tags
-    .trim();
+    .trim()
+    .substring(0, 300000);
 
   const prompt = `
     From the HTML content of "${url}", extract the product information into a JSON object.
