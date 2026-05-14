@@ -416,6 +416,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           incompleteData: true,
           missingFields: missingFields,
           message: `Unable to fetch complete product information. Missing: ${missingFields.join(", ")}. No credit was charged.`,
+          fetchedHtml: fetchSuccess ? html : "",
           ...productData, // Include partial data for user to see
         },
         { status: 200 }, // 200 because it's not an error, it's a warning
@@ -425,7 +426,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     // All critical fields present - increment product usage counter
     await incrementProductUsage(session.shop);
 
-    return json(productData);
+    return json({ ...productData, fetchedHtml: fetchSuccess ? html : "" });
   } catch (error) {
     console.error("Error fetching product data:", error);
     const errorMessage =

@@ -108,7 +108,7 @@ export default function AddProductReplica() {
   const [productSource, setProductSource] = useState('the product source');
   const [showManualHtmlInput, setShowManualHtmlInput] = useState(false);
   const [manualHtml, setManualHtml] = useState('');
-  const [htmlPanelOpen, setHtmlPanelOpen] = useState(true);
+  const [htmlPanelOpen, setHtmlPanelOpen] = useState(false); // Default to collapsed
   const [authorizedToImport, setAuthorizedToImport] = useState(false);
   const [incompleteDataWarning, setIncompleteDataWarning] = useState<string | null>(null);
   const [missingFields, setMissingFields] = useState<string[]>([]);
@@ -225,6 +225,12 @@ export default function AddProductReplica() {
         setShowLoader(false);
         setIncompleteDataWarning(scrapedData.message || "Incomplete product data - no credit charged");
         setMissingFields(scrapedData.missingFields || []);
+        
+        // Populate the fetched HTML into the manual box so the user can just hit Import again
+        if (scrapedData.fetchedHtml) {
+           setManualHtml(scrapedData.fetchedHtml);
+        }
+        
         setToastMessage(scrapedData.message || "Incomplete product data - no credit charged");
         setToastError(false); // Not an error, just a warning
         setToastActive(true);
@@ -260,6 +266,11 @@ export default function AddProductReplica() {
       if (isNewResponse) {
         setLoadingStep('Analyzing product data...');
         animateProgress(55);
+
+        // Populate the fetched HTML into the manual box so the user can see/edit it
+        if (scrapedData.fetchedHtml) {
+           setManualHtml(scrapedData.fetchedHtml);
+        }
 
         // Single unified call to process all AI operations in parallel
         processAllFetcher.submit(
@@ -785,14 +796,13 @@ export default function AddProductReplica() {
                   {isFetchingProduct ? "Importing..." : "Import Product"}
                 </Button>
                 
-                {/* Manual HTML Input - shown when auto-fetch is blocked */}
-                {(showManualHtmlInput || manualHtml) && (
-                  <Box 
-                    borderWidth="025" 
-                    borderRadius="200" 
-                    borderColor="border"
-                    padding="0"
-                  >
+                {/* Manual HTML Input - ALWAYS shown in collapsed state for fallback */}
+                <Box 
+                  borderWidth="025" 
+                  borderRadius="200" 
+                  borderColor="border"
+                  padding="0"
+                >
                     <div 
                       style={{ cursor: 'pointer' }}
                       onClick={() => setHtmlPanelOpen(!htmlPanelOpen)}
@@ -918,7 +928,6 @@ export default function AddProductReplica() {
                       </Box>
                     </Collapsible>
                   </Box>
-                )}
               </FormLayout>
             </BlockStack>
           </Card>

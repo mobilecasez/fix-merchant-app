@@ -356,7 +356,7 @@ function parseGenericHTML(html: string, url: string): ScrapedProductData {
 /**
  * Parse HTML using Google Gemini AI
  */
-async function parseWithGemini(html: string, url: string): Promise<ScrapedProductData> {
+export async function parseWithGemini(html: string, url: string): Promise<ScrapedProductData> {
   
   try {
     // Get Gemini API key from environment
