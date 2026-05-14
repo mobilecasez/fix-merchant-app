@@ -832,33 +832,31 @@ export default function AddProductReplica() {
                     <Collapsible open={htmlPanelOpen} id="manual-html-panel">
                       <Box padding="400">
                         <BlockStack gap="400">
-                          {showManualHtmlInput && (
-                            <Box 
-                              borderWidth="025" 
-                              borderRadius="200" 
-                              borderColor="border"
-                              padding="400"
-                              background="bg-surface-warning"
-                            >
-                              <BlockStack gap="200">
-                                <Text variant="headingSm" as="h3">
-                                  Website Blocking Detected
-                                </Text>
-                                <Text variant="bodySm" as="p">
-                                  The website is blocking automated access. Follow these steps:
-                                </Text>
-                                <Box paddingBlockStart="200">
-                                  <BlockStack gap="100">
-                                    <Text variant="bodyXs" as="p">1. Open the product URL in your browser</Text>
-                                    <Text variant="bodyXs" as="p" fontWeight="semibold">2. Press Ctrl+U (Windows) or Cmd+Option+U (Mac) to view page source</Text>
-                                    <Text variant="bodyXs" as="p" tone="subdued">(If right-click is disabled, use keyboard shortcut above)</Text>
-                                    <Text variant="bodyXs" as="p">3. Select all HTML (Ctrl+A / Cmd+A) and copy it</Text>
-                                    <Text variant="bodyXs" as="p">4. Paste below and click Import</Text>
-                                  </BlockStack>
-                                </Box>
-                              </BlockStack>
-                            </Box>
-                          )}
+                          <Box 
+                            borderWidth="025" 
+                            borderRadius="200" 
+                            borderColor="border"
+                            padding="400"
+                            background="bg-surface-secondary"
+                          >
+                            <BlockStack gap="200">
+                              <Text variant="headingSm" as="h3">
+                                How to use Manual Import
+                              </Text>
+                              <Text variant="bodySm" as="p">
+                                If the automated fetch is blocked or misses details, follow these steps to guarantee a perfect import:
+                              </Text>
+                              <Box paddingBlockStart="200">
+                                <BlockStack gap="100">
+                                  <Text variant="bodyXs" as="p">1. Open the product URL in your browser</Text>
+                                  <Text variant="bodyXs" as="p" fontWeight="semibold">2. Press Ctrl+U (Windows) or Cmd+Option+U (Mac) to view page source</Text>
+                                  <Text variant="bodyXs" as="p" tone="subdued">(If right-click is disabled, use keyboard shortcut above)</Text>
+                                  <Text variant="bodyXs" as="p">3. Select all HTML (Ctrl+A / Cmd+A) and copy it</Text>
+                                  <Text variant="bodyXs" as="p">4. Paste below and click Import</Text>
+                                </BlockStack>
+                              </Box>
+                            </BlockStack>
+                          </Box>
                           
                           <div style={{ position: 'relative' }}>
                             <label style={{ 
