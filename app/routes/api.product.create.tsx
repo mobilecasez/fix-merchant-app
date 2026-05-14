@@ -135,6 +135,13 @@ export const action = async ({ request }: ActionFunctionArgs) => {
             category {
               id
             }
+            media(first: 1) {
+              edges {
+                node {
+                  id
+                }
+              }
+            }
             variants(first: 10) {
               edges {
                 node {
@@ -165,6 +172,12 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
     const createdProduct = responseJson.data.productCreate.product;
     const productId = createdProduct.id;
+    
+    // Extract the main product image ID to assign to variants
+    let mainMediaId = null;
+    if (createdProduct.media && createdProduct.media.edges && createdProduct.media.edges.length > 0) {
+      mainMediaId = createdProduct.media.edges[0].node.id;
+    }
 
     // Set category using productSet mutation if provided
     if (category && category.trim() !== '') {try {
@@ -241,6 +254,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         taxable: firstVariant.chargeTaxes,
       };
 
+      if (mainMediaId) {
+        variantToUpdate.mediaId = mainMediaId;
+      }
+
       if (firstVariant.options && firstVariant.options.length > 0) {
         variantToUpdate.optionValues = firstVariant.options.map((optValue: string, index: number) => {
           const optionName = options && options[index] ? options[index].name : `Option ${index + 1}`;
@@ -302,6 +319,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
             inventoryPolicy: variant.continueSellingOutOfStock ? 'CONTINUE' : 'DENY',
             taxable: variant.chargeTaxes,
           };
+          
+          if (mainMediaId) {
+            variantPayload.mediaId = mainMediaId;
+          }
           
           if (variant.options && variant.options.length > 0) {
             variantPayload.optionValues = variant.options.map((optValue: string, index: number) => {

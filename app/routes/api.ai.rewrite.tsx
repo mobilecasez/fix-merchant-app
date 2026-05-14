@@ -62,7 +62,9 @@ Include the Model name.
 Place the Color/Variant name in a prominent, central position within the title.
 
 Original title: "${title}"
-The currency for any pricing mentioned is ${shopCurrencyCode || 'USD'}.`;
+The currency for any pricing mentioned is ${shopCurrencyCode || 'USD'}.
+
+CRITICAL INSTRUCTION: Do NOT use markdown bold/italic syntax (like ** or *) anywhere in the title. Return ONLY plain text.`;
   } else if (field === "description") {
     prompt = `Please rewrite the provided product Description, ensuring the entire output is only the final rewritten Description, rendered as a complete HTML snippet (including appropriate HTML tags like <h3>, <p>, <strong>, <ul>, <li>, <br>). There should be no additional text, conversational elements, or introductory/concluding remarks outside of the HTML structure. The rewritten description must adhere to the following:
 
@@ -81,6 +83,8 @@ Use <ul> and <li> tags for bulleted lists.
 Use <strong> tags for bolding important keywords or specific product details.
 
 Use <br> for line breaks within paragraphs where appropriate.
+
+CRITICAL INSTRUCTION: Do NOT use markdown syntax (like ** or *) for formatting. You MUST use only HTML tags (like <strong> and <em>).
 
 Ensure proper HTML structure, indentation, and spacing for readability in the code.
 
