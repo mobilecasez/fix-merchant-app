@@ -517,13 +517,16 @@ export default function AddProductReplica() {
   useEffect(() => {
     if (saveFetcher.state === 'idle' && saveFetcher.data && saveFetcher.data !== lastHandledData.current) {
       lastHandledData.current = saveFetcher.data;
-      const { product, errors } = saveFetcher.data as any;
+      const { product, errors, data } = saveFetcher.data as any;
       if (errors) {
         setToastMessage(errors[0].message);
         setToastError(true);
-      } else if (product) {
-        setToastMessage(`Product "${product.title}" created successfully!`);
+      } else if (product || (data && !data.errors)) {
+        setToastMessage(`Product created successfully!`);
         setToastError(false);
+        // Clear manual HTML to speed up UI
+        setManualHtml('');
+        setHtmlPanelOpen(false);
         revalidator.revalidate();
       }
       setToastActive(true);
@@ -910,7 +913,7 @@ export default function AddProductReplica() {
                                 setHtmlPanelOpen(false);
                               }}
                               loading={isFetchingProduct}
-                              disabled={!productUrl.trim() || !manualHtml.trim() || !authorizedToImport || isFetchingProduct}
+                              disabled={!manualHtml.trim() || !authorizedToImport || isFetchingProduct}
                             >
                               {isFetchingProduct ? 'Importing...' : 'Import Product'}
                             </Button>
