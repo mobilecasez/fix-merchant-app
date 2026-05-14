@@ -719,6 +719,9 @@ export default function AddProductReplica() {
                 <Text as="p" variant="bodySm" tone="subdued">
                   Please add the missing information manually before saving. You can try importing again or fill in the fields below.
                 </Text>
+                <div style={{ color: "darkgreen", fontWeight: "bold", marginTop: "8px" }}>
+                  💡 Tip: To fetch all the details accurately including variants and pricing, please use Manual HTML import. Expand the 'Manual Import' option above to see more details.
+                </div>
               </BlockStack>
             </Banner>
           )}

@@ -1,11 +1,12 @@
 import { ScrapedProductData } from "./types";
 import { cleanProductName, ensureCompareAtPrice, parseWeight, estimateWeight } from "./helpers";
+import { parseWithGemini, MANUAL_HTML_REQUIRED } from "./generic";
 
-export async function scrapeFlipkart(html: string, url: string): Promise<ScrapedProductData> {
+export async function scrapeFlipkart(html: string, url: string): Promise<ScrapedProductData | typeof MANUAL_HTML_REQUIRED> {
   try {
-    
     let htmlContent = html;
-    
+    let isManualHtml = false;
+
     // Only fetch if HTML parameter is not provided or is too small
     if (!html || html.length < 10000) {
       
@@ -52,50 +53,23 @@ export async function scrapeFlipkart(html: string, url: string): Promise<Scraped
           // Try to use the provided HTML parameter as fallback
           if (html && html.length > 10000) {
             htmlContent = html;
+            isManualHtml = true;
           } else {
-            return await scrapeFlipkartWithPuppeteer(url);
+            return MANUAL_HTML_REQUIRED; // Force manual HTML instead of slow broken Puppeteer
           }
         }
       }
     } else {
+      isManualHtml = true;
     }
     
-    return await parseFlipkartHTML(htmlContent, url);
+    // Use Gemini AI for Flipkart to guarantee perfect variant and pricing extraction
+    const parsedData = await parseWithGemini(htmlContent, url);
+    return parsedData;
+    
   } catch (error) {
     console.error('[Flipkart Scraper] Error:', error);
-    
-    // Try to use provided HTML parameter as last resort before Puppeteer
-    if (html && html.length > 10000) {
-      try {
-        return await parseFlipkartHTML(html, url);
-      } catch (parseError) {
-        console.error('[Flipkart Scraper] Parse error:', parseError);
-      }
-    }
-    
-    // Final fallback: try Puppeteer
-    try {
-      return await scrapeFlipkartWithPuppeteer(url);
-    } catch (puppeteerError) {
-      console.error('[Flipkart Scraper] Puppeteer also failed:', puppeteerError);
-      return {
-        productName: "",
-        description: "",
-        price: "",
-        images: [],
-        vendor: "Flipkart",
-        productType: "",
-        tags: "",
-        compareAtPrice: "",
-        costPerItem: "",
-        sku: "",
-        barcode: "",
-        weight: "",
-        weightUnit: "kg",
-        options: [],
-        variants: [],
-      };
-    }
+    return MANUAL_HTML_REQUIRED;
   }
 }
 
