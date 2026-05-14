@@ -387,9 +387,10 @@ async function parseWithGemini(html: string, url: string): Promise<ScrapedProduc
       }
     });
     
-    // Pass a heavily cleaned chunk to Gemini. 150k is large enough for deep JSON but small enough to process fast.
+    // Pass a heavily cleaned chunk to Gemini. 500k is large enough for deep JSON on massive single-page apps like Myntra.
+    // 500k characters is only ~125k tokens, which easily processes inside Gemini 2.5 Flash's 1,000,000 token window.
     const cleanedHtml = root.toString().replace(/\s\s+/g, " ").replace(/>\s+</g, "><").trim();
-    const truncatedHtml = cleanedHtml.substring(0, 150000);
+    const truncatedHtml = cleanedHtml.substring(0, 500000);
     
     const prompt = `You are a professional e-commerce data extraction expert. Your task is to analyze this product page HTML and extract ACCURATE product information.
 

@@ -71,14 +71,14 @@ async function extractProductDataWithAI(url: string, htmlContent: string) {
     }
   });
   
-  // Truncate to ensure we don't blow up token limits. 150k chars is plenty to catch deep JSON
-  // without causing the AI request to time out
+  // Truncate to ensure we don't blow up token limits. 500k chars is plenty to catch deep JSON
+  // without causing the AI request to time out, as it's only ~125k tokens.
   const htmlString = root.toString();
   const cleanedHtml = htmlString
     .replace(/\s\s+/g, " ") // Replace multiple spaces with single space
     .replace(/>\s+</g, "><") // Remove whitespace between tags
     .trim()
-    .substring(0, 150000);
+    .substring(0, 500000);
 
   const prompt = `
     From the HTML content of "${url}", extract the product information into a JSON object.
