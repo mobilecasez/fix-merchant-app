@@ -54,12 +54,18 @@ async function extractProductDataWithAI(url: string, htmlContent: string) {
   const root = parse(htmlContent);
   
   // Extract a list of all images as a direct hint to the AI before cleaning
-  const allImages = Array.from(new Set(
-    Array.from(root.querySelectorAll("img, meta[property='og:image']"))
+  // We use regex to find ANY image URL in the raw text, because raw Ctrl+U source code 
+  // often hides images inside JSON blobs rather than standard <img> tags.
+  const imageUrlRegex = /https?:\/\/[^"'\s>]+?\.(?:jpg|jpeg|png|webp|avif)(?:\?[^"'\s>]*)?/gi;
+  const rawUrlMatches = Array.from(htmlContent.matchAll(imageUrlRegex)).map(m => m[0]);
+  
+  const allImages = Array.from(new Set([
+    ...rawUrlMatches,
+    ...Array.from(root.querySelectorAll("img, meta[property='og:image']"))
       .map((img: any) => img.getAttribute("src") || img.getAttribute("data-src") || img.getAttribute("content"))
       .filter((src: any) => src && (src.startsWith("http") || src.startsWith("//")))
       .map((src: string) => src.startsWith("//") ? "https:" + src : src)
-  ));
+  ]));
   
   // Remove visual noise and tracking scripts to drastically reduce payload size
   root.querySelectorAll("style, noscript, svg, path, iframe, canvas, map").forEach((el) => el.remove());

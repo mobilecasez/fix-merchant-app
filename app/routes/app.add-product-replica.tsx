@@ -849,10 +849,10 @@ export default function AddProductReplica() {
                               <Box paddingBlockStart="200">
                                 <BlockStack gap="100">
                                   <Text variant="bodyXs" as="p">1. Open the product URL in your browser</Text>
-                                  <Text variant="bodyXs" as="p" fontWeight="semibold">2. Press Ctrl+U (Windows) or Cmd+Option+U (Mac) to view page source</Text>
-                                  <Text variant="bodyXs" as="p" tone="subdued">(If right-click is disabled, use keyboard shortcut above)</Text>
-                                  <Text variant="bodyXs" as="p">3. Select all HTML (Ctrl+A / Cmd+A) and copy it</Text>
-                                  <Text variant="bodyXs" as="p">4. Paste below and click Import</Text>
+                                  <Text variant="bodyXs" as="p" fontWeight="semibold">2. Right-click anywhere on the page and select "Inspect" (or press F12)</Text>
+                                  <Text variant="bodyXs" as="p">3. In the Elements panel, right-click the very first <strong>&lt;html&gt;</strong> tag at the top</Text>
+                                  <Text variant="bodyXs" as="p">4. Select <strong>Copy &gt; Copy element</strong> (or Copy outerHTML)</Text>
+                                  <Text variant="bodyXs" as="p">5. Paste the code below and click Import</Text>
                                 </BlockStack>
                               </Box>
                             </BlockStack>
