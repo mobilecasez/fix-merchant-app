@@ -101,6 +101,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     vendor: vendor,
     productType: productType,
     tags: tags ? tags.split(",").map((tag: string) => tag.trim()) : [],
+    productOptions: options && options.length > 0 ? options.map((opt: any) => ({
+      name: opt.name,
+      values: opt.values.map((v: string) => ({ name: v }))
+    })) : [],
     seo: {
       title: seoTitle || productName,
       description: seoDescription || null,
@@ -239,7 +243,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
       if (firstVariant.options && firstVariant.options.length > 0) {
         variantToUpdate.optionValues = firstVariant.options.map((optValue: string, index: number) => {
-          const optionName = productInput.optionNames && productInput.optionNames[index] ? productInput.optionNames[index] : `Option ${index + 1}`;
+          const optionName = options && options[index] ? options[index].name : `Option ${index + 1}`;
           return { 
             optionName: optionName, 
             name: optValue.trim()
@@ -301,7 +305,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           
           if (variant.options && variant.options.length > 0) {
             variantPayload.optionValues = variant.options.map((optValue: string, index: number) => {
-              const optionName = productInput.optionNames && productInput.optionNames[index] ? productInput.optionNames[index] : `Option ${index + 1}`;
+              const optionName = options && options[index] ? options[index].name : `Option ${index + 1}`;
               return { 
                 optionName: optionName, 
                 name: optValue.trim()
