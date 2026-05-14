@@ -142,9 +142,10 @@ async function extractProductDataWithAI(url: string, htmlContent: string) {
     Instructions:
     - Return an empty string "" or an empty array [] if a field is not found.
     - Description should be in HTML format.
-    - Extract all product image URLs from img tags, data attributes, or JavaScript image arrays (e.g., ImageBlockATF, colorImages, imageBlock). Look for high-resolution versions (hiRes, large, zoom) when available.
-    - Identify all product options (e.g., "Size", "Color") and their values.
-    - List all variant combinations with their price, SKU, and barcode.
+    - Extract all product image URLs from the pre-extracted list and any JSON/HTML data. Look for high-resolution versions (hiRes, large, zoom).
+    - CRITICAL: Identify all product options (e.g., "Size", "Color") and their values.
+    - CRITICAL: List all variant combinations in the "variants" array.
+    - CRITICAL: You MUST put the main selling price into EVERY variant's "price" field unless explicitly stated otherwise. Do not leave variant prices blank.
     - If a value is absolutely not present, return null for that field.
     - Do not return an empty object. Make your best effort to fill the fields.
   `;
