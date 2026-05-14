@@ -372,10 +372,23 @@ async function parseWithGemini(html: string, url: string): Promise<ScrapedProduc
     // Remove massive visual elements that AI doesn't need
     root.querySelectorAll("style, noscript, svg, path, iframe, canvas, map").forEach((el: any) => el.remove());
     
+    // Extract a list of all images as a direct hint to the AI before cleaning
+    const allImages = Array.from(new Set(
+      Array.from(root.querySelectorAll("img, meta[property='og:image']"))
+        .map((img: any) => img.getAttribute("src") || img.getAttribute("data-src") || img.getAttribute("content"))
+        .filter((src: any) => src && (src.startsWith("http") || src.startsWith("//")))
+        .map((src: string) => src.startsWith("//") ? "https:" + src : src)
+    ));
+    
     // Remove heavy tracking/ad scripts but KEEP data scripts (like window.__myx or JSON-LD)
     root.querySelectorAll("script").forEach((el: any) => {
       const src = el.getAttribute("src") || "";
+      const type = el.getAttribute("type") || "";
       const content = el.text || "";
+      
+      // NEVER remove JSON-LD or standard JSON data scripts
+      if (type.includes("json")) return;
+      
       if (
         src.includes("googletag") || 
         src.includes("facebook") || 
@@ -387,12 +400,15 @@ async function parseWithGemini(html: string, url: string): Promise<ScrapedProduc
       }
     });
     
-    // Pass a heavily cleaned chunk to Gemini. 500k is large enough for deep JSON on massive single-page apps like Myntra.
-    // 500k characters is only ~125k tokens, which easily processes inside Gemini 2.5 Flash's 1,000,000 token window.
+    // Pass a heavily cleaned chunk to Gemini. 800k is large enough for deep JSON on massive single-page apps like Myntra.
+    // 800k characters is only ~200k tokens, which easily processes inside Gemini 2.5 Flash's 1,000,000 token window.
     const cleanedHtml = root.toString().replace(/\s\s+/g, " ").replace(/>\s+</g, "><").trim();
-    const truncatedHtml = cleanedHtml.substring(0, 500000);
+    const truncatedHtml = cleanedHtml.substring(0, 800000);
     
     const prompt = `You are a professional e-commerce data extraction expert. Your task is to analyze this product page HTML and extract ACCURATE product information.
+
+Here is a pre-extracted list of ALL image URLs found on the page to help you. Choose the best, highest-resolution product images from this list and any JSON data found in the HTML:
+${JSON.stringify(allImages)}
 
 Return ONLY a valid JSON object (no markdown code blocks, no explanations, no extra text) in this exact format:
 

@@ -53,13 +53,26 @@ async function extractProductDataWithAI(url: string, htmlContent: string) {
   // Clean HTML by removing styles, and excess whitespace, but KEEP scripts as they often contain JSON-LD and product state (like Myntra's window.__myx)
   const root = parse(htmlContent);
   
+  // Extract a list of all images as a direct hint to the AI before cleaning
+  const allImages = Array.from(new Set(
+    Array.from(root.querySelectorAll("img, meta[property='og:image']"))
+      .map((img: any) => img.getAttribute("src") || img.getAttribute("data-src") || img.getAttribute("content"))
+      .filter((src: any) => src && (src.startsWith("http") || src.startsWith("//")))
+      .map((src: string) => src.startsWith("//") ? "https:" + src : src)
+  ));
+  
   // Remove visual noise and tracking scripts to drastically reduce payload size
   root.querySelectorAll("style, noscript, svg, path, iframe, canvas, map").forEach((el) => el.remove());
   
   // Remove generic tracking/ads scripts but keep application/ld+json and window state scripts
   root.querySelectorAll("script").forEach((el) => {
     const src = el.getAttribute("src") || "";
+    const type = el.getAttribute("type") || "";
     const content = el.text || "";
+    
+    // NEVER remove JSON-LD or standard JSON data scripts
+    if (type.includes("json")) return;
+    
     if (
       src.includes("googletag") || 
       src.includes("facebook") || 
@@ -71,17 +84,20 @@ async function extractProductDataWithAI(url: string, htmlContent: string) {
     }
   });
   
-  // Truncate to ensure we don't blow up token limits. 500k chars is plenty to catch deep JSON
-  // without causing the AI request to time out, as it's only ~125k tokens.
+  // Truncate to ensure we don't blow up token limits. 800k chars is plenty to catch deep JSON
+  // without causing the AI request to time out, as it's only ~200k tokens.
   const htmlString = root.toString();
   const cleanedHtml = htmlString
     .replace(/\s\s+/g, " ") // Replace multiple spaces with single space
     .replace(/>\s+</g, "><") // Remove whitespace between tags
     .trim()
-    .substring(0, 500000);
+    .substring(0, 800000);
 
   const prompt = `
     From the HTML content of "${url}", extract the product information into a JSON object.
+
+    Here is a pre-extracted list of ALL image URLs found on the page to help you. Choose the best, highest-resolution product images from this list and any JSON data found in the HTML:
+    ${JSON.stringify(allImages)}
 
     HTML:
     \`\`\`html
