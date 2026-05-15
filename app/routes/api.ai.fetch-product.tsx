@@ -405,11 +405,11 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     // Validate critical fields - don't charge credit if essential data is missing
     const missingFields: string[] = [];
     
-    // Safety fallback: if variants have empty prices but the main product has a price, copy it over
+    // Safety fallback: if variants have empty/zero prices but the main product has a price, copy it over
     if (productData.price && productData.variants && productData.variants.length > 0) {
       productData.variants = productData.variants.map((v: any) => ({
         ...v,
-        price: (v.price && v.price.trim() !== "" && v.price !== "0") ? v.price : productData.price,
+        price: (v.price && String(v.price).trim() !== "" && parseFloat(String(v.price).replace(/[^0-9.]/g, '')) > 0) ? v.price : productData.price,
       }));
     }
     
@@ -419,10 +419,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     }
     
     // Check for price - either main price or variant prices
-    const hasMainPrice = productData.price && productData.price.trim() !== "" && productData.price !== "0";
+    const hasMainPrice = productData.price && String(productData.price).trim() !== "" && parseFloat(String(productData.price).replace(/[^0-9.]/g, '')) > 0;
     const hasVariantPrices = productData.variants && 
       productData.variants.length > 0 && 
-      productData.variants.some((v: any) => v.price && v.price.trim() !== "" && v.price !== "0");
+      productData.variants.some((v: any) => v.price && String(v.price).trim() !== "" && parseFloat(String(v.price).replace(/[^0-9.]/g, '')) > 0);
     
     if (!hasMainPrice && !hasVariantPrices) {
       missingFields.push("pricing");
