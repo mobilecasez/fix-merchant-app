@@ -110,6 +110,7 @@ export default function AddProductReplica() {
   const [manualHtml, setManualHtml] = useState('');
   const [htmlPanelOpen, setHtmlPanelOpen] = useState(false); // Default to collapsed
   const [authorizedToImport, setAuthorizedToImport] = useState(false);
+  const [showInstructions, setShowInstructions] = useState(false);
   const [incompleteDataWarning, setIncompleteDataWarning] = useState<string | null>(null);
   const [missingFields, setMissingFields] = useState<string[]>([]);
   const progressIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -847,17 +848,46 @@ export default function AddProductReplica() {
                                 How to use Manual Import
                               </Text>
                               <Text variant="bodySm" as="p">
-                                If the automated fetch is blocked or misses details, follow these steps to guarantee a perfect import:
+                                If the automated fetch is blocked or misses details, you can import perfectly by pasting the full page code.
                               </Text>
-                              <Box paddingBlockStart="200">
-                                <BlockStack gap="100">
-                                  <Text variant="bodyXs" as="p">1. Open the product URL in your browser</Text>
-                                  <Text variant="bodyXs" as="p" fontWeight="semibold">2. Right-click anywhere on the page and select "Inspect" (or press F12)</Text>
-                                  <Text variant="bodyXs" as="p">3. In the Elements panel, right-click the very first <strong>&lt;html&gt;</strong> tag at the top</Text>
-                                  <Text variant="bodyXs" as="p">4. Select <strong>Copy &gt; Copy element</strong> (or Copy outerHTML)</Text>
-                                  <Text variant="bodyXs" as="p">5. Paste the code below and click Import</Text>
-                                </BlockStack>
-                              </Box>
+                              
+                              <Button 
+                                variant="plain" 
+                                onClick={() => setShowInstructions(!showInstructions)}
+                                textAlign="left"
+                              >
+                                {showInstructions ? "Hide detailed instructions" : "Show detailed instructions for all browsers"}
+                              </Button>
+
+                              <Collapsible open={showInstructions} id="browser-instructions">
+                                <Box paddingBlockStart="200">
+                                  <BlockStack gap="300">
+                                    <BlockStack gap="100">
+                                      <Text variant="bodyXs" as="p" fontWeight="bold">Google Chrome / Microsoft Edge / Brave</Text>
+                                      <Text variant="bodyXs" as="p">1. Right-click anywhere on the page and select "Inspect" (or press F12)</Text>
+                                      <Text variant="bodyXs" as="p">2. In the Elements panel, scroll to the very top and right-click the <strong>&lt;html&gt;</strong> tag</Text>
+                                      <Text variant="bodyXs" as="p">3. Select <strong>Copy &gt; Copy element</strong> (or Copy outerHTML)</Text>
+                                    </BlockStack>
+                                    
+                                    <BlockStack gap="100">
+                                      <Text variant="bodyXs" as="p" fontWeight="bold">Safari (Mac)</Text>
+                                      <Text variant="bodyXs" as="p">1. First, enable Developer Menu (Safari &gt; Settings &gt; Advanced &gt; Show features for web developers)</Text>
+                                      <Text variant="bodyXs" as="p">2. Right-click on the page and select "Inspect Element"</Text>
+                                      <Text variant="bodyXs" as="p">3. In the Elements tab, right-click the top <strong>&lt;html&gt;</strong> tag</Text>
+                                      <Text variant="bodyXs" as="p">4. Select <strong>Copy as HTML</strong></Text>
+                                    </BlockStack>
+                                    
+                                    <BlockStack gap="100">
+                                      <Text variant="bodyXs" as="p" fontWeight="bold">Firefox</Text>
+                                      <Text variant="bodyXs" as="p">1. Right-click on the page and select "Inspect"</Text>
+                                      <Text variant="bodyXs" as="p">2. In the Inspector tab, right-click the top <strong>&lt;html&gt;</strong> tag</Text>
+                                      <Text variant="bodyXs" as="p">3. Select <strong>Copy &gt; Outer HTML</strong></Text>
+                                    </BlockStack>
+                                    
+                                    <Text variant="bodyXs" as="p" tone="subdued">After copying, paste the code into the box below and click Import.</Text>
+                                  </BlockStack>
+                                </Box>
+                              </Collapsible>
                             </BlockStack>
                           </Box>
                           
