@@ -945,6 +945,14 @@ export default function AddProductReplica() {
                             </div>
                           </div>
                           
+                          <Box paddingBlockEnd="200">
+                            <Checkbox
+                              label="I confirm I have authorization to import this product"
+                              checked={authorizedToImport}
+                              onChange={setAuthorizedToImport}
+                            />
+                          </Box>
+
                           <InlineStack gap="200">
                             <Button 
                               variant="primary"
