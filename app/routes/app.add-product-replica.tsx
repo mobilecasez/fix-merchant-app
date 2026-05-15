@@ -34,7 +34,7 @@ import { useDropzone } from "react-dropzone";
 import RichTextEditor from "../components/RichTextEditor";
 import HierarchicalSelect from "../components/HierarchicalSelect";
 import ShopFlixLoader from "../components/ShopFlixLoader";
-import { XIcon } from '@shopify/polaris-icons';
+import { XIcon, ExternalIcon } from '@shopify/polaris-icons';
 
 export const loader: LoaderFunction = async ({ request }) => {
   const { session } = await authenticate.admin(request);
@@ -851,13 +851,23 @@ export default function AddProductReplica() {
                                 If the automated fetch is blocked or misses details, you can import perfectly by pasting the full page code.
                               </Text>
                               
-                              <Button 
-                                variant="plain" 
-                                onClick={() => setShowInstructions(!showInstructions)}
-                                textAlign="left"
-                              >
-                                {showInstructions ? "Hide detailed instructions" : "Show detailed instructions for all browsers"}
-                              </Button>
+                              <InlineStack gap="400" blockAlign="center">
+                                <Button 
+                                  variant="plain" 
+                                  onClick={() => setShowInstructions(!showInstructions)}
+                                  textAlign="left"
+                                >
+                                  {showInstructions ? "Hide detailed instructions" : "Show detailed instructions for all browsers"}
+                                </Button>
+                                
+                                <Button
+                                  variant="plain"
+                                  icon={ExternalIcon}
+                                  onClick={() => window.open('/videos/manual_import_help.mp4', '_blank')}
+                                >
+                                  Watch Quick Help Video
+                                </Button>
+                              </InlineStack>
 
                               <Collapsible open={showInstructions} id="browser-instructions">
                                 <Box paddingBlockStart="200">
