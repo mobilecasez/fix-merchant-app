@@ -285,12 +285,14 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     const scraper = getScraper(processingUrl);
 
     let productData;
-    if (scraper) {try {
-        // Log HTML to help with debugging (first 2000 chars)// Call scraper with manual HTML override if provided
+    if (scraper) {
+      try {
+        // Call scraper with manual HTML override if provided
         productData = await scraper(html, processingUrl);
         
         // Check if scraper returned MANUAL_HTML_REQUIRED flag
-        if (typeof productData === 'string' && productData === MANUAL_HTML_REQUIRED) {return json({
+        if (typeof productData === 'string' && productData === MANUAL_HTML_REQUIRED) {
+          return json({
             manualHtmlRequired: true,
             message: "The website is blocking automated access. Please manually copy the HTML:",
             instructions: [
@@ -303,18 +305,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           });
         }
         
-        // Check if manual HTML is required (string response)
-        if (typeof productData === 'string' && productData === MANUAL_HTML_REQUIRED) {
-          // This is already handled above, should not reach here
-        }
-        
-        // Type guard: only access properties if it's ScrapedProductData
-        if (typeof productData !== 'string') {
-          if (productData.images) {
-            productData.images.slice(0, 3).forEach((img: string, idx: number) => {});
-          }
-        }
-
         // Validate that scraper returned valid data
         // If product name is missing but we have images, still use the scraper data
         if (typeof productData !== 'string' && (!productData.productName || productData.productName.trim() === "") && 
@@ -333,9 +323,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           } else {
             throw new Error("Unable to extract product data. Please try again or add the product manually.");
           }
-        } else if (typeof productData !== 'string' && (!productData.productName || productData.productName.trim() === "")) {}
+        }
         
-        // If scraper succeeded but missed variants, use AI on the HTML to fetch them
+        // Magic Fallback for Amazon: If scraper succeeded but explicitly returned 0 variants, use AI on the HTML to fetch them
         if (typeof productData !== 'string' && productData.productName && (!productData.variants || productData.variants.length === 0)) {
            if (fetchSuccess && html && html.trim().length > 0) {
               const aiData = await extractProductDataWithAI(processingUrl, html);
