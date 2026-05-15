@@ -405,6 +405,14 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     // Validate critical fields - don't charge credit if essential data is missing
     const missingFields: string[] = [];
     
+    // Safety fallback: if variants have empty prices but the main product has a price, copy it over
+    if (productData.price && productData.variants && productData.variants.length > 0) {
+      productData.variants = productData.variants.map((v: any) => ({
+        ...v,
+        price: (v.price && v.price.trim() !== "" && v.price !== "0") ? v.price : productData.price,
+      }));
+    }
+    
     // Check for images
     if (!productData.images || productData.images.length === 0) {
       missingFields.push("images");
