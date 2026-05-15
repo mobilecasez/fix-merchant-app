@@ -77,11 +77,12 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   // Create all prompts
   const titlePrompt = `Please rewrite the provided title, ensuring the output is only the final rewritten title with no additional text. The title should be:
 
-SEO Optimized for Google Merchant Center, aiming to increase sales via Google Ads.
 Descriptive, Concise & Keyword-Rich.
 Include the Brand name intact.
 Include the Model name.
 Place the Color/Variant name in a prominent, central position within the title.
+
+CRITICAL INSTRUCTION: Do NOT include words like "Google Merchant Center", "SEO", "Ads", or "Optimized" in the output title.
 
 Original title: "${title}"
 The currency for any pricing mentioned is ${shopCurrencyCode || 'USD'}.
