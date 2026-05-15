@@ -234,9 +234,13 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const formData = await request.formData();
   const url = formData.get("url") as string;
   const manualHtml = formData.get("manualHtml") as string | null; // New field for manual HTML paste
-  if (!url) {
-    return json({ error: "URL is required" }, { status: 400 });
+  
+  if (!url && !manualHtml) {
+    return json({ error: "Product URL is required" }, { status: 400 });
   }
+
+  // If we only have manual HTML but no URL, create a placeholder URL for processing
+  const processingUrl = url || "https://manual-upload.local";
 
   try {
     let html = manualHtml || ""; // Use manual HTML if provided
@@ -248,7 +252,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         const timeoutId = setTimeout(() => controller.abort(), 15000);
         
         try {
-          const response = await fetch(url, {
+          const response = await fetch(processingUrl, {
             signal: controller.signal,
             headers: {
               'accept-language': 'en-US,en;q=0.9',
@@ -278,12 +282,12 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       } catch (fetchError) {}
     }
 
-    const scraper = getScraper(url);
+    const scraper = getScraper(processingUrl);
 
     let productData;
     if (scraper) {try {
         // Log HTML to help with debugging (first 2000 chars)// Call scraper with manual HTML override if provided
-        productData = await scraper(html, url);
+        productData = await scraper(html, processingUrl);
         
         // Check if scraper returned MANUAL_HTML_REQUIRED flag
         if (typeof productData === 'string' && productData === MANUAL_HTML_REQUIRED) {return json({
@@ -317,7 +321,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
             (!productData.images || productData.images.length === 0)) {
           // Only fall back to AI if we have HTML content
           if (fetchSuccess && html && html.trim().length > 0) {
-            const aiData = await extractProductDataWithAI(url, html);
+            const aiData = await extractProductDataWithAI(processingUrl, html);
             // Merge scraper data with AI data where AI has better variant parsing
             productData = {
               ...productData,
@@ -334,7 +338,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         // If scraper succeeded but missed variants, use AI on the HTML to fetch them
         if (typeof productData !== 'string' && productData.productName && (!productData.variants || productData.variants.length === 0)) {
            if (fetchSuccess && html && html.trim().length > 0) {
-              const aiData = await extractProductDataWithAI(url, html);
+              const aiData = await extractProductDataWithAI(processingUrl, html);
               if (aiData.variants && aiData.variants.length > 0) {
                  productData.variants = aiData.variants;
                  productData.options = aiData.options;
@@ -349,7 +353,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         console.error("Local scraper failed, falling back to AI:", scraperError);
         // Fall back to AI extraction on scraper error
         if (fetchSuccess) {
-          productData = await extractProductDataWithAI(url, html);
+          productData = await extractProductDataWithAI(processingUrl, html);
         } else {
           throw scraperError;
         }
@@ -358,13 +362,13 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       if (!fetchSuccess) {
         throw new Error("Cannot fetch URL - website may be blocking requests");
       }
-      productData = await extractProductDataWithAI(url, html);
+      productData = await extractProductDataWithAI(processingUrl, html);
     }
 
     // Convert currency if needed
     if (productData && productData.price && productData.price.trim() !== "") {
       try {
-        const sourceCurrency = detectCurrency(productData.price, url);
+        const sourceCurrency = detectCurrency(productData.price, processingUrl);
         if (sourceCurrency !== shopCurrency) {
           const converted = await convertProductPrices(
             productData.price,
