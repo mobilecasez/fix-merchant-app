@@ -769,6 +769,9 @@ export default function AddProductReplica() {
                   <Text as="p" variant="bodySm" tone="subdued">
                     Do not import products from other stores or websites without explicit permission. Unauthorized use may violate intellectual property rights and Shopify's policies.
                   </Text>
+                  <Text as="p" variant="bodySm" tone="success" fontWeight="medium">
+                    💡 Pro Tip: For the highest quality results, flawless variants, and all high-res images, use the "Manual HTML Import" option below!
+                  </Text>
                 </BlockStack>
               </Banner>
               <FormLayout>

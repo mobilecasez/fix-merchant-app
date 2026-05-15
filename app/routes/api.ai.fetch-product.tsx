@@ -336,6 +336,11 @@ export const action = async ({ request }: ActionFunctionArgs) => {
                  if (aiData.images && aiData.images.length > productData.images.length) {
                     productData.images = aiData.images;
                  }
+                 // Ensure main product price is carried over if AI misses it
+                 productData.variants = productData.variants.map((v: any) => ({
+                   ...v,
+                   price: (v.price && String(v.price).trim() !== "" && parseFloat(String(v.price).replace(/[^0-9.]/g, '')) > 0) ? v.price : productData.price,
+                 }));
               }
            }
         }
