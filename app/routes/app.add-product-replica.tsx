@@ -864,22 +864,22 @@ export default function AddProductReplica() {
                                   <BlockStack gap="300">
                                     <BlockStack gap="100">
                                       <Text variant="bodyXs" as="p" fontWeight="bold">Google Chrome / Microsoft Edge / Brave</Text>
-                                      <Text variant="bodyXs" as="p">1. Right-click anywhere on the page and select "Inspect" (or press F12)</Text>
+                                      <Text variant="bodyXs" as="p">1. Right-click on the page and select "Inspect" <strong>OR</strong> press <kbd>F12</kbd> / <kbd>Ctrl+Shift+I</kbd> (Windows) / <kbd>Cmd+Opt+I</kbd> (Mac) <strong>OR</strong> go to Menu &gt; More Tools &gt; Developer Tools</Text>
                                       <Text variant="bodyXs" as="p">2. In the Elements panel, scroll to the very top and right-click the <strong>&lt;html&gt;</strong> tag</Text>
                                       <Text variant="bodyXs" as="p">3. Select <strong>Copy &gt; Copy element</strong> (or Copy outerHTML)</Text>
                                     </BlockStack>
                                     
                                     <BlockStack gap="100">
                                       <Text variant="bodyXs" as="p" fontWeight="bold">Safari (Mac)</Text>
-                                      <Text variant="bodyXs" as="p">1. First, enable Developer Menu (Safari &gt; Settings &gt; Advanced &gt; Show features for web developers)</Text>
-                                      <Text variant="bodyXs" as="p">2. Right-click on the page and select "Inspect Element"</Text>
+                                      <Text variant="bodyXs" as="p">1. Ensure Developer Menu is enabled (Safari &gt; Settings &gt; Advanced &gt; Check "Show features for web developers")</Text>
+                                      <Text variant="bodyXs" as="p">2. Right-click on the page and select "Inspect Element" <strong>OR</strong> press <kbd>Cmd+Opt+I</kbd> <strong>OR</strong> go to Develop Menu &gt; Show Web Inspector</Text>
                                       <Text variant="bodyXs" as="p">3. In the Elements tab, right-click the top <strong>&lt;html&gt;</strong> tag</Text>
                                       <Text variant="bodyXs" as="p">4. Select <strong>Copy as HTML</strong></Text>
                                     </BlockStack>
                                     
                                     <BlockStack gap="100">
                                       <Text variant="bodyXs" as="p" fontWeight="bold">Firefox</Text>
-                                      <Text variant="bodyXs" as="p">1. Right-click on the page and select "Inspect"</Text>
+                                      <Text variant="bodyXs" as="p">1. Right-click on the page and select "Inspect" <strong>OR</strong> press <kbd>F12</kbd> / <kbd>Ctrl+Shift+I</kbd> (Windows) / <kbd>Cmd+Opt+I</kbd> (Mac) <strong>OR</strong> go to Menu &gt; Web Developer &gt; Inspector</Text>
                                       <Text variant="bodyXs" as="p">2. In the Inspector tab, right-click the top <strong>&lt;html&gt;</strong> tag</Text>
                                       <Text variant="bodyXs" as="p">3. Select <strong>Copy &gt; Outer HTML</strong></Text>
                                     </BlockStack>
