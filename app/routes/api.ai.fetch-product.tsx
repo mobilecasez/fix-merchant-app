@@ -55,6 +55,19 @@ async function extractProductDataWithAI(url: string, htmlContent: string) {
   // Use our high-efficiency optimizer to strip bloat and convert to Markdown
   const { markdown, dataScripts } = optimizeHtmlForAI(htmlContent);
 
+  // Extract a list of all images as a direct hint to the AI
+  const imageUrlRegex = /https?:\/\/[^"'\s>]+?\.(?:jpg|jpeg|png|webp|avif)(?:\?[^"'\s>]*)?/gi;
+  const rawUrlMatches = Array.from(htmlContent.matchAll(imageUrlRegex)).map(m => m[0]);
+  
+  const root = parse(htmlContent);
+  const allImages = Array.from(new Set([
+    ...rawUrlMatches,
+    ...Array.from(root.querySelectorAll("img, meta[property='og:image']"))
+      .map((img: any) => img.getAttribute("src") || img.getAttribute("data-src") || img.getAttribute("content"))
+      .filter((src: any) => src && (src.startsWith("http") || src.startsWith("//")))
+      .map((src: string) => src.startsWith("//") ? "https:" + src : src)
+  ]));
+
   const prompt = `
     From the following product page content, extract the product information into a JSON object.
 
