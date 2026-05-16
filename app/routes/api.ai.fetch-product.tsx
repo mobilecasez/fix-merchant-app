@@ -285,7 +285,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
               ...aiData,
               images: aiData.images.length > productData.images.length ? aiData.images : productData.images,
               options: aiData.options.length > 0 ? aiData.options : productData.options,
-              variants: aiData.variants.length > 0 ? aiData.variants : productData.variants,
+              variants: aiData.variants.length > 0 ? aiData.variants.map((v: any) => ({
+                ...v,
+                price: (v.price && String(v.price).trim() !== "" && parseFloat(String(v.price).replace(/[^0-9.]/g, '')) > 0) ? v.price : (productData.price || aiData.price),
+              })) : productData.variants,
             };
           } else {
             throw new Error("Unable to extract product data. Please try again or add the product manually.");
