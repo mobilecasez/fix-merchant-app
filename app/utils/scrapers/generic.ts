@@ -416,10 +416,10 @@ Here is a pre-extracted list of ALL image URLs found on the page to help you. Ch
 ${JSON.stringify(allImages.slice(0, 50))}
 
 DATA SCRIPTS (Extracted JSON/State):
-${dataScripts.substring(0, 100000)}
+${dataScripts.substring(0, 300000)}
 
 CONTENT (Markdown Format):
-${markdown.substring(0, 100000)}
+${markdown.substring(0, 300000)}
 
 Return ONLY a valid JSON object (no markdown code blocks, no explanations, no extra text) in this exact format:
 
@@ -458,7 +458,7 @@ EXTRACTION RULES (FOLLOW EXACTLY):
 
 
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent`,
       {
         method: 'POST',
         headers: {

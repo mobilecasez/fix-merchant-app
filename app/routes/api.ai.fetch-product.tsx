@@ -21,7 +21,7 @@ async function extractProductDataWithAI(url: string, htmlContent: string) {
   const genAI = new GoogleGenerativeAI(apiKey);
 
   const model = genAI.getGenerativeModel({ 
-    model: "gemini-2.5-flash-lite",
+    model: "gemini-2.5-flash",
     generationConfig: {
       responseMimeType: "application/json",
     },
@@ -77,10 +77,10 @@ async function extractProductDataWithAI(url: string, htmlContent: string) {
     ${JSON.stringify(allImages.slice(0, 50))}
 
     DATA SCRIPTS (Extracted JSON/State):
-    ${dataScripts.substring(0, 100000)}
+    ${dataScripts.substring(0, 300000)}
 
     CONTENT (Markdown Format):
-    ${markdown.substring(0, 100000)}
+    ${markdown.substring(0, 300000)}
 
     Valid Google Product Categories:
     ${categoriesList.join("\n")}
