@@ -28,7 +28,7 @@ function parseCategoryList(fileContent: string): CategoryListItem[] {
 
 async function generateCategoryWithAI(title: string) {
   const apiKey = process.env.GOOGLE_GEMINI_API_KEY;
-  const apiUrl = `https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent`;
+  const apiUrl = `https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash-lite:generateContent`;
 
   const categoriesPath = path.resolve(process.cwd(), "categories.txt");
   const categoriesContent = fs.readFileSync(categoriesPath, "utf-8");

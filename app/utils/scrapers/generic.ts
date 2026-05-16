@@ -1,5 +1,6 @@
 import { ScrapedProductData } from "./types";
 import { cleanProductName, ensureCompareAtPrice, estimateWeight } from "./helpers";
+import { optimizeHtmlForAI } from "../dom-optimizer.server";
 
 // Special flag to indicate manual HTML is needed
 export const MANUAL_HTML_REQUIRED = "MANUAL_HTML_REQUIRED";
@@ -406,15 +407,19 @@ export async function parseWithGemini(html: string, url: string): Promise<Scrape
       }
     });
     
-    // Pass a heavily cleaned chunk to Gemini. 800k is large enough for deep JSON on massive single-page apps like Myntra.
-    // 800k characters is only ~200k tokens, which easily processes inside Gemini 2.5 Flash's 1,000,000 token window.
-    const cleanedHtml = root.toString().replace(/\s\s+/g, " ").replace(/>\s+</g, "><").trim();
-    const truncatedHtml = cleanedHtml.substring(0, 800000);
+    // Use our high-efficiency optimizer to strip bloat and convert to Markdown
+    const { markdown, dataScripts } = optimizeHtmlForAI(html);
     
-    const prompt = `You are a professional e-commerce data extraction expert. Your task is to analyze this product page HTML and extract ACCURATE product information.
+    const prompt = `You are a professional e-commerce data extraction expert. Your task is to analyze this product page content and extract ACCURATE product information.
 
 Here is a pre-extracted list of ALL image URLs found on the page to help you. Choose the best, highest-resolution product images from this list and any JSON data found in the HTML:
-${JSON.stringify(allImages)}
+${JSON.stringify(allImages.slice(0, 50))}
+
+DATA SCRIPTS (Extracted JSON/State):
+${dataScripts.substring(0, 100000)}
+
+CONTENT (Markdown Format):
+${markdown.substring(0, 100000)}
 
 Return ONLY a valid JSON object (no markdown code blocks, no explanations, no extra text) in this exact format:
 
@@ -444,109 +449,16 @@ Return ONLY a valid JSON object (no markdown code blocks, no explanations, no ex
 }
 
 EXTRACTION RULES (FOLLOW EXACTLY):
-
-**CRITICAL: Always start by finding the product title first, then use it to identify the brand**
-
-1. PRODUCT NAME - Extract the ACTUAL product title shown to customers:
-   • Look for main product heading (usually h1/h2 tag or prominent title)
-   • This is THE PRIMARY source of information - the brand name is usually at the START of the title or many be included within it. There might be chances that title is broken into multiple divs/spans like brand has another div/span and title remaining details have another div/span. In such cases, combine them to form the complete product title and regenerate it.  • DO NOT use website name, store name, or meta og:title if it includes brand suffixes
-   • Remove website name after " | " or " - " characters
-   • Example: "Nike Men's Cotton Shirt - Blue" → The brand is "Nike"
-   • Example: "Roadster Men's Casual Shirt" → The brand is "Roadster"
-   • Use smartly there might be chances that its broken into multiple divs/spans.
-
-2. VENDOR (BRAND NAME) - CRITICAL - Extract the brand from the PRODUCT TITLE or as i exmplained above:
-   • **PRIMARY METHOD**: The brand is usually the FIRST word or first few words in the product title
-   • Look at the product title you extracted in step 1 - the brand is typically at the beginning
-   • Examples:
-     - "Nike Air Max Shoes" → Brand: "Nike"
-     - "Roadster Men's Casual Shirt" → Brand: "Roadster"
-     - "Levi's 511 Slim Fit Jeans" → Brand: "Levi's"
-     - "H&M Cotton T-Shirt" → Brand: "H&M"
-   • **DO NOT use "Manufactured by", "Seller", "Sold by", or "Marketed by" fields**
-   • **DO NOT use the website/store name** (myntra.com, ajio.com, etc.)
-   • If brand is not clear from title, look for brand meta tags or schema.org brand field
-   • The brand should match what customers recognize the product by
-
-3. DESCRIPTION - Extract comprehensive product details:
-   • Include features, specifications, material, care instructions
-   • Format in clean HTML with <p>, <ul>, <li> tags
-   • Include size guide, fit info if available
-   • At least 100-200 words of meaningful content
-   • Use the brand name from step 2 naturally in the description
-
-4. PRICE - Current selling price (customer pays this):
-   • Extract the LOWEST visible price
-   • Remove ALL currency symbols (₹, Rs, $, etc.)
-   • Remove commas, spaces
-   • Just the numeric value: "1499" NOT "₹1,499"
-
-5. COMPARE AT PRICE (MRP) - CRITICAL for showing discounts:
-   • Find strikethrough/crossed prices (<del>, <s>, <strike> tags)
-   • Look for "MRP:", "M.R.P.:", "Was:", "Original Price:", "List Price:"
-   • MUST be HIGHER than selling price
-   • If genuinely not found, use empty string "" (don't make up or calculate)
-
-6. IMAGES - HIGH-DEFINITION Product Gallery Images ONLY:
-   **CRITICAL: Focus ONLY on the product image gallery/slider section**
-   
-   • **PRIMARY SOURCE**: Look for the main product image gallery or slider:
-     - Usually has classes/IDs like: "gallery", "slider", "carousel", "product-images", "image-viewer", "thumbnails"
-     - Often contains <img> tags within gallery containers or data attributes like data-src, data-zoom, data-large
-     - May have thumbnail navigation or dots indicating multiple images
-   
-   • **HIGH-DEFINITION Priority** (in order of preference):
-     1. FIRST: Look for zoom/large/high-res versions: data-zoom-image, data-large, data-high-res, data-full
-     2. SECOND: Look for srcset with highest resolution (e.g., "image_1200x1200.jpg 1200w")
-     3. THIRD: Regular src attribute from gallery/slider section
-   
-   • **What to INCLUDE**:
-     - All unique product photos showing different angles (front, back, side, detail shots)
-     - Color/style variations if available in gallery
-     - Lifestyle/model shots if in the same gallery
-     - Look for highest resolution URLs (prefer URLs with dimensions like 1200x1200, 1500x1500 over smaller ones)
-   
-   • **What to EXCLUDE**:
-     - Logo images, brand watermarks
-     - Banner images, promotional ads
-     - Related/recommended product images (outside main gallery)
-     - Icon images (cart, wishlist, share buttons)
-     - Images smaller than 500x500 if possible
-   
-   • **Technical Requirements**:
-     - Must start with http:// or https://
-     - Remove duplicate URLs (same image different parameters)
-     - Return 5-10 high-quality images minimum if available
-     - If URL has size parameters (like /w_400/), try to maximize them (like /w_1500/)
-   
-   • **Common Gallery HTML Patterns to Look For**:
-     - <div class="product-gallery"> ... </div>
-     - <div class="image-carousel"> ... </div>
-     - <ul class="product-thumbnails"> ... </ul>
-     - data-image-gallery="..." or data-images="[...]"
-     - JSON arrays in script tags containing image URLs
-
-7. PRODUCT TYPE - Category/classification:
-   • What type of product is this?
-   • Examples: "Shirt", "T-Shirt", "Jeans", "Shoes", "Watch"
-   • Be specific: "Men's Casual Shirt" better than just "Clothing"
-
-8. WEIGHT - Physical weight if mentioned:
-   • Look in product specifications table
-   • Only if explicitly stated
-   • Empty string if not found
-
-9. OPTIONS & VARIANTS - CRITICAL:
-   • Identify all product options (e.g., "Size", "Color") and their values.
-   • Extract variant combinations and list them in the variants array.
-   • Put the main product price in each variant's price if not explicitly different.
-
-HTML to analyze:
-${truncatedHtml}`;
+1. Return a valid JSON object ONLY.
+2. Description should be in HTML format.
+3. CRITICAL: Identify all product options (e.g., "Size", "Color") and their values.
+4. CRITICAL: List all variant combinations in the "variants" array.
+5. CRITICAL: You MUST put the main selling price into EVERY variant's "price" field unless explicitly stated otherwise. Do not leave variant prices blank.
+`;
 
 
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite-lite:generateContent`,
       {
         method: 'POST',
         headers: {

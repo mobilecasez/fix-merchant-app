@@ -13,6 +13,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
   // Return list of commonly used Gemini models
   const models = [
     {
+      name: "gemini-2.5-flash-lite",
+      displayName: "Gemini 2.5 Flash Lite", 
+      description: "Fastest and most cost-efficient multimodal model"
+    },
+    {
       name: "gemini-2.5-flash",
       displayName: "Gemini 2.5 Flash",
       description: "Fast, efficient model for most tasks"

@@ -10,6 +10,8 @@ import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/ge
 import { canCreateProduct, incrementProductUsage } from "../utils/billing.server";
 import { detectCurrency, convertProductPrices } from "../utils/currency.server";
 
+import { optimizeHtmlForAI } from "../utils/dom-optimizer.server";
+
 async function extractProductDataWithAI(url: string, htmlContent: string) {
   const apiKey = process.env.GOOGLE_GEMINI_API_KEY;
   if (!apiKey) {
@@ -19,7 +21,7 @@ async function extractProductDataWithAI(url: string, htmlContent: string) {
   const genAI = new GoogleGenerativeAI(apiKey);
 
   const model = genAI.getGenerativeModel({ 
-    model: "gemini-2.5-flash",
+    model: "gemini-2.5-flash-lite-lite",
     generationConfig: {
       responseMimeType: "application/json",
     },
@@ -50,73 +52,27 @@ async function extractProductDataWithAI(url: string, htmlContent: string) {
     .filter((line) => line.trim() !== "" && !line.startsWith("#"))
     .map((line) => line.split(" : ")[1].trim());
 
-  // Clean HTML by removing styles, and excess whitespace, but KEEP scripts as they often contain JSON-LD and product state (like Myntra's window.__myx)
-  const root = parse(htmlContent);
-  
-  // Extract a list of all images as a direct hint to the AI before cleaning
-  // We use regex to find ANY image URL in the raw text, because raw Ctrl+U source code 
-  // often hides images inside JSON blobs rather than standard <img> tags.
-  const imageUrlRegex = /https?:\/\/[^"'\s>]+?\.(?:jpg|jpeg|png|webp|avif)(?:\?[^"'\s>]*)?/gi;
-  const rawUrlMatches = Array.from(htmlContent.matchAll(imageUrlRegex)).map(m => m[0]);
-  
-  const allImages = Array.from(new Set([
-    ...rawUrlMatches,
-    ...Array.from(root.querySelectorAll("img, meta[property='og:image']"))
-      .map((img: any) => img.getAttribute("src") || img.getAttribute("data-src") || img.getAttribute("content"))
-      .filter((src: any) => src && (src.startsWith("http") || src.startsWith("//")))
-      .map((src: string) => src.startsWith("//") ? "https:" + src : src)
-  ]));
-  
-  // Remove visual noise and tracking scripts to drastically reduce payload size
-  root.querySelectorAll("style, noscript, svg, path, iframe, canvas, map").forEach((el) => el.remove());
-  
-  // Remove generic tracking/ads scripts but keep application/ld+json and window state scripts
-  root.querySelectorAll("script").forEach((el) => {
-    const src = el.getAttribute("src") || "";
-    const type = el.getAttribute("type") || "";
-    const content = el.text || "";
-    
-    // NEVER remove JSON-LD or standard JSON data scripts
-    if (type.includes("json")) return;
-    
-    if (
-      src.includes("googletag") || 
-      src.includes("facebook") || 
-      src.includes("analytics") || 
-      src.includes("tracker") ||
-      (content && !content.includes("{") && !content.includes("[")) // Remove empty/simple scripts
-    ) {
-      el.remove();
-    }
-  });
-  
-  // Truncate to ensure we don't blow up token limits. 800k chars is plenty to catch deep JSON
-  // without causing the AI request to time out, as it's only ~200k tokens.
-  const htmlString = root.toString();
-  const cleanedHtml = htmlString
-    .replace(/\s\s+/g, " ") // Replace multiple spaces with single space
-    .replace(/>\s+</g, "><") // Remove whitespace between tags
-    .trim()
-    .substring(0, 800000);
+  // Use our high-efficiency optimizer to strip bloat and convert to Markdown
+  const { markdown, dataScripts } = optimizeHtmlForAI(htmlContent);
 
   const prompt = `
-    From the HTML content of "${url}", extract the product information into a JSON object.
+    From the following product page content, extract the product information into a JSON object.
 
-    Here is a pre-extracted list of ALL image URLs found on the page to help you. Choose the best, highest-resolution product images from this list and any JSON data found in the HTML:
-    ${JSON.stringify(allImages)}
+    URL: ${url}
 
-    HTML:
-    \`\`\`html
-    ${cleanedHtml}
-    \`\`\`
+    IMAGE HINTS (Found in raw HTML):
+    ${JSON.stringify(allImages.slice(0, 50))}
 
-    Here is the full list of valid Google Product Categories:
-    \`\`\`
+    DATA SCRIPTS (Extracted JSON/State):
+    ${dataScripts.substring(0, 100000)}
+
+    CONTENT (Markdown Format):
+    ${markdown.substring(0, 100000)}
+
+    Valid Google Product Categories:
     ${categoriesList.join("\n")}
-    \`\`\`
 
-    JSON output should follow this structure. Do not include any text or markdown formatting before or after the JSON object.
-
+    JSON structure:
     {
       "productName": "string",
       "description": "string (HTML format)",
@@ -146,14 +102,12 @@ async function extractProductDataWithAI(url: string, htmlContent: string) {
     }
 
     Instructions:
-    - Return an empty string "" or an empty array [] if a field is not found.
+    - Return a valid JSON object ONLY.
     - Description should be in HTML format.
-    - Extract all product image URLs from the pre-extracted list and any JSON/HTML data. Look for high-resolution versions (hiRes, large, zoom).
     - CRITICAL: Identify all product options (e.g., "Size", "Color") and their values.
     - CRITICAL: List all variant combinations in the "variants" array.
     - CRITICAL: You MUST put the main selling price into EVERY variant's "price" field unless explicitly stated otherwise. Do not leave variant prices blank.
-    - If a value is absolutely not present, return null for that field.
-    - Do not return an empty object. Make your best effort to fill the fields.
+    - Use the high-resolution images from the hints or data scripts.
   `;
 
   let retries = 3;
