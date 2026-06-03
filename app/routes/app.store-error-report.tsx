@@ -725,7 +725,7 @@ function IssueCard({
             <button
               className="feature-card-button"
               style={{ width: "auto", padding: "6px 16px", fontSize: "13px" }}
-              onClick={handleAutoFix}
+              onClick={() => handleAutoFix()}
             >
               Confirm Fix
             </button>
