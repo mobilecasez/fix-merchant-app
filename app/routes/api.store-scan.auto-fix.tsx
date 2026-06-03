@@ -396,13 +396,21 @@ Return ONLY the meta description text, nothing else.`;
   return response.text().trim();
 }
 
+// Fix types that build their content from templates — no AI generation needed.
+const NO_AI_FIX_TYPES = new Set(["footer_links", "business_contact"]);
+
 export async function action({ request }: ActionFunctionArgs) {
+  // ── IMPORTANT: clone the request BEFORE authenticate.admin() ──────────────
+  // authenticate.admin() reads the request body stream to extract the session
+  // token (unstable_newEmbeddedAuthStrategy). Cloning first lets us read the
+  // JSON body from the clone after authentication completes.
+  const bodyClone = request.clone();
   const { admin, session } = await authenticate.admin(request);
   if (!session) return json({ error: "Unauthorized" }, { status: 401 });
 
   let body: any;
   try {
-    body = await request.json();
+    body = await bodyClone.json();
   } catch {
     return json({ error: "Invalid JSON body." }, { status: 400 });
   }
@@ -445,13 +453,22 @@ export async function action({ request }: ActionFunctionArgs) {
   const storeName = shopData?.data?.shop?.name || session.shop;
   const storeUrl = shopData?.data?.shop?.primaryDomain?.url || `https://${session.shop}`;
 
-  // Generate AI content
-  let generatedContent: string;
-  try {
-    generatedContent = await generateContent(autoFixType, issueDescription, storeName, storeUrl, storeDetails);
-  } catch (err: any) {
-    console.error("[auto-fix] Content generation failed:", err);
-    return json({ error: `AI content generation failed: ${err.message}` }, { status: 500 });
+  // Generate AI content — skipped for fix types that use templates, not AI.
+  // footer_links and business_contact build their content deterministically.
+  let generatedContent: string = "";
+  if (!NO_AI_FIX_TYPES.has(autoFixType)) {
+    try {
+      // Wrap in a 90-second timeout so a hanging AI call never blocks the action
+      generatedContent = await Promise.race([
+        generateContent(autoFixType, issueDescription, storeName, storeUrl, storeDetails),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("AI content generation timed out after 90s")), 90000)
+        ),
+      ]);
+    } catch (err: any) {
+      console.error("[auto-fix] Content generation failed:", err);
+      return json({ error: `AI content generation failed: ${err.message}` }, { status: 500 });
+    }
   }
 
   // Apply the fix via Shopify Admin GraphQL
