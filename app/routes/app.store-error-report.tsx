@@ -298,6 +298,8 @@ interface IssueFixState {
   fixSummary?: string;
   partialFix?: boolean;
   manualSteps?: string[];
+  reauthUrl?: string;
+  themeEditorUrl?: string;
 }
 
 // Store details collected before running auto-fix
@@ -596,6 +598,8 @@ function IssueCard({
         fixSummary: FIX_SUMMARIES[issue.auto_fix_type] || "Fix applied to your store.",
         partialFix: data.partialFix || false,
         manualSteps: data.manualSteps || [],
+        reauthUrl: data.reauthUrl,
+        themeEditorUrl: data.themeEditorUrl,
       });
     } else {
       updateState({ fixing: false, confirming: false, error: data.error || "Auto-fix failed. Please try again." });
@@ -801,14 +805,57 @@ function IssueCard({
             </p>
           )}
 
-          {/* Manual steps for partial fixes (e.g. theme injection failed) */}
-          {state.partialFix && state.manualSteps && state.manualSteps.length > 0 && (
-            <div style={{ marginBottom: "8px" }}>
-              {state.manualSteps.map((step, i) => (
-                <p key={i} style={{ margin: "0 0 6px 0", fontSize: "13px", color: "#78350f", lineHeight: 1.6 }}>
-                  {step}
-                </p>
-              ))}
+          {/* Partial fix — theme injection failed, show reauth + manual option */}
+          {state.partialFix && (
+            <div style={{ marginBottom: "10px" }}>
+              <p style={{ margin: "0 0 8px 0", fontSize: "13px", color: "#78350f", lineHeight: 1.6 }}>
+                ✅ <strong>"Policy Links"</strong> navigation menu created with all 6 compliance links.<br />
+                ⚠️ Automatic footer injection requires a one-time permission refresh — the app needs <code>write_themes</code> access.
+              </p>
+
+              {/* Option A — refresh permissions (recommended) */}
+              {state.reauthUrl && (
+                <div style={{
+                  background: "white", border: "1px solid #fcd34d",
+                  borderRadius: "6px", padding: "10px 14px", marginBottom: "8px",
+                }}>
+                  <p style={{ margin: "0 0 6px 0", fontSize: "12px", fontWeight: 700, color: "#92400e", textTransform: "uppercase", letterSpacing: "0.4px" }}>
+                    Option A — Recommended: Refresh Permissions (30 seconds)
+                  </p>
+                  <p style={{ margin: "0 0 8px 0", fontSize: "12px", color: "#78350f", lineHeight: 1.5 }}>
+                    Click below, approve the updated permissions in Shopify, then come back and click Auto Fix again — it will inject automatically.
+                  </p>
+                  <button
+                    onClick={() => { if (window.top) window.top.location.href = state.reauthUrl!; else window.location.href = state.reauthUrl!; }}
+                    style={{
+                      display: "inline-flex", alignItems: "center", gap: "6px",
+                      padding: "7px 16px", background: "#1a4a5a", color: "white",
+                      border: "none", borderRadius: "6px", fontSize: "13px",
+                      fontWeight: 600, cursor: "pointer",
+                    }}
+                  >
+                    🔐 Refresh App Permissions
+                  </button>
+                </div>
+              )}
+
+              {/* Option B — manual via Theme Editor */}
+              {state.themeEditorUrl && (
+                <div style={{
+                  background: "white", border: "1px solid #e5e7eb",
+                  borderRadius: "6px", padding: "10px 14px",
+                }}>
+                  <p style={{ margin: "0 0 6px 0", fontSize: "12px", fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: "0.4px" }}>
+                    Option B — Manual: Add via Theme Editor
+                  </p>
+                  <ol style={{ margin: "0 0 8px 0", paddingLeft: "18px", fontSize: "12px", color: "#555", lineHeight: 1.8 }}>
+                    <li>Open your <a href={state.themeEditorUrl} target="_blank" rel="noreferrer" style={{ color: "#006ECB" }}>Theme Editor →</a></li>
+                    <li>Click the <strong>Footer</strong> section in the left panel</li>
+                    <li>Click <strong>Add block</strong> → choose <strong>Link list</strong></li>
+                    <li>Set the menu to <strong>"Policy Links"</strong> → click <strong>Save</strong></li>
+                  </ol>
+                </div>
+              )}
             </div>
           )}
 

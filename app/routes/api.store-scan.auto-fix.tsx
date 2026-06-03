@@ -705,22 +705,18 @@ export async function action({ request }: ActionFunctionArgs) {
       verifyUrl = `${storeUrl}/`;
 
       // If theme injection failed (e.g. token lacks write_themes scope), surface
-      // manual instructions so the merchant can still act on the menu we created.
+      // manual instructions + a re-auth URL so the merchant can fix it in one click.
       if (!themeInjected) {
         const themeEditorUrl = `https://${session.shop}/admin/themes/current/editor`;
-        const navAdminUrl = `https://${session.shop}/admin/menus`;
+        const reauthUrl = `/auth?shop=${session.shop}`;
         return json({
           success: true,
           fixApplied: true,
           creditsCharged: creditCost,
           verifyUrl,
           partialFix: true,
-          manualSteps: [
-            `✅ Navigation menu "Policy Links" created with all 6 compliance links.`,
-            `⚠️ Automatic footer injection couldn't complete — your access token may need a scope refresh.`,
-            `To display the links: go to ${themeEditorUrl} → Footer section → Add block → "Link list" → select "Policy Links".`,
-            `Or view your menus at: ${navAdminUrl}`,
-          ],
+          reauthUrl,
+          themeEditorUrl,
         });
       }
 
