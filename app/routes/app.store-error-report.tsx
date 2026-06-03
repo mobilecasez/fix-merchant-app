@@ -296,6 +296,8 @@ interface IssueFixState {
   verifyUrl?: string;
   creditsCharged?: number;
   fixSummary?: string;
+  partialFix?: boolean;
+  manualSteps?: string[];
 }
 
 // Store details collected before running auto-fix
@@ -592,6 +594,8 @@ function IssueCard({
         verifyUrl: data.verifyUrl,
         creditsCharged: data.creditsCharged,
         fixSummary: FIX_SUMMARIES[issue.auto_fix_type] || "Fix applied to your store.",
+        partialFix: data.partialFix || false,
+        manualSteps: data.manualSteps || [],
       });
     } else {
       updateState({ fixing: false, confirming: false, error: data.error || "Auto-fix failed. Please try again." });
@@ -779,23 +783,35 @@ function IssueCard({
         <div style={{
           marginTop: "10px",
           padding: "12px 16px",
-          background: "#f0fdf4",
-          border: "1px solid #86efac",
+          background: state.partialFix ? "#fffbeb" : "#f0fdf4",
+          border: `1px solid ${state.partialFix ? "#fcd34d" : "#86efac"}`,
           borderRadius: "8px",
         }}>
-          <p style={{ margin: "0 0 6px 0", fontSize: "13px", fontWeight: 700, color: "#166534" }}>
-            ✅ Fix Applied Successfully
+          <p style={{ margin: "0 0 6px 0", fontSize: "13px", fontWeight: 700, color: state.partialFix ? "#92400e" : "#166534" }}>
+            {state.partialFix ? "⚠️ Partially Applied" : "✅ Fix Applied Successfully"}
             {state.creditsCharged ? (
               <span style={{ marginLeft: "8px", fontWeight: 400, fontSize: "12px", color: "#555" }}>
                 ({state.creditsCharged} credit{state.creditsCharged !== 1 ? "s" : ""} used)
               </span>
             ) : null}
           </p>
-          {state.fixSummary && (
+          {state.fixSummary && !state.partialFix && (
             <p style={{ margin: "0 0 8px 0", fontSize: "13px", color: "#14532d", lineHeight: 1.5 }}>
               {state.fixSummary}
             </p>
           )}
+
+          {/* Manual steps for partial fixes (e.g. theme injection failed) */}
+          {state.partialFix && state.manualSteps && state.manualSteps.length > 0 && (
+            <div style={{ marginBottom: "8px" }}>
+              {state.manualSteps.map((step, i) => (
+                <p key={i} style={{ margin: "0 0 6px 0", fontSize: "13px", color: "#78350f", lineHeight: 1.6 }}>
+                  {step}
+                </p>
+              ))}
+            </div>
+          )}
+
           {state.verifyUrl && (
             <a
               href={state.verifyUrl}
@@ -807,9 +823,9 @@ function IssueCard({
                 gap: "5px",
                 fontSize: "13px",
                 fontWeight: 600,
-                color: "#166534",
+                color: state.partialFix ? "#92400e" : "#166534",
                 background: "white",
-                border: "1px solid #86efac",
+                border: `1px solid ${state.partialFix ? "#fcd34d" : "#86efac"}`,
                 borderRadius: "5px",
                 padding: "5px 12px",
                 textDecoration: "none",
