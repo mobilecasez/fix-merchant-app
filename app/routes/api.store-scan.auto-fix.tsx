@@ -4,261 +4,137 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import { incrementProductUsage, getOrCreateSubscription, getProductsUsed, getEffectiveProductLimit } from "../utils/billing.server";
 import prisma from "../db.server";
 
-// ── Theme asset helpers (use session.shop — NOT storeUrl which may be a custom domain) ──
-
-function shopifyFetch(url: string, opts: RequestInit = {}, timeoutMs = 20000): Promise<Response> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  return fetch(url, { ...opts, signal: controller.signal }).finally(() => clearTimeout(timer));
-}
-
-async function getThemeId(shop: string, accessToken: string): Promise<string | null> {
-  try {
-    const res = await shopifyFetch(
-      `https://${shop}/admin/api/2024-07/themes.json?role=main`,
-      { headers: { "X-Shopify-Access-Token": accessToken } }
-    );
-    if (!res.ok) { console.warn(`[theme] Could not fetch themes: ${res.status}`); return null; }
-    const data = await res.json();
-    const main = (data.themes || []).find((t: any) => t.role === "main");
-    if (!main) { console.warn("[theme] No main theme found"); return null; }
-    return String(main.id);
-  } catch (err: any) {
-    console.warn("[theme] getThemeId failed:", err.message);
-    return null;
-  }
-}
-
-async function readThemeAsset(shop: string, accessToken: string, themeId: string, assetKey: string): Promise<string | null> {
-  try {
-    const res = await shopifyFetch(
-      `https://${shop}/admin/api/2024-07/themes/${themeId}/assets.json?asset[key]=${encodeURIComponent(assetKey)}`,
-      { headers: { "X-Shopify-Access-Token": accessToken } }
-    );
-    if (!res.ok) { console.warn(`[theme] Could not read ${assetKey}: ${res.status}`); return null; }
-    const data = await res.json();
-    return data?.asset?.value || null;
-  } catch (err: any) {
-    console.warn(`[theme] readThemeAsset(${assetKey}) failed:`, err.message);
-    return null;
-  }
-}
-
-async function writeThemeAsset(shop: string, accessToken: string, themeId: string, assetKey: string, value: string): Promise<boolean> {
-  try {
-    const res = await shopifyFetch(
-      `https://${shop}/admin/api/2024-07/themes/${themeId}/assets.json`,
-      {
-        method: "PUT",
-        headers: { "X-Shopify-Access-Token": accessToken, "Content-Type": "application/json" },
-        body: JSON.stringify({ asset: { key: assetKey, value } }),
-      }
-    );
-    if (!res.ok) { console.warn(`[theme] Could not write ${assetKey}: ${res.status} ${await res.text()}`); return false; }
-    return true;
-  } catch (err: any) {
-    console.warn(`[theme] writeThemeAsset(${assetKey}) failed:`, err.message);
-    return false;
-  }
-}
-
-// ── Theme footer injection ─────────────────────────────────────────────────────
-//
-// Strategy 1 (primary — universal): Write a Liquid snippet to
-//   snippets/shopflix-policy-links.liquid
-// then inject {% render 'shopflix-policy-links' %} into layout/theme.liquid
-// just before </body>.  Works on every Shopify theme because theme.liquid is
-// the universal layout wrapper — no theme-specific JSON knowledge required.
-//
-// Strategy 2 (secondary — Dawn-family themes): Modify sections/footer-group.json
-// or config/settings_data.json to add a link_list block pointing to the menu.
-// This gives a native footer column for themes that support it.
-//
-// Both strategies are idempotent — re-running will detect the existing injection
-// and skip without duplicating anything.
+// ── Theme injection via Admin GraphQL ─────────────────────────────────────────
+// Uses admin.graphql() (same authenticated client as menu creation) — no REST
+// accessToken needed, so write_themes scope gaps are never an issue.
 
 const SNIPPET_KEY = "snippets/shopflix-policy-links.liquid";
 const SNIPPET_TAG = "{% render 'shopflix-policy-links' %}";
 
-/** Build the Liquid snippet that renders compliance links using the Shopify menu */
 function buildComplianceLinkSnippet(menuHandle: string, heading: string): string {
-  return `{%- comment -%}
-  ShopFlix AI — GMC Compliance Links
-  Managed by the ShopFlix AI app. Do not edit manually.
-  Menu handle: ${menuHandle}
-{%- endcomment -%}
-
+  return `{%- comment -%}ShopFlix AI — GMC Compliance Links. Menu: ${menuHandle}{%- endcomment -%}
 {%- assign shopflix_menu = linklists[${JSON.stringify(menuHandle)}] -%}
 {%- if shopflix_menu and shopflix_menu.links.size > 0 -%}
-<div class="shopflix-compliance-links" style="
-  padding: 20px 24px;
-  border-top: 1px solid rgba(255,255,255,0.12);
-  text-align: center;
-  background: transparent;
-">
-  {%- if ${JSON.stringify(heading)} != '' -%}
-  <p style="
-    margin: 0 0 10px 0;
-    font-size: 11px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.8px;
-    opacity: 0.6;
-  ">{{ ${JSON.stringify(heading)} }}</p>
+<div class="shopflix-compliance-links" style="padding:20px 24px;border-top:1px solid rgba(255,255,255,0.12);text-align:center;">
+  {%- if ${JSON.stringify(heading)} != blank -%}
+  <p style="margin:0 0 10px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;opacity:0.6;">{{ ${JSON.stringify(heading)} }}</p>
   {%- endif -%}
   <nav aria-label="{{ ${JSON.stringify(heading)} }}">
     {%- for link in shopflix_menu.links -%}
-    <a href="{{ link.url | escape }}"
-       style="
-         display: inline-block;
-         margin: 4px 10px;
-         font-size: 12px;
-         opacity: 0.75;
-         text-decoration: none;
-       "
-       onmouseover="this.style.opacity='1'"
-       onmouseout="this.style.opacity='0.75'">
-      {{ link.title | escape }}
-    </a>
+    <a href="{{ link.url | escape }}" style="display:inline-block;margin:4px 10px;font-size:12px;opacity:0.75;text-decoration:none;">{{ link.title | escape }}</a>
     {%- endfor -%}
   </nav>
 </div>
-{%- endif -%}
-`;
+{%- endif -%}`;
+}
+
+/** Get the main theme GID via GraphQL */
+async function getMainThemeGid(admin: any): Promise<string | null> {
+  try {
+    const res = await admin.graphql(`#graphql
+      query getMainTheme {
+        themes(first: 10) {
+          nodes { id role }
+        }
+      }
+    `);
+    const data = await res.json();
+    const main = (data?.data?.themes?.nodes || []).find((t: any) => t.role === "MAIN");
+    return main?.id || null;
+  } catch (err: any) {
+    console.warn("[theme] getMainThemeGid failed:", err.message);
+    return null;
+  }
+}
+
+/** Read a theme file body via GraphQL */
+async function readThemeFileGql(admin: any, themeGid: string, filename: string): Promise<string | null> {
+  try {
+    const res = await admin.graphql(`#graphql
+      query getThemeFile($themeId: ID!, $filenames: [String!]!) {
+        theme(id: $themeId) {
+          files(filenames: $filenames, first: 1) {
+            nodes {
+              filename
+              body { ... on OnlineStoreThemeFileBodyText { content } }
+            }
+            userErrors { filename message }
+          }
+        }
+      }
+    `, { variables: { themeId: themeGid, filenames: [filename] } });
+    const data = await res.json();
+    return data?.data?.theme?.files?.nodes?.[0]?.body?.content ?? null;
+  } catch (err: any) {
+    console.warn(`[theme] readThemeFileGql(${filename}) failed:`, err.message);
+    return null;
+  }
+}
+
+/** Write/overwrite a theme file via GraphQL */
+async function writeThemeFileGql(admin: any, themeGid: string, filename: string, content: string): Promise<boolean> {
+  try {
+    const res = await admin.graphql(`#graphql
+      mutation upsertThemeFile($themeId: ID!, $files: [OnlineStoreThemeFilesUpsertFileInput!]!) {
+        onlineStoreThemeFilesUpsert(themeId: $themeId, files: $files) {
+          upsertedThemeFiles { filename }
+          userErrors { filename message }
+        }
+      }
+    `, { variables: {
+      themeId: themeGid,
+      files: [{ filename, body: content }],
+    }});
+    const data = await res.json();
+    const errors = data?.data?.onlineStoreThemeFilesUpsert?.userErrors;
+    if (errors?.length) {
+      console.warn(`[theme] writeThemeFileGql(${filename}) userErrors:`, JSON.stringify(errors));
+      return false;
+    }
+    console.log(`[theme] wrote ${filename} via GraphQL`);
+    return true;
+  } catch (err: any) {
+    console.warn(`[theme] writeThemeFileGql(${filename}) failed:`, err.message);
+    return false;
+  }
 }
 
 /**
- * Strategy 1: Write the Liquid snippet and inject a render tag into theme.liquid.
- * This is the universal approach — works on 100% of Shopify themes.
+ * Inject compliance links into the live theme using Admin GraphQL only.
+ * 1. Write snippets/shopflix-policy-links.liquid
+ * 2. Patch layout/theme.liquid to render the snippet before </body>
+ * Works on every theme; no REST accessToken required.
  */
-async function injectViaThemeLiquid(
-  shop: string,
-  accessToken: string,
-  themeId: string,
+async function addFooterBlock(
+  admin: any,
+  _blockId: string,
   menuHandle: string,
   heading: string
 ): Promise<boolean> {
-  // 1. Write (or overwrite) the snippet file
-  const snippetContent = buildComplianceLinkSnippet(menuHandle, heading);
-  const snippetWritten = await writeThemeAsset(shop, accessToken, themeId, SNIPPET_KEY, snippetContent);
-  if (!snippetWritten) {
-    console.warn("[theme] Could not write snippet file — skipping theme.liquid injection");
-    return false;
-  }
+  const themeGid = await getMainThemeGid(admin);
+  if (!themeGid) { console.warn("[theme] Could not resolve main theme GID"); return false; }
 
-  // 2. Read theme.liquid and inject the render tag (idempotent)
-  const themeLiquid = await readThemeAsset(shop, accessToken, themeId, "layout/theme.liquid");
-  if (!themeLiquid) {
-    console.warn("[theme] Could not read layout/theme.liquid");
-    return false;
-  }
+  // Step 1 — write the snippet
+  const snippetOk = await writeThemeFileGql(admin, themeGid, SNIPPET_KEY, buildComplianceLinkSnippet(menuHandle, heading));
+  if (!snippetOk) return false;
+
+  // Step 2 — patch theme.liquid (idempotent)
+  const themeLiquid = await readThemeFileGql(admin, themeGid, "layout/theme.liquid");
+  if (!themeLiquid) { console.warn("[theme] Could not read layout/theme.liquid"); return false; }
 
   if (themeLiquid.includes(SNIPPET_TAG)) {
-    console.log("[theme] Render tag already present in theme.liquid — skipping");
-    return true; // already injected
+    console.log("[theme] Snippet tag already in theme.liquid — skipping");
+    return true;
   }
 
-  // Inject just before </body> (preferred) or </footer> as fallback
   let updated = themeLiquid;
   if (updated.includes("</body>")) {
     updated = updated.replace("</body>", `  ${SNIPPET_TAG}\n</body>`);
-  } else if (updated.includes("</footer>")) {
-    updated = updated.replace("</footer>", `  ${SNIPPET_TAG}\n</footer>`);
   } else {
-    // Last resort: append at end
-    updated = updated + `\n${SNIPPET_TAG}\n`;
+    updated += `\n${SNIPPET_TAG}\n`;
   }
 
-  const saved = await writeThemeAsset(shop, accessToken, themeId, "layout/theme.liquid", updated);
-  if (saved) {
-    console.log("[theme] Compliance links injected into layout/theme.liquid");
-    return true;
-  }
-  return false;
-}
-
-/**
- * Strategy 2: Modify footer-group.json / settings_data.json to add a native
- * link_list block (Dawn-family themes).  Tried after the Liquid approach.
- */
-async function injectViaFooterJson(
-  shop: string,
-  accessToken: string,
-  themeId: string,
-  blockId: string,
-  menuHandle: string,
-  heading: string
-): Promise<boolean> {
-  const candidates = [
-    "sections/footer-group.json",
-    "config/settings_data.json",
-  ];
-
-  for (const assetKey of candidates) {
-    const raw = await readThemeAsset(shop, accessToken, themeId, assetKey);
-    if (!raw) continue;
-
-    let parsed: any;
-    try { parsed = JSON.parse(raw); } catch { continue; }
-
-    const sectionsRoot = parsed.sections || parsed.current?.sections;
-    if (!sectionsRoot) continue;
-
-    const footerKey = Object.keys(sectionsRoot).find(
-      (k: string) => sectionsRoot[k]?.type === "footer"
-    );
-    if (!footerKey) continue;
-
-    const footerSection = sectionsRoot[footerKey];
-    if (!footerSection.blocks) footerSection.blocks = {};
-    if (!footerSection.block_order) footerSection.block_order = [];
-
-    const alreadyHas = Object.values(footerSection.blocks).some(
-      (b: any) => b?.settings?.menu === menuHandle
-    );
-    if (alreadyHas) return true;
-
-    footerSection.blocks[blockId] = {
-      type: "link_list",
-      settings: { heading, menu: menuHandle },
-    };
-    footerSection.block_order.push(blockId);
-
-    const saved = await writeThemeAsset(shop, accessToken, themeId, assetKey, JSON.stringify(parsed, null, 2));
-    if (saved) {
-      console.log(`[theme] Footer link_list block added to ${assetKey}`);
-      return true;
-    }
-  }
-  return false;
-}
-
-/**
- * Main footer injection — tries Strategy 1 (universal Liquid snippet) first,
- * then Strategy 2 (native Dawn-style block) as a bonus enhancement.
- * Returns true if at least Strategy 1 succeeded.
- */
-async function addFooterBlock(
-  shop: string,
-  accessToken: string,
-  blockId: string,
-  menuHandle: string,
-  heading: string
-): Promise<boolean> {
-  const themeId = await getThemeId(shop, accessToken);
-  if (!themeId) {
-    console.warn("[theme] Could not resolve live theme ID");
-    return false;
-  }
-
-  // Strategy 1 — universal Liquid snippet injection (primary)
-  const liquidOk = await injectViaThemeLiquid(shop, accessToken, themeId, menuHandle, heading);
-
-  // Strategy 2 — native footer block (bonus, best-effort for Dawn themes)
-  injectViaFooterJson(shop, accessToken, themeId, blockId, menuHandle, heading)
-    .catch(err => console.warn("[theme] footer-json injection failed (non-fatal):", err));
-
-  return liquidOk;
+  return writeThemeFileGql(admin, themeGid, "layout/theme.liquid", updated);
 }
 
 // Credit costs per fix type
@@ -430,6 +306,7 @@ export async function action({ request }: ActionFunctionArgs) {
     orderBy: { expires: "desc" },
   });
   const accessToken = storedSession?.accessToken || session.accessToken || "";
+  console.log(`[auto-fix] shop=${session.shop} storedToken=${!!storedSession?.accessToken} sessionToken=${!!session.accessToken} tokenLen=${accessToken.length}`);
 
   // Credit check
   const subscription = await getOrCreateSubscription(session.shop);
@@ -699,7 +576,7 @@ export async function action({ request }: ActionFunctionArgs) {
       }
 
       // ── Step 2: Inject a link_list block into the theme footer ───────────────
-      const themeInjected = await addFooterBlock(session.shop, accessToken, "shopflix-policy-block", POLICY_MENU_HANDLE, "Policies");
+      const themeInjected = await addFooterBlock(admin, "shopflix-policy-block", POLICY_MENU_HANDLE, "Policies");
 
       fixApplied = true;
       verifyUrl = `${storeUrl}/`;
@@ -839,7 +716,7 @@ export async function action({ request }: ActionFunctionArgs) {
       }
 
       // Inject link_list block into the theme footer
-      await addFooterBlock(session.shop, accessToken, "shopflix-contact-block", CONTACT_MENU_HANDLE, effectiveStoreName);
+      await addFooterBlock(admin, "shopflix-contact-block", CONTACT_MENU_HANDLE, effectiveStoreName);
 
       fixApplied = true;
       verifyUrl = `${storeUrl}/pages/about-us`;
