@@ -41,7 +41,7 @@
               <span class="shopflix-related__title">{{ ref.title }}</span>
               <span class="shopflix-related__price">
                 {%- if ref.price_varies -%}
-                  {{ 'products.product.from_price_html' | t: price: ref.price | money }}
+                  {{ 'sections.shopflix_related.from_price' | t: price: ref.price | money }}
                 {%- else -%}
                   {{ ref.price | money }}
                 {%- endif -%}

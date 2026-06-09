@@ -1,0 +1,7 @@
+{
+  "sections": {
+    "shopflix_related": {
+      "from_price": "From {{ price }}"
+    }
+  }
+}
