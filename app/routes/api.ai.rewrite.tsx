@@ -24,8 +24,8 @@ async function getGeminiSuggestion(prompt: string) {
 }
 
 export const action = async ({ request }: ActionFunctionArgs) => {
-  const clonedRequest = request.clone(); // Clone the request before authentication
-  const { admin, session } = await authenticate.admin(clonedRequest);
+  const bodyClone = request.clone();
+  const { admin, session } = await authenticate.admin(request);
   if (!session) {
     return json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -49,7 +49,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     console.error("Error fetching shop currency:", error);
   }
 
-  const { field, title, description } = await request.json();
+  const { field, title, description } = await bodyClone.json();
 
   let prompt;
   if (field === "title") {

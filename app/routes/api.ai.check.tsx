@@ -3,12 +3,16 @@ import { authenticate } from "../shopify.server";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { retryOperation } from "../utils/retry.js";
 import prisma from "../db.server";
+import { incrementProductUsage } from "../utils/billing.server";
 
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_GEMINI_API_KEY!);
 
 export async function action({ request }: ActionFunctionArgs) {
-  const clonedRequest = request.clone(); // Clone the request before authentication
-  const { admin, session } = await authenticate.admin(clonedRequest);
+  // Clone the request FIRST for body reading, then authenticate with the original.
+  // authenticate.admin can consume the request stream in some environments (e.g., when
+  // processing OAuth/multipart). Cloning first ensures the body is always readable.
+  const bodyClone = request.clone();
+  const { admin, session } = await authenticate.admin(request);
   if (!session) {
     return json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -32,7 +36,7 @@ export async function action({ request }: ActionFunctionArgs) {
     console.error("Error fetching shop currency:", error);
   }
 
-  const formData = await request.formData(); // Use the original request for form data
+  const formData = await bodyClone.formData();
   const productString = formData.get("product") as string; // Expect a single product
   const product = JSON.parse(productString);
 
@@ -40,22 +44,24 @@ export async function action({ request }: ActionFunctionArgs) {
     return json({ error: "Invalid request body: expected a single product object" }, { status: 400 });
   }
 
-  // Perform local deterministic check for compareAtPrice vs price
-  const issues: any[] = [];
+  // Deterministic pre-checks — these are always correct regardless of AI output
+  const localIssues: any[] = [];
+  const localSuggestions: any[] = [];
+
+  // Fields we KNOW are present — used after AI responds to strip any false positives
+  const knownPresentFields = {
+    hasBarcode: !!(product.barcode && String(product.barcode).trim() && String(product.barcode).trim() !== 'null'),
+    hasImages:  false, // image count is not available in list queries — never filter image issues here
+  };
+
   if (product.compareAtPrice === null || product.compareAtPrice <= product.price) {
-    issues.push({
+    localIssues.push({
       message: "Google Merchant Center: compareAtPrice must exist and be greater than price.",
       severity: "High"
     });
-  }
-
-  // If local checks found issues, return them immediately without calling AI
-  if (issues.length > 0) {
-    return json({
-      id: product.id,
-      product_name: product.title,
-      issues: issues,
-      suggestions_for_sales_improvement: [], // No AI suggestions if we skip AI call
+    localSuggestions.push({
+      suggestion: "Ensure 'compareAtPrice' is set and higher than 'price' for effective discount display and Google Merchant Center compliance.",
+      priority: "High"
     });
   }
 
@@ -75,7 +81,13 @@ export async function action({ request }: ActionFunctionArgs) {
     metaDescription: product.metaDescription,
     price: product.price,
     compareAtPrice: product.compareAtPrice,
-    currencyCode: shopCurrencyCode, // Add currency code to the product object for AI
+    currencyCode: shopCurrencyCode,
+    barcode: product.barcode || null,
+    status: product.status || null,
+    // vendor is intentionally omitted — in Shopify, 'vendor' is the supplier/wholesaler,
+    // NOT the brand. It can be any third-party seller and must NOT be used for brand validation.
+    // totalImages is omitted intentionally — image count is not fetched in the product list query.
+    // The AI must NOT flag images as an issue since count is unknown.
   };
 
   const currentDate = new Date();
@@ -90,24 +102,31 @@ export async function action({ request }: ActionFunctionArgs) {
 
   **Specific Guidelines for Analysis:**
   -   **Product Title:**
-      -   If the title is less than 90 characters, do NOT flag it as an issue for being too short. Recommended length for optimal SEO display is 60-70 characters. Max 150 characters for Google Merchant Center.
+      -   Keep the title concise and keyword-rich.
+      -   **CRITICAL RULE FOR TITLE LENGTH:** The absolute maximum length is 150 characters for Google Merchant Center. However, ideally, aim for 60-70 characters. If including all recommended attributes (brand, product type, model, color) would make the title exceed 70 characters, prioritize conciseness. Do NOT flag a title as an issue simply because it lacks a brand or color IF adding it would make the title too long.
       -   Avoid keyword stuffing, excessive capitalization, and promotional text (e.g., "Free Shipping", "Best Price").
-      -   Should be descriptive and include key product attributes such as **brand, product type, model, color, and key features** to prevent duplicate issues and enhance specificity.
   -   **Product Description:**
       -   Should be detailed, compelling, and well-structured.
       -   Use clear headings (e.g., ### Features, ### Benefits), bullet points (*), and paragraphs.
-      -   Highlight key features, benefits, use cases, and a clear call-to-action.
+      -   Highlight key features, benefits, and use cases.
       -   Minimum recommended length: 150 words for comprehensive SEO.
+      -   Do NOT flag the description for lacking a "call-to-action" phrase (e.g., "Shop now", "Buy now", "Add to Cart"). Google's policies discourage promotional language in product data, and these phrases are intentionally omitted.
   -   **Meta Description:**
       -   If the meta description is less than 200 characters, do NOT flag it as an issue for being too short. Recommended length for optimal search engine results page (SERP) display is 150-160 characters.
-      -   Should be unique, compelling, and include a primary keyword and a strong call-to-action.
+      -   Should be unique, compelling, and include a primary keyword.
+      -   Do NOT flag the meta description for lacking an explicit call-to-action phrase. Informative, keyword-rich meta descriptions are preferred.
       -   Must NOT be a direct copy of the product description.
   -   **URL Handle:**
       -   Should be concise, keyword-rich, lowercase, and use hyphens as separators.
       -   Avoid excessively long handles (ideally under 60 characters).
-      -   **Must include essential product identifiers like brand, model, and color** to ensure uniqueness and SEO relevance.
   -   **GTIN (Global Trade Item Number):**
-      -   Check for presence and validity if applicable (e.g., UPC, EAN, ISBN). If not found or applicable, note its absence.
+      -   The product data includes a \`barcode\` field. If \`barcode\` is a non-empty, non-null string, the product HAS a GTIN — do NOT flag GTIN as missing.
+      -   Only flag GTIN as an issue if \`barcode\` is null, empty, or absent.
+      -   When flagging, use "Medium" severity at most — never "High" — since many custom or unbranded products legitimately have no GTIN.
+  -   **Brand:**
+      -   The product data does NOT include a vendor or brand field. Do NOT flag the brand as missing from the product data. You may flag the title if the brand name is clearly absent from the title itself, but only if adding it would not make the title too long.
+  -   **Images:**
+      -   The product data does NOT include an image count. Do NOT flag images as an issue under any circumstances. Image-related issues cannot be assessed from the available data.
   -   **Pricing:**
       -   \`compareAtPrice\` must be greater than \`price\` for sale indication.
 
@@ -161,23 +180,62 @@ export async function action({ request }: ActionFunctionArgs) {
     
     const aiResponse = JSON.parse(jsonString);
 
+    // Combine local deterministic checks with AI findings
+    const combinedIssues = [...localIssues, ...(aiResponse.issues || [])];
+    const combinedSuggestions = [...localSuggestions, ...(aiResponse.suggestions_for_sales_improvement || [])];
+
+    // Strip any AI false-positives for fields we KNOW are already present
+    const gtinKeywords  = ['gtin', 'global trade item', 'upc', 'ean', 'isbn', 'barcode'];
+    // Always strip image-related issues — image count is not available in the data we send the AI
+    const imageKeywords = ['image', 'photo', 'picture', 'visual'];
+    // Strip CTA-related issues — auto-fix intentionally omits promotional CTAs per Google policy
+    const ctaKeywords   = ['call-to-action', 'call to action', 'cta', 'shop now', 'buy now', 'add to cart', 'order now'];
+
+    const filteredIssues = combinedIssues.filter(issue => {
+      const msg = issue.message.toLowerCase();
+      if (knownPresentFields.hasBarcode && gtinKeywords.some(k => msg.includes(k))) return false;
+      if (imageKeywords.some(k => msg.includes(k))) return false; // always strip image issues
+      if (ctaKeywords.some(k => msg.includes(k))) return false;   // always strip CTA issues
+      return true;
+    });
+    const filteredSuggestions = combinedSuggestions.filter(s => {
+      const txt = s.suggestion.toLowerCase();
+      if (knownPresentFields.hasBarcode && gtinKeywords.some(k => txt.includes(k))) return false;
+      if (imageKeywords.some(k => txt.includes(k))) return false;
+      if (ctaKeywords.some(k => txt.includes(k))) return false;
+      return true;
+    });
+
+    // Deduplicate by message/suggestion text
+    const uniqueIssues = filteredIssues.filter((issue, index, self) =>
+      index === self.findIndex((t) => t.message === issue.message)
+    );
+    const uniqueSuggestions = filteredSuggestions.filter((sugg, index, self) =>
+      index === self.findIndex((t) => t.suggestion === sugg.suggestion)
+    );
+
+    await incrementProductUsage(session.shop);
+
     // Save to database so it persists
     await prisma.productAICheck.upsert({
       where: { productId: product.id },
       update: {
         status: 'COMPLETE',
-        result: { issues: aiResponse.issues },
+        result: { issues: uniqueIssues, suggestions_for_sales_improvement: uniqueSuggestions },
+        aiCheckCompleted: true,
+        autoFixCompleted: false, // Reset auto-fix status as a new check has been run
       },
       create: {
         productId: product.id,
         shop: session.shop,
         status: 'COMPLETE',
-        result: { issues: aiResponse.issues },
+        result: { issues: uniqueIssues, suggestions_for_sales_improvement: uniqueSuggestions },
+        aiCheckCompleted: true,
       },
     });
 
-    // Don't return the full result here to save bandwidth
-    return json({ success: true, issues: aiResponse.issues });
+    // Return the full result
+    return json({ success: true, issues: uniqueIssues, suggestions_for_sales_improvement: uniqueSuggestions });
   } catch (error: any) {
     console.error(`Final attempt failed for product ${product.id}:`, error);
     return json({

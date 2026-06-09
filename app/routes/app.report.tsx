@@ -1,5 +1,5 @@
 import { json, type LoaderFunctionArgs } from "@remix-run/node";
-import { useLoaderData, useFetcher } from "@remix-run/react";
+import { useLoaderData, useFetcher, useRouteError, isRouteErrorResponse } from "@remix-run/react";
 import {
   Page,
   Card,
@@ -18,6 +18,8 @@ import {
   TextField,
   Icon,
   Modal, // Added Modal
+  ProgressBar,
+  Tooltip,
 } from "@shopify/polaris";
 import { SearchIcon } from "@shopify/polaris-icons";
 import { authenticate } from "../shopify.server";
@@ -27,6 +29,8 @@ import type { ShouldRevalidateFunction } from "@remix-run/react";
 import { CentralizedLoader } from "../components/CentralizedLoader";
 import RichTextEditor from "../components/RichTextEditor";
 import { ClientOnly } from "../components/ClientOnly";
+import { getProductsUsed, getEffectiveProductLimit, getOrCreateSubscription } from "../utils/billing.server";
+import { CheckCircleIcon } from "@shopify/polaris-icons";
 
 export const shouldRevalidate: ShouldRevalidateFunction = ({
   formAction,
@@ -40,30 +44,62 @@ export const shouldRevalidate: ShouldRevalidateFunction = ({
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { admin, session } = await authenticate.admin(request);
-  
-  // Check if report is enabled
-  const settings = await prisma.appSettings.findUnique({
-    where: { shop: session.shop },
-  });
 
-  if (!settings?.reportEnabled) {
-    throw new Response("This page is not enabled", { status: 403 });
+  try {
+    // Check if report is enabled
+    const settings = await prisma.appSettings.findUnique({
+      where: { shop: session.shop },
+    });
+
+    if (!settings?.reportEnabled) {
+      throw new Response("This page is not enabled", { status: 403 });
+    }
+
+    const subscription = await getOrCreateSubscription(session.shop);
+    const productsUsed = getProductsUsed(subscription);
+    const productLimit = getEffectiveProductLimit(subscription);
+
+    const shopResponse = await admin.graphql(
+      `#graphql
+        query shopName {
+          shop {
+            name
+          }
+        }`
+    );
+    const shopData = await shopResponse.json();
+    const shopName = shopData?.data?.shop?.name ?? 'Your Store';
+
+    // Fetch AI check statuses
+    const aiChecks = await prisma.productAICheck.findMany({
+      where: { shop: session.shop },
+      select: { productId: true, aiCheckCompleted: true, autoFixCompleted: true },
+    });
+
+    const completedActions = aiChecks.reduce((acc: any, check) => {
+      acc[check.productId] = {
+        aiCheck: check.aiCheckCompleted,
+        autoFix: check.autoFixCompleted,
+      };
+      return acc;
+    }, {});
+
+    return json({
+      shopName,
+      productsUsed,
+      productLimit,
+      completedActions,
+    });
+  } catch (error) {
+    // Re-throw Response errors (like 403) as-is so the ErrorBoundary can handle them
+    if (error instanceof Response) throw error;
+    console.error('[app.report loader] Unexpected error:', error);
+    throw new Response("Failed to load report data. Please try again.", { status: 500 });
   }
-  
-  const response = await admin.graphql(
-    `#graphql
-      query shopName {
-        shop {
-          name
-        }
-      }`
-  );
-  const data = await response.json();
-  return json({ shopName: data.data.shop.name });
 };
 
 export default function ReportPage() {
-  const { shopName } = useLoaderData<typeof loader>();
+  const { shopName, productsUsed, productLimit, completedActions: initialCompletedActions } = useLoaderData<typeof loader>();
   const seoFetcher = useFetcher();
 
   const [products, setProducts] = useState<any[]>([]);
@@ -87,6 +123,8 @@ export default function ReportPage() {
   const [testEmailRecipient, setTestEmailRecipient] = useState('');
   const [isSendingTestEmail, setIsSendingTestEmail] = useState(false);
   const [testEmailMessage, setTestEmailMessage] = useState('');
+  const [credits, setCredits] = useState({ used: productsUsed, limit: productLimit });
+  const [completedActions, setCompletedActions] = useState<{ [productId: string]: { aiCheck?: boolean, autoFix?: boolean } }>(initialCompletedActions || {});
 
   const [isSavingAutoFixChanges, setIsSavingAutoFixChanges] = useState(false); // New state for save button loader
 
@@ -97,29 +135,34 @@ export default function ReportPage() {
     description?: string;
     meta_description?: string;
     gtin?: string;
-    brand?: string; // Added brand property
+    vendor?: string;
+    brand?: string;
     google_product_category?: string;
     color?: string;
     material?: string;
     condition?: string;
+    availability?: string;
     price?: number;
     compareAtPrice?: number;
     analysis_summary?: any;
     variants?: any;
-    tags?: string[]; // Added tags property
+    tags?: string[];
   }
 
   const [isAutoFixReviewModalOpen, setIsAutoFixReviewModalOpen] = useState(false);
   const [isSuccessModalOpen, setIsSuccessModalOpen] = useState(false);
   const [autoFixProductData, setAutoFixProductData] = useState<AutoFixProductData | null>(null);
   const [autoFixAnalysisSummary, setAutoFixAnalysisSummary] = useState<any>(null);
-  const [isAutoFixingProduct, setIsAutoFixingProduct] = useState(false); // For individual product auto-fix loader
-  const [autoFixMessage, setAutoFixMessage] = useState(''); // Message for auto-fix modal
-  const [currentProductForAutoFix, setCurrentProductForAutoFix] = useState<any>(null); // Store product being autofixed
-  const [originalProductForReview, setOriginalProductForReview] = useState<any>(null); // Store original product data for review modal
-  const [originalTagsForReview, setOriginalTagsForReview] = useState<string[]>([]); // Store original tags for display
-  const [aiGeneratedTagsForDisplay, setAiGeneratedTagsForDisplay] = useState<string[]>([]); // Store AI generated tags for display
-  const [isInitialLoad, setIsInitialLoad] = useState(true);
+  const [isAutoFixingProduct, setIsAutoFixingProduct] = useState(false);
+  const [autoFixMessage, setAutoFixMessage] = useState('');
+  const [currentProductForAutoFix, setCurrentProductForAutoFix] = useState<any>(null);
+  const [originalProductForReview, setOriginalProductForReview] = useState<any>(null);
+  const [originalTagsForReview, setOriginalTagsForReview] = useState<string[]>([]);
+  const [aiGeneratedTagsForDisplay, setAiGeneratedTagsForDisplay] = useState<string[]>([]);
+
+  const [isAICheckModalOpen, setIsAICheckModalOpen] = useState(false);
+  const [aiCheckProgress, setAiCheckProgress] = useState(0);
+  const [aiCheckStepText, setAiCheckStepText] = useState("");
 
   const gtinFetcher = useFetcher();
   const [gtinSearchTerm, setGtinSearchTerm] = useState('');
@@ -180,11 +223,8 @@ export default function ReportPage() {
     setCurrentPage(1);
   }, []);
 
-  // Effect for fetching products based on filters, pagination, and sort
+  // Fetch products whenever filters/pagination change (including on initial mount)
   useEffect(() => {
-    if (isInitialLoad) {
-      setIsInitialLoad(false);
-    }
     const finalQuery = `${statusFilter} ${searchTerm}`.trim();
     const params = new URLSearchParams();
     if (cursor) params.set("cursor", cursor);
@@ -193,36 +233,31 @@ export default function ReportPage() {
     params.set("sortKey", sortKey);
     params.set("reverse", String(reverse));
     seoFetcher.load(`/api/seo-check?${params.toString()}`);
-  }, [cursor, pageSize, searchTerm, statusFilter, sortKey, reverse, isInitialLoad]);
+  }, [cursor, pageSize, searchTerm, statusFilter, sortKey, reverse]);
 
-  // Effect for processing seoFetcher data and running local AI check by default
+  // Effect for processing seoFetcher data
   useEffect(() => {
-    if (seoFetcher.data) {
-      const { products: newProducts, pageInfo: newPageInfo, totalCount: newTotalCount } = seoFetcher.data as any;
-      
-      // Only update if the product list itself has changed (e.g., new page, new filter)
-      // This prevents re-rendering the entire list if only an AI check updated a single product
-      // Only update if the product list itself has changed (e.g., new page, new filter)
-      // This prevents re-rendering the entire list if only an AI check updated a single product
-      const updatedProducts = newProducts.map((p: any) => {
-        // Add barcode to the product object if it exists in the variant
-        if (p.variants && p.variants.nodes && p.variants.nodes[0]?.barcode) {
-          p.barcode = p.variants.nodes[0].barcode;
-        }
-        return {
-          ...p,
-          isChecking: false, // Ensure AI check loading is off
-        };
-      });
-      setProducts(updatedProducts);
-        setPageInfo(newPageInfo);
-        setTotalCount(newTotalCount);
-        initialLoadRef.current = false; // Mark initial load as complete
-      // Reset processingAll when new data is loaded (e.g., after filter/pagination change)
-      if (processingAll) {
-        setProcessingAll(false);
-      }
+    if (!seoFetcher.data) return;
+
+    const { products: newProducts, pageInfo: newPageInfo, totalCount: newTotalCount } = seoFetcher.data as any;
+
+    // Guard: if the response is an error (no products array) don't wipe the existing list
+    if (!newProducts || !Array.isArray(newProducts)) {
+      console.error('seoFetcher returned no products — keeping previous list. Response:', seoFetcher.data);
+      return;
     }
+
+    const updatedProducts = newProducts.map((p: any) => ({
+      ...p,
+      isChecking: false,
+    }));
+
+    setProducts(updatedProducts);
+    setPageInfo(newPageInfo);
+    setTotalCount(newTotalCount);
+    initialLoadRef.current = false;
+
+    if (processingAll) setProcessingAll(false);
   }, [seoFetcher.data, processingAll]);
 
   const handleFindGtin = useCallback(async (productData: any) => {
@@ -230,20 +265,47 @@ export default function ReportPage() {
       console.warn("No product data provided for GTIN search.");
       return;
     }
-    gtinFetcher.load(`/api/ai/find-gtin?product=${encodeURIComponent(JSON.stringify(productData))}`);
-  }, [gtinFetcher]);
+    const productPayload = {
+      id: productData.id,
+      title: productData.title,
+      brand: productData.brand || currentProductForAutoFix?.vendor || '',
+      existingBarcode: currentProductForAutoFix?.variants?.nodes?.[0]?.barcode || '',
+    };
+    const encodedProduct = encodeURIComponent(JSON.stringify(productPayload));
+    gtinFetcher.load(`/api/ai/find-gtin?product=${encodedProduct}`);
+  }, [gtinFetcher, currentProductForAutoFix]);
 
   useEffect(() => {
-    if (gtinFetcher.data && (gtinFetcher.data as { gtin?: string }).gtin) {
-      setAutoFixProductData((prev: any) => ({
-        ...prev,
-        gtin: (gtinFetcher.data as { gtin?: string }).gtin,
-      }));
+    if (!gtinFetcher.data) return;
+    const gtinData = gtinFetcher.data as {
+      gtin?: string;
+      confidence?: string;
+      source?: string;
+      conflictDetected?: boolean;
+      message?: string;
+    };
+
+    if (gtinData.gtin) {
+      setAutoFixProductData((prev: any) => ({ ...prev, gtin: gtinData.gtin }));
+    }
+
+    // Surface the message to the user via the modal message field
+    if (gtinData.message) {
+      const tone = gtinData.conflictDetected
+        ? `⚠️ ${gtinData.message}`
+        : gtinData.confidence === 'high'
+          ? `✅ ${gtinData.message}`
+          : `ℹ️ ${gtinData.message}`;
+      setAutoFixMessage(tone);
     }
   }, [gtinFetcher.data]);
 
   // Function to run AI check for a single product (remains for individual button)
   const runAICheck = useCallback(async (productToProcess: any) => {
+    setIsAICheckModalOpen(true);
+    setAiCheckProgress(10);
+    setAiCheckStepText("Reading Product Details...");
+
     setProducts(prevProducts =>
       prevProducts.map(p =>
         p.id === productToProcess.id ? { ...p, isChecking: true } : p
@@ -256,20 +318,39 @@ export default function ReportPage() {
       handle: productToProcess.handle,
       description: productToProcess.descriptionHtml,
       metaDescription: productToProcess.seo?.description || '',
-      price: productToProcess.variants.nodes[0]?.price,
-      compareAtPrice: productToProcess.variants.nodes[0]?.compareAtPrice,
+      price: productToProcess.variants?.nodes?.[0]?.price,
+      compareAtPrice: productToProcess.variants?.nodes?.[0]?.compareAtPrice,
+      barcode: productToProcess.variants?.nodes?.[0]?.barcode || null,
+      vendor: productToProcess.vendor || null,
+      status: productToProcess.status || null,
+      totalImages: productToProcess.totalImages ?? 0,
     };
 
     const formData = new FormData();
     formData.append("product", JSON.stringify(productForAI));
 
     try {
+      // Progress simulation during API call
+      const step1 = setTimeout(() => {
+        setAiCheckProgress(40);
+        setAiCheckStepText("Validating against Google Merchant Center Policies...");
+      }, 1500);
+
+      const step2 = setTimeout(() => {
+        setAiCheckProgress(70);
+        setAiCheckStepText("Generating Optimization Suggestions...");
+      }, 4000);
+
       const response = await fetch("/api/ai/check", {
         method: "POST",
         body: formData,
       });
 
+      clearTimeout(step1);
+      clearTimeout(step2);
+
       if (!response.ok) {
+        setIsAICheckModalOpen(false);
         let errorDetails = `API responded with status ${response.status}`;
         try {
           const errorJson = await response.json();
@@ -304,9 +385,12 @@ export default function ReportPage() {
 
       const aiResponse = await response.json();
 
+      setAiCheckProgress(100);
+      setAiCheckStepText("Finalizing Report...");
+
       setProducts(prevProducts =>
         prevProducts.map(p =>
-          p.id === aiResponse.id
+          p.id === productToProcess.id // Matched using productToProcess.id instead of aiResponse.id
             ? {
                 ...p,
                 issues: aiResponse.issues || [],
@@ -316,8 +400,17 @@ export default function ReportPage() {
             : p
         )
       );
+
+      setCompletedActions(prev => ({ ...prev, [productToProcess.id]: { ...prev[productToProcess.id], aiCheck: true } }));
+      setCredits(prev => ({ ...prev, used: prev.used + 1 }));
+
+      setTimeout(() => {
+        setIsAICheckModalOpen(false);
+      }, 800);
+
     } catch (error: any) {
       console.error(`Error running AI check for product ${productToProcess.id}:`, error);
+      setIsAICheckModalOpen(false);
       setProducts(prevProducts =>
         prevProducts.map(p =>
           p.id === productToProcess.id
@@ -514,9 +607,12 @@ export default function ReportPage() {
       metaDescription: productToFix.seo?.description || '',
       price: productToFix.variants.nodes[0]?.price,
       compareAtPrice: productToFix.variants.nodes[0]?.compareAtPrice,
-      variants: productToFix.variants, // Pass full variants for ID
-      tags: productToFix.tags, // Include existing tags
-      brand: productToFix.vendor, // Pass the existing brand (vendor) to the AI
+      variants: productToFix.variants,
+      tags: productToFix.tags,
+      brand: productToFix.vendor,
+      barcode: productToFix.variants?.nodes?.[0]?.barcode || productToFix.barcode || null,
+      status: productToFix.status || null,
+      totalImageCount: productToFix.images?.nodes?.length ?? productToFix.media?.nodes?.length ?? 0,
     };
 
     const geminiAnalysis = productToFix.issues && productToFix.suggestions_for_sales_improvement ? {
@@ -524,7 +620,8 @@ export default function ReportPage() {
       suggestions_for_sales_improvement: productToFix.suggestions_for_sales_improvement,
     } : null;
 
-    try {const response = await fetch("/api/ai/autofix", {
+    try {
+      const response = await fetch("/api/ai/autofix", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -534,39 +631,45 @@ export default function ReportPage() {
       const result = await response.json();
       if (response.ok && result.success) {
         const aiSuggestedGtin = result.rewrittenData.gtin;
-        const originalBarcode = productToFix?.barcode; // Access barcode directly from productToFix
-        const originalBrand = productToFix?.vendor; // Access original brand (vendor)
+        const originalBarcode = productToFix?.variants?.nodes?.[0]?.barcode || productToFix?.barcode;
+        const originalBrand = productToFix?.vendor;
 
-        // Extract existing GMC metafields from productToFix
         const existingGmcMetafields = productToFix.metafields?.nodes?.reduce((acc: any, metafield: any) => {
           if (metafield.namespace === "google_merchant_center") {
             acc[metafield.key] = metafield.value;
           }
           return acc;
         }, {});
-        
+
         setAutoFixProductData({
           ...result.rewrittenData,
-          gtin: aiSuggestedGtin || originalBarcode || '', // Prioritize AI suggestion, then original barcode
-          brand: result.rewrittenData.brand || originalBrand || existingGmcMetafields?.brand || '', // Prioritize AI, then original vendor, then existing metafield
+          gtin: aiSuggestedGtin || originalBarcode || '',
+          brand: result.rewrittenData.brand || originalBrand || existingGmcMetafields?.brand || '',
+          vendor: productToFix.vendor || '',
           google_product_category: result.rewrittenData.google_product_category || existingGmcMetafields?.google_product_category || '',
           color: result.rewrittenData.color || existingGmcMetafields?.color || '',
           material: result.rewrittenData.material || existingGmcMetafields?.material || '',
           condition: result.rewrittenData.condition || existingGmcMetafields?.condition || '',
-          tags: result.rewrittenData.tags || [], // Use AI-generated tags
+          availability: 'in_stock', // Always default to in_stock; user can change via dropdown
+          tags: (result.rewrittenData.tags && result.rewrittenData.tags.length > 0)
+            ? result.rewrittenData.tags
+            : (productToFix.tags || []),
         });
         setAutoFixAnalysisSummary(result.rewrittenData.analysis_summary);
-        setIsAutoFixReviewModalOpen(true);} else {
+        setIsAutoFixReviewModalOpen(true);
+      } else {
         const errorMessage = result.error || result.message || 'Unknown error';
         setAutoFixMessage(`Auto-fix failed: ${errorMessage}`);
-        setIsAutoFixReviewModalOpen(true); // Show modal with error message
+        setIsAutoFixReviewModalOpen(true);
         console.error("Auto-fix API returned error:", errorMessage);
       }
     } catch (error: any) {
       console.error("Error during auto-fix fetch (network/parsing error):", error);
       setAutoFixMessage(`Auto-fix failed: ${error.message}`);
-      setIsAutoFixReviewModalOpen(true); // Show modal with error message} finally {
-      setIsAutoFixingProduct(false);}
+      setIsAutoFixReviewModalOpen(true);
+    } finally {
+      setIsAutoFixingProduct(false);
+    }
   }, []);
 
   const refreshProducts = useCallback(() => {
@@ -608,6 +711,7 @@ export default function ReportPage() {
       id: currentProductForAutoFix.id, // Ensure the correct GID is used
       handle: cleanedHandle, // Use cleaned handle
       meta_description: cleanedMetaDescription, // Use cleaned meta description
+      vendor: autoFixProductData.vendor || '', // Include vendor for Shopify product vendor field
       brand: autoFixProductData.brand || '', // Include brand in the payload
       price: autoFixProductData.price !== undefined ? String(autoFixProductData.price) : undefined, // Ensure price is string
       compareAtPrice: autoFixProductData.compareAtPrice !== undefined ? String(autoFixProductData.compareAtPrice) : undefined, // Ensure compareAtPrice is string
@@ -621,6 +725,7 @@ export default function ReportPage() {
         };
       }),
       tags: allTagsToSave, // Send the combined set of tags
+      analysis_summary: autoFixAnalysisSummary, // Pass the analysis summary for intelligent issue removal
     };// Updated log for clarity
 
     try {
@@ -646,8 +751,26 @@ export default function ReportPage() {
       }
 
       if (response.ok && result.success) {
+        setCompletedActions(prev => ({ ...prev, [currentProductForAutoFix.id]: { ...prev[currentProductForAutoFix.id], autoFix: true } }));
+        setCredits(prev => ({ ...prev, used: prev.used + 1 }));
+
+        // Immediately update the product's issues in state using what the server
+        // calculated as remaining — no need to wait for a full refresh.
+        const savedProductId = currentProductForAutoFix.id;
+        if (result.remainingIssues !== undefined) {
+          setProducts(prev => prev.map(p =>
+            p.id === savedProductId
+              ? {
+                  ...p,
+                  issues: result.remainingIssues,
+                  suggestions_for_sales_improvement: result.remainingSuggestions ?? [],
+                }
+              : p
+          ));
+        }
+
         setIsSuccessModalOpen(true);
-        // Refresh the product list to show the updated data
+        // Refresh the product list to pull updated Shopify data (title, handle, etc.)
         refreshProducts();
         // Close the modal after a short delay to show the success message
         setTimeout(() => {
@@ -680,6 +803,26 @@ export default function ReportPage() {
         <Text as="p" variant="bodyMd">
           Product saved successfully!
         </Text>
+      </Modal.Section>
+    </Modal>
+  ) : null;
+
+  const aiCheckProgressModalMarkup = isAICheckModalOpen ? (
+    <Modal
+      open={isAICheckModalOpen}
+      onClose={() => {}} // User shouldn't close it while it's processing
+      title="Running AI Diagnostics"
+    >
+      <Modal.Section>
+        <BlockStack gap="400" align="center">
+          <Text as="h2" variant="headingMd" alignment="center">
+            {aiCheckStepText}
+          </Text>
+          <ProgressBar progress={aiCheckProgress} size="small" tone="primary" />
+          <Text as="p" variant="bodySm" alignment="center" tone="subdued">
+            This might take a few seconds...
+          </Text>
+        </BlockStack>
       </Modal.Section>
     </Modal>
   ) : null;
@@ -804,10 +947,12 @@ export default function ReportPage() {
               <BlockStack gap="200">
                 <InlineStack gap="200" blockAlign="center">
                   <Text as="p" variant="bodyMd">GTIN</Text>
-                  <Text as="p" variant="bodySm" tone="critical">
-                    (GTIN search is not always 100% reliable. Please validate the GTIN before saving)
-                  </Text>
                 </InlineStack>
+                <div style={{ background: '#fff4f4', border: '1px solid #fca5a5', borderRadius: '6px', padding: '6px 10px', display: 'inline-block' }}>
+                  <Text as="p" variant="bodySm" tone="critical">
+                    Searches UPCitemdb + AI. <strong>Always verify before submitting to Google Merchant Center.</strong>
+                  </Text>
+                </div>
                 {originalProductForReview?.barcode && (
                   <Text as="p" variant="bodySm" tone="critical">
                     <b>Original GTIN:</b>{" "}
@@ -833,12 +978,48 @@ export default function ReportPage() {
                     />
                   </div>
                   <Button
-                    onClick={() => handleFindGtin(originalProductForReview)}
+                    onClick={() => handleFindGtin(autoFixProductData)}
                     loading={gtinFetcher.state === 'loading'}
                   >
                     Find GTIN
                   </Button>
                 </InlineStack>
+                {(gtinFetcher.data as any)?.confidence && (
+                  <InlineStack gap="100" blockAlign="center">
+                    <Badge
+                      tone={
+                        (gtinFetcher.data as any).conflictDetected
+                          ? 'warning'
+                          : (gtinFetcher.data as any).confidence === 'high'
+                            ? 'success'
+                            : 'info'
+                      }
+                    >
+                      {(gtinFetcher.data as any).conflictDetected
+                        ? 'Conflict — already used by another product'
+                        : (gtinFetcher.data as any).confidence === 'high'
+                          ? `Verified via ${(gtinFetcher.data as any).source === 'upcitemdb' ? 'UPCitemdb' : 'AI'}`
+                          : 'Approximate match — please verify'}
+                    </Badge>
+                    {(gtinFetcher.data as any).storeBarcodesChecked !== undefined && (
+                      <Text as="span" variant="bodySm" tone="subdued">
+                        ({(gtinFetcher.data as any).storeBarcodesChecked} store barcodes checked)
+                      </Text>
+                    )}
+                  </InlineStack>
+                )}
+              </BlockStack>
+              <BlockStack gap="200">
+                <Text as="p" variant="bodyMd">Vendor</Text>
+                <TextField
+                  label="Vendor"
+                  labelHidden
+                  value={autoFixProductData.vendor || ''}
+                  onChange={(value) => setAutoFixProductData((prev: any) => ({ ...prev, vendor: value }))}
+                  multiline={false}
+                  autoComplete="off"
+                  helpText="The vendor/brand name stored on the Shopify product"
+                />
               </BlockStack>
               <BlockStack gap="200">
                 <Text as="p" variant="bodyMd">Brand</Text>
@@ -893,6 +1074,21 @@ export default function ReportPage() {
                   onChange={(value) => setAutoFixProductData((prev: any) => ({ ...prev, condition: value }))}
                   multiline={false}
                   autoComplete="off"
+                />
+              </BlockStack>
+              <BlockStack gap="200">
+                <Text as="p" variant="bodyMd">Availability</Text>
+                <Select
+                  label="Availability"
+                  labelHidden
+                  options={[
+                    { label: 'In Stock', value: 'in_stock' },
+                    { label: 'Out of Stock', value: 'out_of_stock' },
+                    { label: 'Pre-order', value: 'preorder' },
+                    { label: 'Backorder', value: 'backorder' },
+                  ]}
+                  value={autoFixProductData.availability || 'in_stock'}
+                  onChange={(value) => setAutoFixProductData((prev: any) => ({ ...prev, availability: value }))}
                 />
               </BlockStack>
               <InlineStack gap="200">
@@ -952,15 +1148,16 @@ export default function ReportPage() {
                   autoComplete="off"
                 />
               </BlockStack>
+
             </BlockStack>
           )}
 
           {autoFixAnalysisSummary && (
-            <BlockStack gap="200">
+            <BlockStack gap="300">
               <Text as="h3" variant="headingMd">AI Fixes Report</Text>
               {autoFixAnalysisSummary.resolved_issues && autoFixAnalysisSummary.resolved_issues.length > 0 && (
                 <BlockStack gap="100">
-                  <Text as="h4" variant="bodyMd">Resolved Issues:</Text>
+                  <Text as="h4" variant="headingSm"><strong>Resolved Issues</strong></Text>
                   <List type="bullet">
                     {autoFixAnalysisSummary.resolved_issues.map((issue: string, index: number) => (
                       <List.Item key={`resolved-${index}`}>{issue}</List.Item>
@@ -970,7 +1167,9 @@ export default function ReportPage() {
               )}
               {autoFixAnalysisSummary.pending_issues_for_manual_fix && autoFixAnalysisSummary.pending_issues_for_manual_fix.length > 0 && (
                 <BlockStack gap="100">
-                  <Text as="h4" variant="bodyMd">Pending Issues (Manual Fix Required):</Text>
+                  <Box paddingBlockStart="400">
+                    <Text as="h4" variant="headingSm"><strong>Suggestions</strong></Text>
+                  </Box>
                   <List type="bullet">
                     {autoFixAnalysisSummary.pending_issues_for_manual_fix.map((issue: any, index: number) => (
                       <List.Item key={`pending-${index}`}>
@@ -978,7 +1177,7 @@ export default function ReportPage() {
                           <strong>{issue.message}</strong>
                         </Text>
                         <Text as="p" variant="bodySm">
-                          Steps: {issue.manual_fix_steps}
+                          {issue.manual_fix_steps}
                         </Text>
                       </List.Item>
                     ))}
@@ -1004,19 +1203,12 @@ export default function ReportPage() {
   };
 
   return (
-    <Page fullWidth>
+    <Page
+      title={`Product Error Detailed Report (${credits.used}/${credits.limit} used)`}
+      fullWidth
+    >
       <CentralizedLoader loading={seoFetcher.state === "loading"} />
       <BlockStack gap="500">
-        <Card>
-          <BlockStack gap="500">
-            <Text as="h1" variant="headingLg">
-              <b>Product Error Detailed Report</b>
-            </Text>
-            <Text as="p" variant="bodyMd">
-              This report provides a detailed view of all products with SEO and merchant center issues.
-            </Text>
-          </BlockStack>
-        </Card>
         <Layout>
           <Layout.Section>
             <Card>
@@ -1079,80 +1271,111 @@ export default function ReportPage() {
                     </InlineStack>
                   </InlineStack>
                 )}
+                {/* Debug / error display */}
+                {seoFetcher.state === 'idle' && seoFetcher.data && !(seoFetcher.data as any).products && (
+                  <div style={{ padding: '16px', background: '#fff4f4', border: '1px solid #e74c3c', borderRadius: '8px' }}>
+                    <BlockStack gap="200">
+                      <Text as="p" variant="bodyMd" tone="critical">
+                        <b>Failed to load products.</b> Raw response: {JSON.stringify(seoFetcher.data)}
+                      </Text>
+                      <Button onClick={refreshProducts} variant="primary">Retry</Button>
+                    </BlockStack>
+                  </div>
+                )}
+                {products.length === 0 && seoFetcher.state !== 'loading' && seoFetcher.data !== undefined && (
+                  <div style={{ padding: '24px', textAlign: 'center' }}>
+                    <Text as="p" variant="bodyMd" tone="subdued">No products found. <Button variant="plain" onClick={refreshProducts}>Reload</Button></Text>
+                  </div>
+                )}
                 <div className="report-correction-box">
                   <BlockStack gap="200">
-                    {products.map((product) => (
-                      <Card key={product.id}>
-                        <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', height: '100%' }}>
-                          <div style={{ flexGrow: 1 }}>
-                            <BlockStack gap="200">
-                              <Text as="h3" variant="headingSm">
-                                <b>{product.title}</b>
-                              </Text>
-                              {product.issues && product.issues.length > 0 ? (
-                                <List type="bullet">
-                                  {product.issues.map((issue: any, index: number) => (
-                                    <List.Item key={index}>
-                                      <Badge tone={getBadgeTone(issue.severity)}>
-                                        {issue.severity}
-                                      </Badge>{" "}
-                                      {issue.message}
-                                    </List.Item>
-                                  ))}
-                                </List>
-                              ) : (
-                                <Badge tone="success">Great!!! No issues found</Badge>
-                              )}
-                              {product.suggestions_for_sales_improvement &&
-                                product.suggestions_for_sales_improvement.length > 0 && (
-                                  <>
-                                    <Box paddingBlockStart="200">
-                                      <Divider />
-                                    </Box>
-                                    <Text as="h4" variant="bodyMd">
-                                      <b>Sales Improvement Suggestions</b>
-                                    </Text>
-                                    <List type="bullet">
-                                      {product.suggestions_for_sales_improvement.map(
-                                        (suggestion: any, index: number) => (
-                                          <List.Item key={`suggestion-${index}`}>
-                                            <Badge tone={getBadgeTone(suggestion.priority)}>
-                                              {suggestion.priority}
-                                            </Badge>{" "}
-                                            {suggestion.suggestion}
-                                          </List.Item>
-                                        ),
-                                      )}
-                                    </List>
-                                  </>
+                    {products.map((product) => {
+                      const aiCheckCompleted = completedActions[product.id]?.aiCheck;
+                      const autoFixCompleted = completedActions[product.id]?.autoFix;
+
+                      return (
+                        <Card key={product.id}>
+                          <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', height: '100%' }}>
+                            <div style={{ flexGrow: 1 }}>
+                              <BlockStack gap="200">
+                                <Text as="h3" variant="headingSm">
+                                  <b>{product.title}</b>
+                                </Text>
+                                {product.issues && product.issues.length > 0 ? (
+                                  <List type="bullet">
+                                    {product.issues.map((issue: any, index: number) => (
+                                      <List.Item key={index}>
+                                        <Badge tone={getBadgeTone(issue.severity)}>
+                                          {issue.severity}
+                                        </Badge>{" "}
+                                        {issue.message}
+                                      </List.Item>
+                                    ))}
+                                  </List>
+                                ) : (
+                                  <Badge tone="success">Great!!! No issues found</Badge>
                                 )}
-                            </BlockStack>
+                                {product.suggestions_for_sales_improvement &&
+                                  product.suggestions_for_sales_improvement.length > 0 && (
+                                    <>
+                                      <Box paddingBlockStart="200">
+                                        <Divider />
+                                      </Box>
+                                      <Text as="h4" variant="bodyMd">
+                                        <b>Sales Improvement Suggestions</b>
+                                      </Text>
+                                      <List type="bullet">
+                                        {product.suggestions_for_sales_improvement.map(
+                                          (suggestion: any, index: number) => (
+                                            <List.Item key={`suggestion-${index}`}>
+                                              <Badge tone={getBadgeTone(suggestion.priority)}>
+                                                {suggestion.priority}
+                                              </Badge>{" "}
+                                              {suggestion.suggestion}
+                                            </List.Item>
+                                          ),
+                                        )}
+                                      </List>
+                                    </>
+                                  )}
+                              </BlockStack>
+                            </div>
+                            <div style={{ alignSelf: 'flex-end', paddingTop: 'var(--p-space-200)' }}>
+                              <InlineStack gap="200" blockAlign="center">
+                                <Tooltip content={aiCheckCompleted ? "AI Check complete" : "Run AI Check to find issues (1 Credit)"}>
+                                  <Button
+                                    variant="primary"
+                                    size="slim"
+                                    onClick={() => runAICheck(product)}
+                                    loading={product.isChecking}
+                                    disabled={product.isChecking}
+                                  >
+                                    <InlineStack gap="100" blockAlign="center" wrap={false}>
+                                      <span>Run AI Check (1 Credit)</span>
+                                      {aiCheckCompleted && <Icon source={CheckCircleIcon} tone="success" />}
+                                    </InlineStack>
+                                  </Button>
+                                </Tooltip>
+                                <Tooltip content={autoFixCompleted ? "Auto-Fix complete" : "Automatically fix issues with AI (1 Credit)"}>
+                                  <Button
+                                    variant="secondary"
+                                    size="slim"
+                                    onClick={() => handleAutoFixWithAIMagic(product)}
+                                    loading={isAutoFixingProduct && currentProductForAutoFix?.id === product.id}
+                                    disabled={product.isChecking || (isAutoFixingProduct && currentProductForAutoFix?.id !== product.id)}
+                                  >
+                                    <InlineStack gap="100" blockAlign="center" wrap={false}>
+                                      <span>Auto Fix with AI Magic (1 Credit)</span>
+                                      {autoFixCompleted && <Icon source={CheckCircleIcon} tone="success" />}
+                                    </InlineStack>
+                                  </Button>
+                                </Tooltip>
+                              </InlineStack>
+                            </div>
                           </div>
-                          <div style={{ alignSelf: 'flex-end', paddingTop: 'var(--p-space-200)' }}>
-                            <InlineStack gap="200">
-                              <Button
-                                variant="primary"
-                                size="slim"
-                                onClick={() => runAICheck(product)}
-                                loading={product.isChecking}
-                                disabled={product.isChecking}
-                              >
-                                Run AI Check
-                              </Button>
-                              <Button
-                                variant="secondary"
-                                size="slim"
-                                onClick={() => handleAutoFixWithAIMagic(product)}
-                                loading={isAutoFixingProduct && currentProductForAutoFix?.id === product.id}
-                                disabled={product.isChecking || (isAutoFixingProduct && currentProductForAutoFix?.id !== product.id)}
-                              >
-                                Auto Fix with AI Magic
-                              </Button>
-                            </InlineStack>
-                          </div>
-                        </div>
-                      </Card>
-                    ))}
+                        </Card>
+                      )
+                    })}
                   </BlockStack>
                 </div>
                 <InlineStack align="end" gap="400" blockAlign="center">
@@ -1218,6 +1441,39 @@ export default function ReportPage() {
       {testEmailModalMarkup} {/* Render the Test Email modal here */}
       {autoFixReviewModalMarkup} {/* Render the Auto Fix Review modal here */}
       {successModalMarkup}
+      {aiCheckProgressModalMarkup} {/* Render the AI progress modal here */}
+    </Page>
+  );
+}
+
+export function ErrorBoundary() {
+  const error = useRouteError();
+  const is403 = isRouteErrorResponse(error) && error.status === 403;
+  const message = isRouteErrorResponse(error)
+    ? error.data
+    : (error instanceof Error ? error.message : 'An unexpected error occurred.');
+
+  return (
+    <Page title="Product Error Detailed Report">
+      <Layout>
+        <Layout.Section>
+          <Card>
+            <BlockStack gap="400" align="center">
+              <Text as="h2" variant="headingMd" alignment="center">
+                {is403 ? 'Page Not Enabled' : 'Something Went Wrong'}
+              </Text>
+              <Text as="p" variant="bodyMd" tone="subdued" alignment="center">
+                {message}
+              </Text>
+              {!is403 && (
+                <Button onClick={() => window.location.reload()} variant="primary">
+                  Retry
+                </Button>
+              )}
+            </BlockStack>
+          </Card>
+        </Layout.Section>
+      </Layout>
     </Page>
   );
 }

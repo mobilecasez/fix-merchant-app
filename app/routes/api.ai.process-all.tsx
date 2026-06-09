@@ -47,8 +47,8 @@ async function getGeminiSuggestion(prompt: string) {
 }
 
 export const action = async ({ request }: ActionFunctionArgs) => {
-  const clonedRequest = request.clone();
-  const { admin, session } = await authenticate.admin(clonedRequest);
+  const bodyClone = request.clone();
+  const { admin, session } = await authenticate.admin(request);
   if (!session) {
     return json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -72,7 +72,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     console.error("Error fetching shop currency:", error);
   }
 
-  const { title, description } = await request.json();
+  const { title, description } = await bodyClone.json();
 
   // Create all prompts
   const titlePrompt = `Please rewrite the provided title, ensuring the output is only the final rewritten title with no additional text. The title should be:

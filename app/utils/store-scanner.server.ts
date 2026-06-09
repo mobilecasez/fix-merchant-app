@@ -67,6 +67,37 @@ async function safeFetch(
 }
 
 /**
+ * Read Set-Cookie headers correctly. `headers.get("set-cookie")` joins multiple
+ * cookies with ", " AND keeps the commas inside `Expires=` dates, so splitting on
+ * "," corrupts the values. `getSetCookie()` returns each cookie as its own entry.
+ */
+function readSetCookies(res: Response): string[] {
+  const anyHeaders = res.headers as any;
+  if (typeof anyHeaders.getSetCookie === "function") {
+    return anyHeaders.getSetCookie() as string[];
+  }
+  const raw = res.headers.get("set-cookie");
+  return raw ? [raw] : [];
+}
+
+/** Merge `Set-Cookie` values from a response into a name→value jar (later wins). */
+function mergeCookies(jar: Map<string, string>, res: Response): void {
+  for (const c of readSetCookies(res)) {
+    const pair = c.split(";")[0];
+    const idx = pair.indexOf("=");
+    if (idx > 0) {
+      const name = pair.slice(0, idx).trim();
+      const value = pair.slice(idx + 1).trim();
+      if (name) jar.set(name, value);
+    }
+  }
+}
+
+function jarToCookieHeader(jar: Map<string, string>): string {
+  return [...jar.entries()].map(([k, v]) => `${k}=${v}`).join("; ");
+}
+
+/**
  * Attempt to unlock a password-protected Shopify store.
  * Returns the cookie string to use in subsequent requests, or null if password is wrong.
  */
@@ -75,38 +106,31 @@ export async function unlockStorefront(
   password: string
 ): Promise<{ cookie: string | null; error?: string }> {
   try {
-    const controller = new AbortController();
-    setTimeout(() => controller.abort(), 10000);
+    const jar = new Map<string, string>();
 
-    // First GET the password page to grab the authenticity_token (CSRF)
+    // First GET the password page to grab the authenticity_token (CSRF) + session cookies.
+    const getController = new AbortController();
+    const getTimer = setTimeout(() => getController.abort(), 10000);
     const pageRes = await fetch(`${baseUrl}/password`, {
       headers: BROWSER_HEADERS,
-      signal: controller.signal,
+      signal: getController.signal,
     });
+    clearTimeout(getTimer);
     const pageHtml = await pageRes.text();
-    const setCookieRaw = pageRes.headers.get("set-cookie") || "";
+    mergeCookies(jar, pageRes);
 
-    // Extract authenticity_token from the form
     const tokenMatch = pageHtml.match(/name="authenticity_token"\s+value="([^"]+)"/);
     const authToken = tokenMatch?.[1] || "";
 
-    // Extract initial cookies (session cookie)
-    const initialCookie = setCookieRaw
-      .split(",")
-      .map((c) => c.split(";")[0].trim())
-      .filter(Boolean)
-      .join("; ");
-
-    // POST the password
+    // POST the password with the session cookies from the GET.
     const postController = new AbortController();
-    setTimeout(() => postController.abort(), 10000);
-
+    const postTimer = setTimeout(() => postController.abort(), 10000);
     const postRes = await fetch(`${baseUrl}/password`, {
       method: "POST",
       headers: {
         ...BROWSER_HEADERS,
         "Content-Type": "application/x-www-form-urlencoded",
-        ...(initialCookie ? { Cookie: initialCookie } : {}),
+        ...(jar.size ? { Cookie: jarToCookieHeader(jar) } : {}),
       },
       body: new URLSearchParams({
         form_type: "storefront_password",
@@ -117,19 +141,18 @@ export async function unlockStorefront(
       redirect: "manual", // Don't follow — we need the Set-Cookie header
       signal: postController.signal,
     });
+    clearTimeout(postTimer);
+    mergeCookies(jar, postRes);
 
-    // Collect all Set-Cookie values from the POST response
-    const postCookieRaw = postRes.headers.get("set-cookie") || "";
-    const allCookies = [...setCookieRaw.split(","), ...postCookieRaw.split(",")]
-      .map((c) => c.split(";")[0].trim())
-      .filter(Boolean)
-      .join("; ");
-
-    // If redirect location is not /password, the unlock succeeded
+    const allCookies = jarToCookieHeader(jar);
     const location = postRes.headers.get("location") || "";
-    const unlocked = !location.includes("/password") && (postRes.status === 302 || postRes.status === 303 || postRes.status === 200);
+    const unlocked =
+      !location.includes("/password") &&
+      (postRes.status === 302 || postRes.status === 303 || postRes.status === 200);
 
-    // Verify by fetching homepage with the cookie
+    // Authoritative check: fetch the homepage with the jar and confirm it is no
+    // longer the password page. This is the truth — only return the cookie if the
+    // store actually opened, so we never scan the locked password page by mistake.
     if (allCookies) {
       const verifyRes = await safeFetch(`${baseUrl}/`, 8000, allCookies);
       if (verifyRes.html && !isPasswordPage(verifyRes.html, verifyRes.finalUrl)) {
@@ -137,8 +160,13 @@ export async function unlockStorefront(
       }
     }
 
+    // Verification didn't confirm; trust the redirect only if it pointed away
+    // from /password (some themes set the unlock cookie on the redirect target).
     if (unlocked && allCookies) {
-      return { cookie: allCookies };
+      const retry = await safeFetch(`${baseUrl}/`, 8000, allCookies);
+      if (retry.html && !isPasswordPage(retry.html, retry.finalUrl)) {
+        return { cookie: allCookies };
+      }
     }
 
     return { cookie: null, error: "Incorrect password. Please check and try again." };
@@ -147,21 +175,38 @@ export async function unlockStorefront(
   }
 }
 
-/** Extract all internal links from a page's nav/header/footer */
+/** Extract all internal links from a page's nav/header/footer.
+ *  Uses broad selectors to catch all common Shopify theme footer patterns. */
 function extractNavLinks(html: string, baseUrl: string): string[] {
   const root = parse(html);
   const links: string[] = [];
-  const selectors = ["header a", "footer a", "nav a", "[role='navigation'] a"];
+  // Broad selectors — Shopify themes vary wildly in their footer markup.
+  // Many use <div class="footer">, <section class="footer-section">, or
+  // data attributes instead of a semantic <footer> tag.
+  const selectors = [
+    "footer a",
+    "nav a",
+    "header a",
+    "[role='navigation'] a",
+    "[class*='footer'] a",
+    "[id*='footer'] a",
+    "[class*='Footer'] a",
+    "[id*='Footer'] a",
+    "[class*='site-bottom'] a",
+    "[class*='bottom-bar'] a",
+  ];
   for (const sel of selectors) {
-    root.querySelectorAll(sel).forEach((el: any) => {
-      const href = el.getAttribute("href") || "";
-      if (href.startsWith("/") || href.startsWith(baseUrl)) {
-        const full = href.startsWith("/") ? `${baseUrl}${href}` : href;
-        links.push(full);
-      }
-    });
+    try {
+      root.querySelectorAll(sel).forEach((el: any) => {
+        const href = el.getAttribute("href") || "";
+        if (href.startsWith("/") || href.startsWith(baseUrl)) {
+          const full = href.startsWith("/") ? `${baseUrl}${href}` : href;
+          links.push(full);
+        }
+      });
+    } catch { /* selector not supported by node-html-parser — skip */ }
   }
-  return Array.from(new Set(links)).slice(0, 40);
+  return Array.from(new Set(links)).slice(0, 60);
 }
 
 /** Check a batch of URLs for 404s — returns broken ones */
@@ -187,7 +232,7 @@ interface PageScanResult {
 async function gatherStoreData(
   baseUrl: string,
   cookie?: string
-): Promise<{ pages: PageScanResult[]; brokenNavLinks: string[]; baseUrl: string }> {
+): Promise<{ pages: PageScanResult[]; brokenNavLinks: string[]; footerLinks: string[]; baseUrl: string }> {
   const pageResults: PageScanResult[] = await Promise.all(
     PAGES_TO_SCAN.map(async (page) => {
       // Try primary path
@@ -419,21 +464,21 @@ export function buildAdvancedPrompt(products: Array<{
   weight: number | null;
   availability: string;
 }>, isPasswordProtected: boolean): string {
-  return `You are an expert Google Merchant Center (GMC) Data Integrity AI. Your job is to analyze an array of Shopify product data and compare it against baseline requirements to prevent product disapprovals.
+  return `You are the lead Google Merchant Center (GMC) Compliance & Product Data Expert for the ShopFlix AI app. Your job is to analyze a JSON array of Shopify products, flag errors that violate Google's strict policies, and output a highly descriptive, non-technical remediation report containing automated fix parameters.
 
 STRICT EVALUATION RULES (FOR CONSISTENCY):
-1. DO NOT hallucinate errors. Apply the logic strictly to the provided JSON array of products.
-2. If the pricing logic or identifier logic passes the stated rules, DO NOT flag it.
-3. Your output MUST be a valid JSON object. Do not include markdown formatting like \`\`\`json or any conversational text outside the JSON.
+1. Evaluate ONLY the data provided. Do not guess or hallucinate.
+2. Every single error object MUST contain clear, layperson explanations, a click-by-click manual solution, and a precise backend payload for your app's "Auto-Fix" function.
+3. Your output MUST be a valid JSON object. Do not include markdown code block syntax (like \`\`\`json) or any conversational text outside the JSON structure.
 
 INPUT DATA:
 ${JSON.stringify({ is_password_protected: isPasswordProtected, products }, null, 2)}
 
-CHECKS TO PERFORM:
-1. Basic Syntax: Flag any product missing a 'title', 'id', 'link', or 'description'.
-2. Identifiers: Flag any product where 'gtin', 'mpn', AND 'brand' are ALL missing or null. (Google requires Brand + GTIN or MPN at minimum.)
-3. Pricing Logic (CRITICAL): The compare_at_price MUST be strictly greater than price. If compare_at_price <= price, flag as "Deceptive Pricing Logic". If compare_at_price is null or 0, skip this check entirely.
-4. Image Violations: Flag images if width or height is less than 100px. Flag if the image_url contains the substrings "watermark", "promo", or "sale".
+CHECKS & POLICIES TO ENFORCE:
+1. Basic Syntax: Missing mandatory attributes ('title', 'id', 'link', 'description').
+2. Product Identifiers: Missing or invalid unique product identifiers. Google's rules require the 'brand' attribute AND at least one unique identifier ('gtin' or 'mpn'). If all three are missing, or if brand is present but both GTIN and MPN are missing, flag it.
+3. Deceptive Pricing Logic: The 'compare_at_price' (MRP) MUST be strictly greater than the 'price' (Sale Price). If 'compare_at_price' <= 'price', it is a deceptive pricing violation. If 'compare_at_price' is blank or 0, skip this check.
+4. Image Quality & Overlays: Flag images with dimensions under 100x100 pixels. Flag images if the URL string indicates promotional overlays (contains "sale", "promo", "watermark").
 5. Password Protection: If is_password_protected is true, add exactly this string to store_warnings: "Before going live, please remove the password protection to ensure GMC bots can crawl your site."
 
 OUTPUT FORMAT:
@@ -447,9 +492,23 @@ Return ONLY a valid JSON object — no markdown fences, no extra text:
     {
       "product_id": "...",
       "product_title": "...",
-      "issue_type": "Pricing Logic | Missing Identifier | Image Violation | Syntax Error",
-      "description": "Specific detail based strictly on the provided data.",
-      "fix_action": "Actionable fix for the merchant."
+      "policy_violation_type": "Deceptive Pricing Logic | Missing Identifiers | Missing Description | Image Policy Violation",
+      "merchant_friendly_description": "A clear, descriptive, jargon-free explanation of exactly what is wrong and why Google will reject or suspend the product for this.",
+      "manual_fix_steps": [
+        "Step 1: Log into your Shopify Admin dashboard.",
+        "Step 2: Go to 'Products' and click on [Product Title].",
+        "Step 3: ...",
+        "Step 4: Click Save."
+      ],
+      "autofix_metadata": {
+        "can_autofix": true,
+        "action_required": "update_product_variant_fields | generate_placeholder_identifier | strip_image_overlay",
+        "target_fields": {
+          "compare_at_price": "Suggest a correct safe price value or null if resetting",
+          "gtin": "Suggest 'Custom Product' flag configuration or identifier if applicable",
+          "description": "Provide a brief AI-generated placeholder description if it was entirely missing"
+        }
+      }
     }
   ]
 }`;
@@ -457,52 +516,859 @@ Return ONLY a valid JSON object — no markdown fences, no extra text:
 
 // ── Prompt: Deep Scan (Misrepresentation & Checkout Audit) ────────────────────
 
-export function buildDeepPrompt(deepData: {
+export interface DeepAuditData {
   is_password_protected: boolean;
-  business_identity: { name: string; domain: string; legal_address: string };
+  business_identity: { name: string; domain: string; legal_address: string; contact_email?: string };
   contact_page_text: string;
+  homepage_text?: string;
+  https_enabled?: boolean;
+  policy_pages?: {
+    refund_return?: { exists: boolean; word_count: number };
+    shipping?: { exists: boolean; word_count: number };
+    terms?: { exists: boolean; word_count: number };
+    privacy?: { exists: boolean; word_count: number };
+  };
+  social_links?: string[];
+  payment_trust_signals?: string[];
+  scarcity_signals?: string[];
+  popup_signals?: string[];
+  product_samples?: Array<{ title: string; price: number; compare_at_price: number | null; availability: string }>;
   sample_product: {
     json_ld_schema: string;
     visual_dom_price: string;
     simulated_checkout_price: string;
   };
   active_third_party_apps: string[];
-}): string {
-  return `You are a senior Google Merchant Center Policy Enforcement AI. Your job is to analyze a store's deep structural data, structured schema, and behavioral elements to prevent "Misrepresentation" suspensions.
+}
+
+export function buildDeepPrompt(deepData: DeepAuditData): string {
+  return `You are a senior Google Merchant Center (GMC) Policy Enforcement & Account Suspension Prevention AI. Google suspends Shopping accounts most often for "Misrepresentation", "Insufficient Contact Information", "Untrustworthy Promotions", and "Conditions Not Met". Your job is to perform an EXHAUSTIVE, robust audit of the store data below and surface EVERY signal that could trigger a Google review, warning, or suspension — so the merchant can fix them before Google ever finds them, or appeal an existing suspension.
 
 STRICT EVALUATION RULES (FOR CONSISTENCY):
-1. Base all findings ONLY on the provided INPUT DATA. Do not extrapolate or assume external context.
-2. A schema mismatch only occurs if the exact numeric values or currencies differ between the provided json_ld_schema and visual_dom_price.
-3. Your output MUST be a valid JSON object. Do not include markdown formatting like \`\`\`json or any conversational text outside the JSON.
+1. Base all findings ONLY on the provided INPUT DATA. Do not invent data that is not present, but DO reason about whether each required trust/transparency signal is PRESENT or ABSENT.
+2. Be thorough and slightly conservative: if a signal that Google requires for trust is MISSING from the data, flag it as a risk (absence of required trust info IS itself a suspension risk under GMC's "Misrepresentation" and "Insufficient Contact Information" policies).
+3. Each finding must be specific, descriptive, and actionable for a non-technical merchant.
+4. Your output MUST be a valid JSON object. Do not include markdown like \`\`\`json or any text outside the JSON.
 
 INPUT DATA:
 ${JSON.stringify(deepData, null, 2)}
 
-CHECKS TO PERFORM:
-1. Schema Markup Audit: Compare the price and currency in json_ld_schema against visual_dom_price. Flag any discrepancy as "Structured Data Mismatch".
-2. Business Identity Alignment: Verify that the business_identity details (name, domain, legal_address) strictly match what is stated in contact_page_text. Flag any mismatch as "Business Identity Mismatch".
-3. Deceptive Practices: Flag any app in active_third_party_apps known for fake scarcity tactics (countdown timers, fake visitor counts, urgency pop-ups). Flag as "Deceptive App Detected".
-4. Hidden Fees: Compare visual_dom_price with simulated_checkout_price. If simulated_checkout_price is higher (excluding standard shipping/tax), flag as "Incomplete Checkout Disclosure".
-5. Password Protection: If is_password_protected is true, add exactly this string to store_warnings: "Before going live, please remove the password protection to ensure GMC bots can crawl your site."
+COMPREHENSIVE CHECKS TO PERFORM (evaluate ALL of these — report each as a separate finding when there is a risk):
 
-OUTPUT FORMAT:
-Return ONLY a valid JSON object — no markdown fences, no extra text:
+A. BUSINESS IDENTITY & MISREPRESENTATION
+1. Business Identity Consistency: Does business_identity (name, domain, legal_address) appear consistently in contact_page_text and homepage_text? Flag mismatches or a generic/placeholder business name as "Business Identity Mismatch".
+2. Missing Physical Address: Google requires a verifiable physical business address. If legal_address is empty/incomplete AND no address appears in contact_page_text or homepage_text, flag "Missing Business Address".
+3. Missing/Generic Contact Channels: Google requires multiple ways to contact the business (email, phone, physical address, or contact form). If fewer than two are evidenced, flag "Insufficient Contact Information".
+
+B. POLICY & TRANSPARENCY (Conditions Not Met)
+4. Refund/Return Policy Quality: Using policy_pages.refund_return, if it does not exist OR word_count is very low (< 80 words ≈ too thin to be a real policy), flag "Inadequate Refund/Return Policy".
+5. Shipping Policy Quality: Using policy_pages.shipping, if missing or too thin (< 50 words), flag "Inadequate Shipping Policy".
+6. Terms of Service: If policy_pages.terms is missing, flag "Missing Terms of Service".
+7. Privacy Policy: If policy_pages.privacy is missing, flag "Missing Privacy Policy".
+
+C. TRUST & SECURITY SIGNALS
+8. Secure Connection: If https_enabled is false, flag "No SSL / Insecure Connection" (High severity).
+9. Payment Transparency: If payment_trust_signals is empty (no visible accepted-payment icons or secure-checkout badge), flag "Missing Payment/Trust Signals".
+10. Social Proof / Legitimacy: If social_links is empty, flag a Low-severity "No Social Presence Detected" trust note.
+
+D. DECEPTIVE / UNTRUSTWORTHY PROMOTIONS
+11. Fake Scarcity & Urgency: Inspect scarcity_signals, popup_signals, homepage_text, and active_third_party_apps for countdown timers, "only X left", fake live-visitor counters, or aggressive urgency pop-ups. Flag each as "Deceptive Urgency / Fake Scarcity".
+12. Deceptive Apps: Flag any app in active_third_party_apps known for fake scarcity, fake reviews, or manipulative pop-ups as "Deceptive App Detected".
+
+E. PRICING & AVAILABILITY ACCURACY (Misrepresentation)
+13. Structured Data Mismatch: Compare price/currency in sample_product.json_ld_schema vs sample_product.visual_dom_price. Flag exact-value discrepancies as "Structured Data / Price Mismatch".
+14. Hidden Fees at Checkout: If sample_product.simulated_checkout_price is higher than visual_dom_price beyond standard shipping/tax, flag "Hidden Fees / Checkout Price Mismatch".
+15. Deceptive Discounts: In product_samples, flag any product whose compare_at_price is present but <= price (a fake "was" price) as "Deceptive Discount Pricing".
+16. Inaccurate Availability: Note any product_samples marked "out of stock" still being advertised, as a Medium trust note.
+
+F. CRAWLABILITY
+17. Password Protection: If is_password_protected is true, add to store_warnings exactly: "Before going live, please remove the password protection to ensure GMC bots can crawl your site."
+
+SEVERITY GUIDE: "High" = direct suspension/disapproval trigger; "Medium" = trust/review risk; "Low" = best-practice improvement.
+
+Also produce a "passed_checks" array: short labels of the trust/compliance checks the store PASSED (so the merchant sees what is already good). And a "summary" one-sentence overall assessment.
+
+OUTPUT FORMAT (return ONLY this JSON — include as many findings as apply, do not limit to one):
 {
   "scan_type": "deep",
   "suspension_risk": "Low | Medium | High",
+  "summary": "One-sentence overall assessment of suspension risk.",
   "store_warnings": [],
+  "passed_checks": ["e.g. Privacy Policy present", "HTTPS enabled", "..."],
   "critical_misrepresentation_errors": [
     {
-      "category": "Schema Mismatch | Identity Mismatch | Deceptive App | Hidden Fees",
-      "evidence": "Exact data point from the input that caused the flag.",
-      "google_policy_violated": "Name of the relevant GMC policy.",
-      "remediation_steps": ["Step 1...", "Step 2..."]
+      "category": "Business Identity Mismatch | Missing Business Address | Insufficient Contact Information | Inadequate Refund/Return Policy | Inadequate Shipping Policy | Missing Terms of Service | Missing Privacy Policy | No SSL / Insecure Connection | Missing Payment/Trust Signals | No Social Presence Detected | Deceptive Urgency / Fake Scarcity | Deceptive App Detected | Structured Data / Price Mismatch | Hidden Fees / Checkout Price Mismatch | Deceptive Discount Pricing | Inaccurate Availability",
+      "severity": "High | Medium | Low",
+      "evidence": "The exact data point (or its absence) that caused the flag.",
+      "merchant_friendly_explanation": "Plain-English explanation of what is wrong and WHY Google may suspend or review the store for this.",
+      "google_policy_violated": "Name of the relevant GMC policy (e.g. Misrepresentation, Insufficient Contact Information, Untrustworthy Promotions, Conditions Not Met).",
+      "remediation_steps": ["Step 1...", "Step 2...", "Step 3..."]
     }
   ]
 }`;
 }
 
-/** Background processor — runs the full scan and saves to DB */
+/** Shared helper — run Gemini with a prompt and return parsed JSON */
+async function runGeminiJson(prompt: string, timeoutMs = 180000, retryId = "scan"): Promise<any> {
+  const genAI = new GoogleGenerativeAI(process.env.GOOGLE_GEMINI_API_KEY!);
+  const model = genAI.getGenerativeModel({
+    model: "gemini-2.5-flash",
+    generationConfig: { temperature: 0.1, responseMimeType: "application/json" },
+  });
+  const aiText = await retryOperation(async () => {
+    const result = await Promise.race([
+      model.generateContent(prompt),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("AI timed out")), timeoutMs)),
+    ]);
+    return (await (result as any).response).text();
+  }, 3, 2000, retryId);
+  const start = aiText.indexOf("{");
+  const end = aiText.lastIndexOf("}");
+  return JSON.parse(aiText.substring(start, end + 1));
+}
+
+// ── Deterministic reconciliation (authoritative live-store validation) ─────────
+// Maps a storefront path to the auto_fix_type the auto-fix engine uses.
+const FIX_TYPE_BY_PATH: Record<string, string> = {
+  "/policies/privacy-policy": "privacy_policy",
+  "/policies/refund-policy": "refund_policy",
+  "/policies/shipping-policy": "shipping_policy",
+  "/policies/terms-of-service": "terms_of_service",
+  "/pages/contact": "contact_page",
+  "/pages/about-us": "about_page",
+};
+
+// The links GMC actually requires to be visible site-wide. About Us is NOT
+// required by Google, so it is intentionally excluded — requiring it caused the
+// footer issue to be flagged forever on stores that legitimately omit it.
+const REQUIRED_FOOTER_VARIANTS: Array<{ type: string; variants: string[] }> = [
+  { type: "privacy_policy",   variants: ["/pages/privacy-policy", "/policies/privacy-policy"] },
+  { type: "refund_policy",    variants: ["/pages/refund-policy", "/policies/refund-policy"] },
+  { type: "shipping_policy",  variants: ["/pages/shipping-policy", "/policies/shipping-policy"] },
+  { type: "terms_of_service", variants: ["/pages/terms-of-service", "/policies/terms-of-service"] },
+  { type: "contact_page",     variants: ["/pages/contact", "/contact"] },
+];
+
+// Selectors that target the FOOTER region only (no header/nav). GMC requires the
+// links to be visible in the footer, so we scope detection there — otherwise a
+// header-nav link or a stray body link would wrongly satisfy the requirement and
+// the issue would never reappear after the merchant removes it from the footer.
+const FOOTER_REGION_SELECTORS = [
+  "footer a",
+  "[class*='footer'] a",
+  "[id*='footer'] a",
+  "[class*='Footer'] a",
+  "[id*='Footer'] a",
+  "[class*='site-bottom'] a",
+  "[class*='bottom-bar'] a",
+  "[class*='site-footer'] a",
+];
+
+/**
+ * Read the homepage once and return signals used by reconciliation:
+ *  - footerLinks: internal links found in the FOOTER region (lowercased,
+ *    slash-trimmed). Falls back to all internal links only when no footer region
+ *    is detected, so themes without a semantic footer aren't falsely flagged.
+ *  - hasContactLink: a mailto:/tel: link is present in the footer (contact info
+ *    visible site-wide).
+ */
+// Footer container selectors (region-level, not just anchors) — used to extract
+// the footer's visible text for business-address / contact detection.
+const FOOTER_CONTAINER_SELECTORS = [
+  "footer",
+  "[class*='footer']",
+  "[id*='footer']",
+  "[class*='Footer']",
+  "[id*='Footer']",
+  "[class*='site-bottom']",
+  "[class*='bottom-bar']",
+  "[class*='site-footer']",
+];
+
+/** Detect a plausible physical/postal address in a block of text. */
+function looksLikeAddress(text: string): boolean {
+  if (!text) return false;
+  // Street-style line: number + street keyword
+  const street = /\b\d{1,6}\s+[A-Za-z0-9.\s]{2,40}\b(street|st\.?|avenue|ave\.?|road|rd\.?|lane|ln\.?|drive|dr\.?|blvd|boulevard|suite|ste\.?|unit|floor|fl\.?|highway|hwy)\b/i;
+  // US ZIP / generic postal patterns
+  const usZip = /\b\d{5}(-\d{4})?\b/;
+  const ukPost = /\b[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}\b/i;
+  const inPin = /\b\d{6}\b/;
+  // "City, ST" or "City, Country"
+  const cityState = /\b[A-Za-z .'-]{2,30},\s*[A-Za-z]{2,}\b/;
+  return street.test(text) || ((usZip.test(text) || ukPost.test(text) || inPin.test(text)) && cityState.test(text));
+}
+
+async function getHomepageSignals(
+  storeUrl: string,
+  storeData: any,
+  cookie?: string
+): Promise<{ footerLinks: string[]; hasContactLink: boolean; footerHasAddress: boolean; footerHasEmail: boolean; footerHasPhone: boolean }> {
+  const { html: homeHtml } = await safeFetch(`${storeUrl}/`, 10000, cookie);
+  if (!homeHtml) return { footerLinks: [], hasContactLink: false, footerHasAddress: false, footerHasEmail: false, footerHasPhone: false };
+
+  const norm = (href: string): string | null => {
+    const h = (href || "").trim();
+    if (h.startsWith("/")) return `${storeUrl}${h}`.toLowerCase().replace(/\/$/, "");
+    if (h.startsWith(storeUrl)) return h.toLowerCase().replace(/\/$/, "");
+    return null;
+  };
+
+  const footerScoped = new Set<string>();
+  const allInternal = new Set<string>();
+  let hasContactLink = false;
+  let footerText = "";
+
+  try {
+    const root = parse(homeHtml);
+
+    // Whole page — used only as a fallback when no footer region exists.
+    root.querySelectorAll("a[href]").forEach((el: any) => {
+      const href = el.getAttribute("href") || "";
+      const n = norm(href);
+      if (n) allInternal.add(n);
+    });
+
+    // Footer region — the authoritative source for the footer-links requirement.
+    for (const sel of FOOTER_REGION_SELECTORS) {
+      try {
+        root.querySelectorAll(sel).forEach((el: any) => {
+          const href = (el.getAttribute("href") || "").trim();
+          if (/^(mailto:|tel:)/i.test(href)) hasContactLink = true;
+          const n = norm(href);
+          if (n) footerScoped.add(n);
+        });
+      } catch { /* selector unsupported — skip */ }
+    }
+
+    // Footer text content — for address / email / phone detection in the footer.
+    for (const sel of FOOTER_CONTAINER_SELECTORS) {
+      try {
+        root.querySelectorAll(sel).forEach((el: any) => {
+          const t = (el.text || "").replace(/\s+/g, " ").trim();
+          if (t) footerText += " " + t;
+        });
+      } catch { /* skip */ }
+      if (footerText.length > 4000) break;
+    }
+  } catch { /* non-fatal */ }
+
+  // Footer links captured during gatherStoreData (also footer-region) reinforce
+  // the scoped set.
+  ((storeData as any).footerLinks || []).forEach((entry: string) => {
+    const arrow = entry.lastIndexOf("→");
+    const u = (arrow !== -1 ? entry.substring(arrow + 1).trim() : entry).toLowerCase().replace(/\/$/, "");
+    if (u.startsWith("http")) footerScoped.add(u);
+  });
+
+  const footerLinks = footerScoped.size > 0 ? [...footerScoped] : [...allInternal];
+  const footerHasEmail = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(footerText) || hasContactLink;
+  const footerHasPhone = /(?:\+?\d[\d\s().-]{7,}\d)/.test(footerText);
+  const footerHasAddress = looksLikeAddress(footerText);
+
+  return { footerLinks, hasContactLink, footerHasAddress, footerHasEmail, footerHasPhone };
+}
+
+/** Recompute the scan summary counts/risk from the reconciled issue lists. */
+function recomputeBasicSummary(result: any, storeData: any) {
+  let high = 0, medium = 0;
+  for (const s of ["merchant_center_compliance", "customer_trust_and_policy", "site_structure_and_seo", "missing_pages", "broken_links"]) {
+    for (const issue of (result[s] || [])) {
+      const sev = (issue.severity || "").toLowerCase();
+      if (sev === "high") high++;
+      else if (sev === "medium") medium++;
+    }
+  }
+  const pagesMissing = (result.missing_pages || []).length;
+  const brokenLinks = (result.broken_links || []).length;
+  result.scan_summary = {
+    ...(result.scan_summary || {}),
+    pages_scanned: (storeData.pages || []).filter((p: any) => p.exists).length,
+    pages_missing: pagesMissing,
+    broken_links_found: brokenLinks,
+    overall_risk: (high > 0 || pagesMissing > 0) ? "High" : medium > 0 ? "Medium" : "Low",
+  };
+}
+
+/**
+ * Authoritative reconciliation — mutates `result` in place.
+ *
+ * The AI is non-deterministic and frequently re-flags issues that are already
+ * fixed. This pass checks the LIVE store (the same truth Google crawls) and
+ * removes any auto-fixable issue whose fix is genuinely already in place, so
+ * re-scans correctly recognize fixed pages, footer links, and contact info —
+ * whether the fix was applied via Auto Fix or manually by the merchant.
+ */
+async function reconcileBasicResult(result: any, storeData: any, storeUrl: string, cookie?: string): Promise<void> {
+  const resolved = new Set<string>();
+
+  // Read the homepage once for footer links + contact/address signals.
+  let footerLinks: string[] = [];
+  let footerHasContactLink = false;
+  let footerHasAddress = false;
+  let footerHasEmail = false;
+  let footerHasPhone = false;
+  try {
+    const signals = await getHomepageSignals(storeUrl, storeData, cookie);
+    footerLinks = signals.footerLinks;
+    footerHasContactLink = signals.hasContactLink;
+    footerHasAddress = signals.footerHasAddress;
+    footerHasEmail = signals.footerHasEmail;
+    footerHasPhone = signals.footerHasPhone;
+  } catch { /* non-fatal */ }
+
+  // 1. Page-based fixes — resolved if the live page responds with content.
+  for (const page of storeData.pages || []) {
+    const fixType = FIX_TYPE_BY_PATH[page.path];
+    if (fixType && page.exists) resolved.add(fixType);
+  }
+
+  // 2. Business contact details (Scan 1 / GMC "Insufficient Contact Information").
+  //    Google requires the business to be reachable, with contact details ideally
+  //    visible site-wide in the FOOTER (address, email, or phone). We treat the
+  //    requirement as satisfied when the footer shows ANY business contact signal
+  //    (address / email / phone / mailto-tel link), OR the contact page clearly
+  //    carries an email/phone. Otherwise we flag business_contact so it is caught
+  //    in the Basic scan — not deferred to the Deep scan.
+  const contactPage = (storeData.pages || []).find((p: any) => p.path === "/pages/contact");
+  const homePage = (storeData.pages || []).find((p: any) => p.path === "/");
+  const contactText = `${contactPage?.markdown || ""}\n${homePage?.markdown || ""}`;
+  const pageHasEmail = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(contactText);
+  const pageHasPhone = /(?:\+?\d[\d\s().-]{7,}\d)/.test(contactText);
+
+  const footerHasBusinessDetails = footerHasContactLink || footerHasAddress || footerHasEmail || footerHasPhone;
+  const businessContactSatisfied = footerHasBusinessDetails || (contactPage?.exists && (pageHasEmail || pageHasPhone));
+
+  if (businessContactSatisfied) {
+    resolved.add("business_contact");
+  }
+
+  // 3. Footer links — resolved only if ALL required GMC links are present.
+  let missingFooter: Array<{ type: string; variants: string[] }> = [];
+  if (footerLinks.length > 0) {
+    missingFooter = REQUIRED_FOOTER_VARIANTS.filter(
+      ({ variants }) => !variants.some(v => footerLinks.some(l => l.endsWith(v)))
+    );
+    if (missingFooter.length === 0) resolved.add("footer_links");
+  }
+
+  // 4. Drop every auto-fixable issue whose fix is already in place.
+  for (const section of ["merchant_center_compliance", "customer_trust_and_policy", "site_structure_and_seo", "missing_pages"]) {
+    if (Array.isArray(result[section])) {
+      result[section] = result[section].filter((issue: any) => {
+        const t = issue.auto_fix_type;
+        return !(t && resolved.has(t));
+      });
+    }
+  }
+
+  // 5. Make footer issue presence match reality — inject if genuinely missing.
+  const allIssues = [
+    ...(result.site_structure_and_seo || []),
+    ...(result.merchant_center_compliance || []),
+    ...(result.customer_trust_and_policy || []),
+  ];
+  const hasFooterIssue = allIssues.some((i: any) => i.auto_fix_type === "footer_links");
+  if (missingFooter.length > 0 && !hasFooterIssue) {
+    if (!result.site_structure_and_seo) result.site_structure_and_seo = [];
+    result.site_structure_and_seo.unshift({
+      severity: "High",
+      issue_description: `Footer is missing ${missingFooter.length} required GMC link${missingFooter.length > 1 ? "s" : ""}: ${missingFooter.map(v => v.variants[0].split("/").pop()).join(", ")}. These must be visible from every page.`,
+      suggested_fix: "Add all required policy and contact links to your store's footer navigation.",
+      detailed_fix_steps: [
+        "Go to Online Store → Navigation in Shopify Admin.",
+        "Add a new menu called 'Policy Links' with links to Privacy Policy, Refund Policy, Shipping Policy, Terms of Service, and Contact.",
+        "In Online Store → Themes → Customize → Footer, add a new 'Link list' block pointing to this menu, then Save.",
+      ],
+      auto_fixable: true,
+      auto_fix_type: "footer_links",
+      credit_cost: 3,
+    });
+  }
+
+  // 5b. Business contact details — inject a business_contact issue when the store
+  //     shows NO site-wide contact details (footer) and no contact page email/phone.
+  //     This makes "missing business/contact details in the footer" a Basic-scan
+  //     finding (GMC "Insufficient Contact Information").
+  const hasBusinessContactIssue = allIssues.some((i: any) => i.auto_fix_type === "business_contact");
+  if (!businessContactSatisfied && !hasBusinessContactIssue) {
+    if (!result.merchant_center_compliance) result.merchant_center_compliance = [];
+    const missingBits = [
+      !footerHasAddress ? "business address" : null,
+      !(footerHasEmail || pageHasEmail) ? "support email" : null,
+      !(footerHasPhone || pageHasPhone) ? "phone number" : null,
+    ].filter(Boolean);
+    result.merchant_center_compliance.unshift({
+      severity: "High",
+      issue_description: `Your store does not display business contact details (${missingBits.join(", ")}) in the footer or contact page. Google Merchant Center requires a reachable business identity — missing contact information is a common cause of account suspension.`,
+      suggested_fix: "Add your business address, support email, and phone number — ideally visible in the footer on every page.",
+      detailed_fix_steps: [
+        "In Shopify Admin, go to Settings → Store details and confirm your business address, email, and phone are set.",
+        "Create or update your Contact page (Online Store → Pages) to list your support email, phone, and physical/business address.",
+        "Add these contact details to your footer: Online Store → Themes → Customize → Footer → add a Text block with your address, email, and phone, then Save.",
+      ],
+      auto_fixable: true,
+      auto_fix_type: "business_contact",
+      credit_cost: 2,
+    });
+  }
+
+  // 6. Recompute summary counts/risk from the reconciled lists.
+  recomputeBasicSummary(result, storeData);
+}
+
+/** Run the basic scan and return the cleaned result object (no DB writes) */
+async function runBasicScan(storeUrl: string, cookie?: string): Promise<any> {
+  const storeData = await gatherStoreData(storeUrl, cookie);
+  const prompt = buildPrompt(storeData);
+  const result = await runGeminiJson(prompt, 180000, storeUrl);
+
+  // Strip password noise
+  const PASSWORD_KEYWORDS = /password.protect|password.promot|inaccessible.due.to.password|cannot.be.crawled.due.to.password/i;
+  for (const section of ["merchant_center_compliance", "customer_trust_and_policy", "site_structure_and_seo", "missing_pages"]) {
+    if (Array.isArray(result[section])) {
+      result[section] = result[section].filter((issue: any) => {
+        const text = `${issue.issue_description || ""} ${issue.suggested_fix || ""}`;
+        return !PASSWORD_KEYWORDS.test(text);
+      });
+    }
+  }
+
+  // ── Authoritative deterministic reconciliation ──────────────────────────────
+  // Removes any auto-fixable issue the AI flagged that is actually already fixed
+  // on the live store (pages, footer links, contact info), and injects a footer
+  // issue only when links are genuinely missing. This is the single source of
+  // truth that makes re-scans recognize fixed items.
+  try {
+    await reconcileBasicResult(result, storeData, storeUrl, cookie);
+  } catch (e) {
+    console.warn("[runBasicScan] Reconciliation failed (non-fatal):", e);
+  }
+
+  return result;
+}
+
+type AdvancedProduct = {
+  id: string; title: string; description: string; link: string;
+  image_url: string; image_width: number; image_height: number;
+  gtin: string | null; mpn: string | null; brand: string | null;
+  price: number; compare_at_price: number | null; weight: number | null;
+  availability: string;
+};
+
+/**
+ * Deterministic Advanced product-feed validation.
+ *
+ * Replaces the non-deterministic AI pass so results are 100% consistent and a
+ * product that has been fixed (GTIN added, price corrected, description written)
+ * automatically drops off the next scan. The output shape matches the previous
+ * AI format, so the UI (ViolationGroupCard, group-fix, etc.) is unchanged.
+ */
+export function computeAdvancedErrors(products: AdvancedProduct[], isPasswordProtected: boolean) {
+  const errors: any[] = [];
+  const overlayRe = /(^|[/_-])(sale|promo|watermark|discount)([/_.-]|$)/i;
+
+  for (const p of products) {
+    const title = p.title || "Untitled product";
+
+    // 1. Missing description (mandatory attribute)
+    if (!p.description || !p.description.trim()) {
+      errors.push({
+        product_id: p.id,
+        product_title: title,
+        policy_violation_type: "Missing Description",
+        merchant_friendly_description: `"${title}" has no product description. Google requires a description before it will show the product in Shopping ads, and an empty description usually leads to disapproval.`,
+        manual_fix_steps: [
+          "Open your Shopify Admin and go to Products.",
+          `Click "${title}".`,
+          "Write a clear description covering what the product is, its key features, and materials or specs.",
+          "Click Save.",
+        ],
+        autofix_metadata: {
+          can_autofix: true,
+          action_required: "update_product_variant_fields",
+          target_fields: { description: "Provide a brief AI-generated description" },
+        },
+      });
+    }
+
+    // 2. Missing product identifiers — Google needs a GTIN or MPN
+    if (!p.gtin && !p.mpn) {
+      errors.push({
+        product_id: p.id,
+        product_title: title,
+        policy_violation_type: "Missing Identifiers",
+        merchant_friendly_description: `"${title}" is missing a unique product identifier (GTIN/barcode or MPN)${!p.brand ? " and a brand" : ""}. Without these, Google can't match the product to its catalog and will disapprove it.`,
+        manual_fix_steps: [
+          "Open your Shopify Admin and go to Products.",
+          `Click "${title}".`,
+          "Scroll to the variant's Inventory section and enter the product's barcode (GTIN) — or add the manufacturer's MPN.",
+          !p.brand ? "Set the product Vendor to the brand/manufacturer name." : "Confirm the product Vendor is set to the brand name.",
+          "Click Save.",
+        ],
+        autofix_metadata: {
+          can_autofix: true,
+          action_required: "generate_placeholder_identifier",
+          target_fields: { gtin: "Look up or assign a valid identifier", brand: p.brand || "Set brand from vendor" },
+        },
+      });
+    }
+
+    // 3. Deceptive pricing — compare-at (MRP) must be strictly greater than price
+    if (p.compare_at_price != null && p.compare_at_price > 0 && p.compare_at_price <= p.price) {
+      errors.push({
+        product_id: p.id,
+        product_title: title,
+        policy_violation_type: "Deceptive Pricing Logic",
+        merchant_friendly_description: `"${title}" shows a Compare-at price (${p.compare_at_price}) that is not higher than the selling price (${p.price}). Google treats a "fake" sale price as deceptive pricing and will disapprove the product.`,
+        manual_fix_steps: [
+          "Open your Shopify Admin and go to Products.",
+          `Click "${title}".`,
+          "In the Pricing section, either set the Compare-at price higher than the price, or clear the Compare-at price entirely.",
+          "Click Save.",
+        ],
+        autofix_metadata: {
+          can_autofix: true,
+          action_required: "update_product_variant_fields",
+          target_fields: { compare_at_price: "Clear the compare-at price or set it above the sale price" },
+        },
+      });
+    }
+
+    // 4. Image quality — too small or carries a promotional overlay
+    const tooSmall = p.image_width > 0 && p.image_height > 0 && (p.image_width < 100 || p.image_height < 100);
+    const hasOverlay = overlayRe.test(p.image_url || "");
+    if (tooSmall || hasOverlay) {
+      errors.push({
+        product_id: p.id,
+        product_title: title,
+        policy_violation_type: "Image Policy Violation",
+        merchant_friendly_description: tooSmall
+          ? `"${title}" has a main image that is too small (${p.image_width}×${p.image_height}px). Google requires product images of at least 100×100px (250×250px recommended).`
+          : `"${title}" appears to use a promotional image (sale/watermark overlay). Google rejects product images with promotional text or watermarks.`,
+        manual_fix_steps: [
+          "Open your Shopify Admin and go to Products.",
+          `Click "${title}".`,
+          tooSmall
+            ? "Upload a larger, high-resolution main image (at least 250×250px)."
+            : "Replace the main image with a clean product photo that has no text, badges, or watermarks.",
+          "Click Save.",
+        ],
+        autofix_metadata: { can_autofix: false, action_required: "manual_image_update", target_fields: {} },
+      });
+    }
+  }
+
+  const storeWarnings: string[] = [];
+  if (isPasswordProtected) {
+    storeWarnings.push("Before going live, please remove the password protection to ensure GMC bots can crawl your site.");
+  }
+
+  return {
+    scan_type: "advanced",
+    status: errors.length === 0 ? "pass" : "fail",
+    affected_products_count: new Set(errors.map((e) => e.product_id)).size,
+    store_warnings: storeWarnings,
+    errors_found: errors,
+  };
+}
+
+/** Advanced scan — runs Basic first, then Advanced; stores both results */
+export async function processAdvancedScan(
+  scanId: string,
+  shop: string,
+  storeUrl: string,
+  products: Array<{
+    id: string;
+    title: string;
+    description: string;
+    link: string;
+    image_url: string;
+    image_width: number;
+    image_height: number;
+    gtin: string | null;
+    mpn: string | null;
+    brand: string | null;
+    price: number;
+    compare_at_price: number | null;
+    weight: number | null;
+    availability: string;
+  }>,
+  isPasswordProtected = false,
+  cookie?: string
+) {
+  try {
+    await (prisma as any).storeScan.update({
+      where: { id: scanId },
+      data: { status: "PROCESSING" },
+    });
+
+    // ── Password check (same as Basic) — pause for the storefront password ─────
+    // so the Basic portion isn't scanned against the locked password page.
+    if (!cookie) {
+      const { html, finalUrl } = await safeFetch(`${storeUrl}/`, 12000);
+      if (!html || isPasswordPage(html || "", finalUrl)) {
+        await (prisma as any).storeScan.update({
+          where: { id: scanId },
+          data: {
+            status: "NEEDS_PASSWORD",
+            result: { password_protected: true, store_url: storeUrl, scan_type: "ADVANCED", products },
+          },
+        });
+        return;
+      }
+    }
+
+    // Basic scan (AI + reconciliation) runs first; product feed checks are
+    // deterministic and need no AI call.
+    const basicResult = await runBasicScan(storeUrl, cookie).catch(
+      (e: any) => ({ _error: e?.message || "Basic scan failed" })
+    );
+    const advancedResult = computeAdvancedErrors(products, isPasswordProtected);
+
+    const combined = {
+      scan_type: "advanced",
+      basic_result: basicResult,
+      advanced_result: advancedResult,
+    };
+
+    await (prisma as any).storeScan.update({
+      where: { id: scanId },
+      data: { status: "COMPLETE", result: combined },
+    });
+  } catch (err: any) {
+    console.error(`[AdvancedScan] Failed for ${scanId}:`, err);
+    await (prisma as any).storeScan.update({
+      where: { id: scanId },
+      data: { status: "FAILED", error: err?.message || "Unknown error" },
+    });
+  }
+}
+
+/**
+ * Deep scan — runs Basic + Advanced first (same chaining as the Advanced scan),
+ * then layers the misrepresentation/checkout audit on top. Stores all three
+ * results so the report shows the full picture and Deep is never run in
+ * isolation from the foundational checks.
+ */
+/**
+ * Enrich the deep-audit data by reading the LIVE store (homepage + policy pages)
+ * with the unlocked session cookie. Detects trust/transparency/scarcity signals
+ * that the AI needs to robustly audit for GMC suspension triggers.
+ */
+async function enrichDeepData(
+  deepData: DeepAuditData,
+  storeUrl: string,
+  products: AdvancedProduct[],
+  cookie?: string
+): Promise<DeepAuditData> {
+  const out: DeepAuditData = { ...deepData };
+  out.https_enabled = storeUrl.startsWith("https://");
+
+  // ── Homepage signals ───────────────────────────────────────────────────────
+  try {
+    const { html } = await safeFetch(`${storeUrl}/`, 12000, cookie);
+    if (html && !isPasswordPage(html)) {
+      const text = html.replace(/<script[\s\S]*?<\/script>/gi, " ")
+        .replace(/<style[\s\S]*?<\/style>/gi, " ")
+        .replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+      out.homepage_text = text.substring(0, 3500);
+      const lowerHtml = html.toLowerCase();
+
+      // Scarcity / urgency language
+      const scarcity: string[] = [];
+      const scarcityPatterns: Array<[RegExp, string]> = [
+        [/only\s+\d+\s+left/i, "\"Only N left\" stock pressure"],
+        [/\d+\s+(people|customers)\s+(are\s+)?(viewing|watching|looking)/i, "Live-visitor / 'X people viewing' counter"],
+        [/(hurry|act now|don'?t miss|limited time|ends? (in|soon)|while stocks last)/i, "Urgency phrase ('Hurry', 'Limited time', etc.)"],
+        [/countdown|timer|sale ends/i, "Countdown timer / 'Sale ends in'"],
+        [/selling fast|almost gone|going fast/i, "'Selling fast' / 'Almost gone' pressure"],
+      ];
+      for (const [re, label] of scarcityPatterns) if (re.test(text)) scarcity.push(label);
+      out.scarcity_signals = Array.from(new Set(scarcity));
+
+      // Popup / newsletter / spin-wheel signals
+      const popups: string[] = [];
+      if (/(newsletter|subscribe|sign ?up).{0,40}(discount|% off|coupon|code)/i.test(text)) popups.push("Newsletter discount popup");
+      if (/spin (the |to )?win|wheel of fortune|lucky wheel/i.test(lowerHtml)) popups.push("Spin-to-win gamified popup");
+      if (/exit[- ]?intent|before you (go|leave)/i.test(text)) popups.push("Exit-intent popup");
+      out.popup_signals = Array.from(new Set(popups));
+
+      // Payment / trust badges
+      const trust: string[] = [];
+      const trustPatterns: Array<[RegExp, string]> = [
+        [/\b(visa|mastercard|amex|american express)\b/i, "Card brand icons (Visa/Mastercard/Amex)"],
+        [/\bpaypal\b/i, "PayPal"],
+        [/\b(apple pay|google pay|shop pay)\b/i, "Wallet (Apple/Google/Shop Pay)"],
+        [/secure (checkout|payment|ssl)|256[- ]?bit|ssl secured|norton|mcafee|trust ?badge/i, "Secure-checkout / SSL trust badge"],
+        [/money[- ]?back guarantee|satisfaction guarantee/i, "Money-back guarantee badge"],
+      ];
+      for (const [re, label] of trustPatterns) if (re.test(lowerHtml)) trust.push(label);
+      out.payment_trust_signals = Array.from(new Set(trust));
+
+      // Social links
+      const social = new Set<string>();
+      const socialRe = /(facebook|instagram|twitter|x\.com|tiktok|youtube|pinterest|linkedin)\.com/gi;
+      let m: RegExpExecArray | null;
+      while ((m = socialRe.exec(html)) !== null) social.add(m[1].toLowerCase());
+      out.social_links = Array.from(social);
+    }
+  } catch { /* non-fatal */ }
+
+  // ── Policy page completeness (word counts) ─────────────────────────────────
+  const policyPaths: Array<[keyof NonNullable<DeepAuditData["policy_pages"]>, string[]]> = [
+    ["refund_return", ["/policies/refund-policy", "/pages/refund-policy"]],
+    ["shipping", ["/policies/shipping-policy", "/pages/shipping-policy"]],
+    ["terms", ["/policies/terms-of-service", "/pages/terms-of-service"]],
+    ["privacy", ["/policies/privacy-policy", "/pages/privacy-policy"]],
+  ];
+  const policyPages: NonNullable<DeepAuditData["policy_pages"]> = {};
+  await Promise.all(policyPaths.map(async ([key, paths]) => {
+    for (const path of paths) {
+      try {
+        const { html, status } = await safeFetch(`${storeUrl}${path}`, 9000, cookie);
+        if (html && status !== 404 && !isPasswordPage(html)) {
+          const text = html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+          const wordCount = text ? text.split(/\s+/).length : 0;
+          policyPages[key] = { exists: true, word_count: wordCount };
+          return;
+        }
+      } catch { /* try next variant */ }
+    }
+    policyPages[key] = { exists: false, word_count: 0 };
+  }));
+  out.policy_pages = policyPages;
+
+  // ── Product price/availability samples (from already-fetched feed) ─────────
+  out.product_samples = (products || []).slice(0, 15).map(p => ({
+    title: p.title,
+    price: p.price,
+    compare_at_price: p.compare_at_price,
+    availability: p.availability,
+  }));
+
+  return out;
+}
+
+/**
+ * Map a Deep-Scan finding's category to a system auto-fix type (or mark manual).
+ * The auto-fixable categories reuse the SAME Shopify-Admin auto-fix engine the
+ * Basic scan uses (policy pages + business contact), so the existing IssueCard
+ * Auto-Fix + Mark-as-Fixed flow works unchanged.
+ */
+function deepAutofixForCategory(category: string): { can_autofix: boolean; auto_fix_type: string | null; credit_cost: number } {
+  const c = (category || "").toLowerCase();
+  if (c.includes("privacy")) return { can_autofix: true, auto_fix_type: "privacy_policy", credit_cost: 3 };
+  if (c.includes("terms")) return { can_autofix: true, auto_fix_type: "terms_of_service", credit_cost: 3 };
+  if (c.includes("refund") || c.includes("return")) return { can_autofix: true, auto_fix_type: "refund_policy", credit_cost: 3 };
+  if (c.includes("shipping")) return { can_autofix: true, auto_fix_type: "shipping_policy", credit_cost: 3 };
+  // Business identity / address / contact info → template-based business_contact fix
+  if (c.includes("contact") || c.includes("address") || c.includes("identity"))
+    return { can_autofix: true, auto_fix_type: "business_contact", credit_cost: 2 };
+  // Everything else (SSL, trust badges, scarcity, deceptive apps, schema/price
+  // mismatch, hidden fees, deceptive discounts, availability, social) → manual.
+  return { can_autofix: false, auto_fix_type: null, credit_cost: 0 };
+}
+
+/** Annotate each deep finding with auto-fix metadata + a stable issue key. */
+function annotateDeepErrors(deepResult: any): void {
+  const errors: any[] = deepResult?.critical_misrepresentation_errors || [];
+  const slug = (s: string) => (s || "issue").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "").substring(0, 40);
+  errors.forEach((err: any, i: number) => {
+    const meta = deepAutofixForCategory(err.category || "");
+    err.auto_fixable = meta.can_autofix;
+    err.auto_fix_type = meta.auto_fix_type;
+    err.credit_cost = meta.credit_cost;
+    // Auto-fixable findings share the basic-scan key so a single fix clears them
+    // everywhere; manual findings get a unique per-finding key.
+    err.issue_key = meta.can_autofix && meta.auto_fix_type
+      ? meta.auto_fix_type
+      : `deep_${i}_${slug(err.category)}`;
+  });
+}
+
+export async function processDeepScan(
+  scanId: string,
+  shop: string,
+  storeUrl: string,
+  products: AdvancedProduct[],
+  deepData: DeepAuditData,
+  cookie?: string
+) {
+  try {
+    await (prisma as any).storeScan.update({
+      where: { id: scanId },
+      data: { status: "PROCESSING" },
+    });
+
+    // ── Password check (same as Basic) — pause for the storefront password ─────
+    if (!cookie) {
+      const { html, finalUrl } = await safeFetch(`${storeUrl}/`, 12000);
+      if (!html || isPasswordPage(html || "", finalUrl)) {
+        await (prisma as any).storeScan.update({
+          where: { id: scanId },
+          data: {
+            status: "NEEDS_PASSWORD",
+            result: { password_protected: true, store_url: storeUrl, scan_type: "DEEP", products, deepData },
+          },
+        });
+        return;
+      }
+    }
+
+    // 1. Foundational checks first — Basic (AI + reconciliation) and the
+    //    deterministic Advanced product-feed audit.
+    const basicResult = await runBasicScan(storeUrl, cookie).catch(
+      (e: any) => ({ _error: e?.message || "Basic scan failed" })
+    );
+    const advancedResult = computeAdvancedErrors(products, deepData.is_password_protected);
+
+    // Refresh the contact-page text using the (now unlocked) session so a
+    // password store isn't audited for identity mismatch against its locked page.
+    let auditData: DeepAuditData = { ...deepData };
+    try {
+      const { html } = await safeFetch(`${storeUrl}/pages/contact`, 10000, cookie);
+      if (html && !isPasswordPage(html)) {
+        const text = html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().substring(0, 2000);
+        if (text) auditData.contact_page_text = text;
+      }
+    } catch { /* non-fatal — keep originally gathered text */ }
+
+    // Enrich with live homepage + policy-page signals (trust, scarcity, payment,
+    // social, policy completeness) so the deep audit is robust and comprehensive.
+    try {
+      auditData = await enrichDeepData(auditData, storeUrl, products, cookie);
+    } catch (e) {
+      console.warn("[DeepScan] Enrichment failed (non-fatal):", e);
+    }
+
+    // 2. Deep misrepresentation audit (AI).
+    const deepResult = await runGeminiJson(buildDeepPrompt(auditData), 180000, scanId);
+
+    // Annotate findings with system auto-fix metadata (reuses the basic auto-fix engine).
+    annotateDeepErrors(deepResult);
+
+    const combined = {
+      scan_type: "deep",
+      basic_result: basicResult,
+      advanced_result: advancedResult,
+      deep_result: deepResult,
+    };
+
+    await (prisma as any).storeScan.update({
+      where: { id: scanId },
+      data: { status: "COMPLETE", result: combined },
+    });
+  } catch (err: any) {
+    console.error(`[DeepScan] Failed for ${scanId}:`, err);
+    await (prisma as any).storeScan.update({
+      where: { id: scanId },
+      data: { status: "FAILED", error: err?.message || "Unknown error" },
+    });
+  }
+}
+
+/** Background processor — runs the Basic scan and saves to DB */
 export async function processStoreScan(
   scanId: string,
   shop: string,
@@ -515,130 +1381,19 @@ export async function processStoreScan(
       data: { status: "PROCESSING" },
     });
 
-    // ── Password check — only if no cookie already provided ──────────────────
+    // ── Password check ────────────────────────────────────────────────────────
     if (!cookie) {
       const { html, finalUrl } = await safeFetch(`${storeUrl}/`, 12000);
       if (!html || isPasswordPage(html || "", finalUrl)) {
-        // Store is password-protected — park scan in NEEDS_PASSWORD state
         await (prisma as any).storeScan.update({
           where: { id: scanId },
-          data: {
-            status: "NEEDS_PASSWORD",
-            result: { password_protected: true, store_url: storeUrl },
-          },
+          data: { status: "NEEDS_PASSWORD", result: { password_protected: true, store_url: storeUrl } },
         });
         return;
       }
     }
 
-    const storeData = await gatherStoreData(storeUrl, cookie);
-    const prompt = buildPrompt(storeData);
-
-    const genAI = new GoogleGenerativeAI(process.env.GOOGLE_GEMINI_API_KEY!);
-    const model = genAI.getGenerativeModel({
-      model: "gemini-2.5-flash",
-      generationConfig: {
-        temperature: 0.1,
-        responseMimeType: "application/json",
-      },
-    });
-
-    const aiText = await retryOperation(async () => {
-      const result = await Promise.race([
-        model.generateContent(prompt),
-        new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error("AI response timed out")), 180000)
-        ),
-      ]);
-      const response = await (result as any).response;
-      return response.text();
-    }, 3, 2000, scanId);
-
-    const start = aiText.indexOf("{");
-    const end = aiText.lastIndexOf("}");
-    const result = JSON.parse(aiText.substring(start, end + 1));
-
-    // ── Strip password-related issues from all compliance sections ────────────
-    // The scan was already unlocked with a cookie — the AI should not flag any
-    // page as inaccessible due to password protection. We keep only the single
-    // intentional password notice we inject in site_structure_and_seo below.
-    const PASSWORD_KEYWORDS = /password.protect|password.promot|password.page|inaccessible.due.to.password|cannot.be.crawled.due.to.password/i;
-    for (const section of ["merchant_center_compliance", "customer_trust_and_policy", "site_structure_and_seo", "missing_pages"]) {
-      if (Array.isArray(result[section])) {
-        result[section] = result[section].filter((issue: any) => {
-          const text = `${issue.issue_description || ""} ${issue.suggested_fix || ""}`;
-          return !PASSWORD_KEYWORDS.test(text);
-        });
-      }
-    }
-
-    // ── Deterministic footer check ────────────────────────────────────────────
-    // The AI is not always consistent about marking footer_links as auto_fixable.
-    // We check the homepage HTML ourselves and inject/patch the issue if needed.
-    try {
-      const homePage = storeData.pages.find((p: any) => p.path === "/");
-      if (homePage?.exists) {
-        const { html: homeHtml } = await safeFetch(`${storeUrl}/`, 10000, cookie);
-        if (homeHtml) {
-          const footerLinks = extractNavLinks(homeHtml, storeUrl)
-            .map((u: string) => u.toLowerCase().replace(/\/$/, ""));
-
-          const REQUIRED_FOOTER_PATHS = [
-            ["/pages/privacy-policy", "/policies/privacy-policy"],
-            ["/pages/refund-policy", "/policies/refund-policy"],
-            ["/pages/shipping-policy", "/policies/shipping-policy"],
-            ["/pages/terms-of-service", "/policies/terms-of-service"],
-            ["/pages/contact", "/contact"],
-            ["/pages/about-us", "/about-us"],
-          ];
-
-          const missingFooterLinks = REQUIRED_FOOTER_PATHS.filter(variants =>
-            !variants.some(v => footerLinks.some(l => l.endsWith(v)))
-          );
-
-          if (missingFooterLinks.length > 0) {
-            // Check if AI already added a footer_links issue anywhere
-            const allIssues = [
-              ...(result.site_structure_and_seo || []),
-              ...(result.merchant_center_compliance || []),
-              ...(result.customer_trust_and_policy || []),
-            ];
-            const hasFooterIssue = allIssues.some((i: any) => i.auto_fix_type === "footer_links");
-
-            if (!hasFooterIssue) {
-              // Inject a guaranteed footer_links issue into site_structure_and_seo
-              if (!result.site_structure_and_seo) result.site_structure_and_seo = [];
-              result.site_structure_and_seo.unshift({
-                severity: "High",
-                issue_description: "The store footer is missing critical links required by Google Merchant Center: Privacy Policy, Refund/Return Policy, Shipping Policy, Terms of Service, Contact, and About Us. These links must be visible from every page.",
-                suggested_fix: "Add all required policy and contact links to your store's footer navigation.",
-                detailed_fix_steps: [
-                  "Go to Online Store → Navigation in Shopify Admin.",
-                  "Add a new menu called 'Policy Links' with links to Privacy Policy, Refund Policy, Shipping Policy, Terms of Service, Contact, and About Us.",
-                  "In Online Store → Themes → Customize → Footer, add a new 'Link list' block pointing to this menu.",
-                ],
-                auto_fixable: true,
-                auto_fix_type: "footer_links",
-                credit_cost: 3,
-              });
-            } else {
-              // AI added the issue but may not have set auto_fixable — patch it
-              for (const section of ["site_structure_and_seo", "merchant_center_compliance", "customer_trust_and_policy"]) {
-                if (result[section]) {
-                  result[section] = result[section].map((i: any) =>
-                    i.auto_fix_type === "footer_links"
-                      ? { ...i, auto_fixable: true, credit_cost: i.credit_cost ?? 3 }
-                      : i
-                  );
-                }
-              }
-            }
-          }
-        }
-      }
-    } catch (footerCheckErr) {
-      console.warn("[StoreScan] Footer check failed (non-fatal):", footerCheckErr);
-    }
+    const result = await runBasicScan(storeUrl, cookie);
 
     await (prisma as any).storeScan.update({
       where: { id: scanId },

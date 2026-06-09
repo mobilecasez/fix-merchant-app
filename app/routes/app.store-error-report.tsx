@@ -1,11 +1,12 @@
 import { json, type LoaderFunctionArgs } from "@remix-run/node";
-import { useLoaderData, useFetcher, useRouteError, isRouteErrorResponse } from "@remix-run/react";
+import { useLoaderData, useFetcher, useRouteError, isRouteErrorResponse, Link } from "@remix-run/react";
 import { Page, Spinner } from "@shopify/polaris";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo, Fragment } from "react";
 import { getOrCreateSubscription, getProductsUsed, getEffectiveProductLimit } from "../utils/billing.server";
 import "../styles/dashboard.css";
+import RichTextEditor from "../components/RichTextEditor";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
@@ -298,8 +299,11 @@ interface IssueFixState {
   fixSummary?: string;
   partialFix?: boolean;
   manualSteps?: string[];
-  reauthUrl?: string;
   themeEditorUrl?: string;
+  preConfigured?: boolean;
+  debugError?: string;
+  menuLabel?: string;
+  manualFix?: boolean;
 }
 
 // Store details collected before running auto-fix
@@ -308,11 +312,53 @@ interface StoreDetails {
   contactEmail: string;
   contactPhone: string;
   businessAddress: string;
+  country: string;
   returnWindowDays: string;
   shippingEstimate: string;
   shippingCost: string;
   aboutDescription: string;
 }
+
+// Common countries with phone dialing codes. The selected country gives us both
+// the country name (for the business address) and the dial code (used to prefix
+// the phone number in contact info when it isn't already in international format).
+const COUNTRIES: Array<{ name: string; dial: string }> = [
+  { name: "United States", dial: "+1" },
+  { name: "United Kingdom", dial: "+44" },
+  { name: "Canada", dial: "+1" },
+  { name: "Australia", dial: "+61" },
+  { name: "India", dial: "+91" },
+  { name: "Germany", dial: "+49" },
+  { name: "France", dial: "+33" },
+  { name: "Spain", dial: "+34" },
+  { name: "Italy", dial: "+39" },
+  { name: "Netherlands", dial: "+31" },
+  { name: "Ireland", dial: "+353" },
+  { name: "New Zealand", dial: "+64" },
+  { name: "Singapore", dial: "+65" },
+  { name: "United Arab Emirates", dial: "+971" },
+  { name: "Saudi Arabia", dial: "+966" },
+  { name: "South Africa", dial: "+27" },
+  { name: "Brazil", dial: "+55" },
+  { name: "Mexico", dial: "+52" },
+  { name: "Japan", dial: "+81" },
+  { name: "China", dial: "+86" },
+  { name: "Hong Kong", dial: "+852" },
+  { name: "Malaysia", dial: "+60" },
+  { name: "Philippines", dial: "+63" },
+  { name: "Indonesia", dial: "+62" },
+  { name: "Pakistan", dial: "+92" },
+  { name: "Bangladesh", dial: "+880" },
+  { name: "Nigeria", dial: "+234" },
+  { name: "Sweden", dial: "+46" },
+  { name: "Norway", dial: "+47" },
+  { name: "Denmark", dial: "+45" },
+  { name: "Switzerland", dial: "+41" },
+  { name: "Belgium", dial: "+32" },
+  { name: "Portugal", dial: "+351" },
+  { name: "Poland", dial: "+48" },
+  { name: "Other", dial: "" },
+];
 
 // Which fix types need store details before proceeding
 const FIX_TYPES_NEEDING_DETAILS = new Set([
@@ -367,7 +413,7 @@ const FOOTER_DEPS = new Set(["privacy_policy", "refund_policy", "shipping_policy
 
 const EMPTY_DETAILS: StoreDetails = {
   storeName: "", contactEmail: "", contactPhone: "",
-  businessAddress: "", returnWindowDays: "30",
+  businessAddress: "", country: "", returnWindowDays: "30",
   shippingEstimate: "", shippingCost: "", aboutDescription: "",
 };
 
@@ -439,24 +485,54 @@ function StoreDetailsModal({
 
         <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
           {fields.map(field => (
-            <div key={field.key}>
-              <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#374151", marginBottom: "4px" }}>
-                {field.label} {field.required && <span style={{ color: "#d72c0d" }}>*</span>}
-                {values[field.key]?.trim() && <span style={{ marginLeft: "6px", fontSize: "11px", color: "#12a04a", fontWeight: 400 }}>✓ saved</span>}
-              </label>
-              <input
-                type="text"
-                value={values[field.key]}
-                onChange={e => { setValues(v => ({ ...v, [field.key]: e.target.value })); setErrors(ev => ({ ...ev, [field.key]: "" })); }}
-                placeholder={field.placeholder}
-                style={{
-                  width: "100%", boxSizing: "border-box", padding: "9px 12px",
-                  border: `1px solid ${errors[field.key] ? "#fca5a5" : values[field.key]?.trim() ? "#86efac" : "#d1d5db"}`,
-                  borderRadius: "6px", fontSize: "13px", outline: "none",
-                }}
-              />
-              {errors[field.key] && <p style={{ margin: "3px 0 0 0", fontSize: "12px", color: "#d72c0d" }}>{errors[field.key]}</p>}
-            </div>
+            <Fragment key={field.key}>
+              <div>
+                <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#374151", marginBottom: "4px" }}>
+                  {field.label} {field.required && <span style={{ color: "#d72c0d" }}>*</span>}
+                  {values[field.key]?.trim() && <span style={{ marginLeft: "6px", fontSize: "11px", color: "#12a04a", fontWeight: 400 }}>✓ saved</span>}
+                </label>
+                <input
+                  type="text"
+                  value={values[field.key]}
+                  onChange={e => { setValues(v => ({ ...v, [field.key]: e.target.value })); setErrors(ev => ({ ...ev, [field.key]: "" })); }}
+                  placeholder={field.placeholder}
+                  style={{
+                    width: "100%", boxSizing: "border-box", padding: "9px 12px",
+                    border: `1px solid ${errors[field.key] ? "#fca5a5" : values[field.key]?.trim() ? "#86efac" : "#d1d5db"}`,
+                    borderRadius: "6px", fontSize: "13px", outline: "none",
+                  }}
+                />
+                {errors[field.key] && <p style={{ margin: "3px 0 0 0", fontSize: "12px", color: "#d72c0d" }}>{errors[field.key]}</p>}
+              </div>
+
+              {/* Country dropdown — always shown right after the address field so the
+                  country (and its dial code) can be used in the address & contact info. */}
+              {field.key === "businessAddress" && (
+                <div>
+                  <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#374151", marginBottom: "4px" }}>
+                    Country
+                    {values.country?.trim() && <span style={{ marginLeft: "6px", fontSize: "11px", color: "#12a04a", fontWeight: 400 }}>✓ saved</span>}
+                  </label>
+                  <select
+                    value={values.country}
+                    onChange={e => setValues(v => ({ ...v, country: e.target.value }))}
+                    style={{
+                      width: "100%", boxSizing: "border-box", padding: "9px 12px",
+                      border: `1px solid ${values.country?.trim() ? "#86efac" : "#d1d5db"}`,
+                      borderRadius: "6px", fontSize: "13px", outline: "none",
+                      background: "white", color: values.country ? "#212121" : "#9ca3af",
+                    }}
+                  >
+                    <option value="">Select a country…</option>
+                    {COUNTRIES.map(c => (
+                      <option key={c.name} value={c.name} style={{ color: "#212121" }}>
+                        {c.name}{c.dial ? ` (${c.dial})` : ""}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </Fragment>
           ))}
         </div>
 
@@ -510,7 +586,12 @@ function IssueCard({
 }) {
   const [stepsOpen, setStepsOpen] = useState(true);
   const [showModal, setShowModal] = useState(false);
-  const autoFixFetcher = useFetcher<{ success?: boolean; error?: string; verifyUrl?: string; creditsCharged?: number }>();
+  const autoFixFetcher = useFetcher<{
+    success?: boolean; error?: string; verifyUrl?: string; creditsCharged?: number;
+    partialFix?: boolean; manualSteps?: string[]; themeEditorUrl?: string;
+    preConfigured?: boolean; debugError?: string; menuLabel?: string;
+  }>();
+  const markFixedFetcher = useFetcher<{ success?: boolean }>();
   const rawState = fixStates.get(issueKey) || { confirming: false, fixing: false, fixed: false, error: "" };
   const isFetcherLoading = autoFixFetcher.state !== "idle";
   const state = { ...rawState, fixing: rawState.fixing || isFetcherLoading };
@@ -553,6 +634,26 @@ function IssueCard({
     page_meta: "Homepage meta description updated with an SEO-optimized description.",
     footer_links: "All required GMC policy links added to your store's footer navigation menu.",
     business_contact: "Business name and contact details updated across all policy pages, About Us, Contact page, and footer — ensuring consistent business identity sitewide.",
+  };
+
+  const handleMarkFixed = () => {
+    // Persist under the same key the card reads from (auto_fix_type when present,
+    // otherwise the per-issue key) so it survives refresh of this scan.
+    markFixedFetcher.submit(
+      { scanId, autoFixType: issueKey } as any,
+      { method: "post", action: "/api/store-scan/mark-fixed", encType: "application/json" }
+    );
+    // Optimistically update state to fully fixed
+    updateState({ fixing: false, fixed: true, partialFix: false, manualFix: true, error: "", fixSummary: "You marked this issue as fixed manually." });
+  };
+
+  const handleUnmarkFixed = () => {
+    markFixedFetcher.submit(
+      { scanId, autoFixType: issueKey, unmark: true } as any,
+      { method: "post", action: "/api/store-scan/mark-fixed", encType: "application/json" }
+    );
+    // Optimistically revert to an unfixed state so the issue shows again
+    updateState({ fixed: false, manualFix: false, fixSummary: "", error: "" });
   };
 
   const handleAutoFix = (storeDetails?: StoreDetails) => {
@@ -598,8 +699,10 @@ function IssueCard({
         fixSummary: FIX_SUMMARIES[issue.auto_fix_type] || "Fix applied to your store.",
         partialFix: data.partialFix || false,
         manualSteps: data.manualSteps || [],
-        reauthUrl: data.reauthUrl,
         themeEditorUrl: data.themeEditorUrl,
+        preConfigured: data.preConfigured ?? false,
+        debugError: data.debugError,
+        menuLabel: data.menuLabel,
       });
     } else {
       updateState({ fixing: false, confirming: false, error: data.error || "Auto-fix failed. Please try again." });
@@ -608,13 +711,15 @@ function IssueCard({
 
   const steps: string[] = Array.isArray(issue.detailed_fix_steps) ? issue.detailed_fix_steps : [];
   const creditCost = issue.credit_cost ?? 1;
+  // Label of the footer menu this fix creates — used in the Theme Editor card.
+  const menuLabel = state.menuLabel || (issue.auto_fix_type === "business_contact" ? "Contact Information" : "Policy Links");
 
   return (
     <div style={{
       borderLeft: `3px solid ${severityColor(issue.severity || "Low")}`,
       paddingLeft: "14px",
       marginBottom: "20px",
-      opacity: state.fixed ? 0.6 : 1,
+      opacity: 1,
     }}>
       {/* Top row: badge + description + auto-fix button */}
       <div style={{ display: "flex", alignItems: "flex-start", gap: "8px", flexWrap: "wrap", marginBottom: "6px" }}>
@@ -658,6 +763,24 @@ function IssueCard({
             </button>
           );
         })()}
+        {/* Manual "Mark as fixed" — always available so a merchant who fixed the
+            issue themselves (or doesn't want Auto Fix) can clear it. */}
+        {!state.fixed && !state.fixing && (
+          <button
+            onClick={handleMarkFixed}
+            disabled={markFixedFetcher.state !== "idle"}
+            title="Mark this issue as fixed without using Auto Fix"
+            style={{
+              display: "inline-flex", alignItems: "center", gap: "5px",
+              padding: "5px 12px", background: "white", color: "#166534",
+              border: "1px solid #86efac", borderRadius: "6px",
+              fontSize: "13px", fontWeight: 600,
+              cursor: markFixedFetcher.state !== "idle" ? "wait" : "pointer", flexShrink: 0,
+            }}
+          >
+            {markFixedFetcher.state !== "idle" ? "Saving…" : "✓ Mark as Fixed"}
+          </button>
+        )}
         {state.fixed && (
           <span style={{
             display: "inline-flex", alignItems: "center", gap: "4px",
@@ -792,7 +915,7 @@ function IssueCard({
           borderRadius: "8px",
         }}>
           <p style={{ margin: "0 0 6px 0", fontSize: "13px", fontWeight: 700, color: state.partialFix ? "#92400e" : "#166534" }}>
-            {state.partialFix ? "⚠️ Partially Applied" : "✅ Fix Applied Successfully"}
+            {state.partialFix ? "⚠️ Partially Applied" : state.manualFix ? "✅ Marked as Fixed" : "✅ Fix Applied Successfully"}
             {state.creditsCharged ? (
               <span style={{ marginLeft: "8px", fontWeight: 400, fontSize: "12px", color: "#555" }}>
                 ({state.creditsCharged} credit{state.creditsCharged !== 1 ? "s" : ""} used)
@@ -804,58 +927,130 @@ function IssueCard({
               {state.fixSummary}
             </p>
           )}
+          {/* Undo a manual mark in case of a mis-click */}
+          {state.manualFix && (
+            <button
+              onClick={handleUnmarkFixed}
+              disabled={markFixedFetcher.state !== "idle"}
+              style={{
+                display: "inline-flex", alignItems: "center", gap: "5px",
+                padding: "4px 12px", background: "white", color: "#92400e",
+                border: "1px solid #fcd34d", borderRadius: "6px",
+                fontSize: "12px", fontWeight: 600,
+                cursor: markFixedFetcher.state !== "idle" ? "wait" : "pointer",
+              }}
+            >
+              ↩ Undo — show this issue again
+            </button>
+          )}
 
           {/* Partial fix — theme injection failed, show reauth + manual option */}
-          {state.partialFix && (
+          {state.partialFix && state.themeEditorUrl && (
             <div style={{ marginBottom: "10px" }}>
-              <p style={{ margin: "0 0 8px 0", fontSize: "13px", color: "#78350f", lineHeight: 1.6 }}>
-                ✅ <strong>"Policy Links"</strong> navigation menu created with all 6 compliance links.<br />
-                ⚠️ Automatic footer injection requires a one-time permission refresh — the app needs <code>write_themes</code> access.
+              <p style={{ margin: "0 0 12px 0", fontSize: "13px", color: "#78350f", lineHeight: 1.6 }}>
+                ✅ <strong>"{menuLabel}"</strong> menu created with all the required links.
+                {state.preConfigured
+                  ? <> The footer block has been <strong>pre-configured</strong> in your theme — just open the editor and click <strong>Save</strong>.</>
+                  : <> Open your Theme Editor and add the block with one click.</>
+                }
               </p>
 
-              {/* Option A — refresh permissions (recommended) */}
-              {state.reauthUrl && (
+              {/* Big CTA button */}
+              <a
+                href={state.themeEditorUrl}
+                target="_blank"
+                rel="noreferrer"
+                style={{
+                  display: "flex", alignItems: "center", justifyContent: "space-between",
+                  padding: "14px 18px",
+                  background: "linear-gradient(135deg,#1a4a5a,#2A5B6D)",
+                  color: "white", borderRadius: "8px",
+                  textDecoration: "none", marginBottom: "12px",
+                  boxShadow: "0 2px 8px rgba(26,74,90,0.3)",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                  <span style={{ fontSize: "22px" }}>🎨</span>
+                  <div>
+                    <p style={{ margin: 0, fontSize: "14px", fontWeight: 700 }}>
+                      {state.preConfigured ? "Open Theme Editor — Click Save" : "Open Theme Editor"}
+                    </p>
+                    <p style={{ margin: 0, fontSize: "12px", opacity: 0.8 }}>
+                      {state.preConfigured
+                        ? "Block already added — just hit Save to go live"
+                        : `Add the ${menuLabel} block to your footer`
+                      }
+                    </p>
+                  </div>
+                </div>
+                <span style={{ fontSize: "18px", opacity: 0.8 }}>→</span>
+              </a>
+
+              {/* Step-by-step only shown when NOT pre-configured */}
+              {!state.preConfigured && (
                 <div style={{
-                  background: "white", border: "1px solid #fcd34d",
-                  borderRadius: "6px", padding: "10px 14px", marginBottom: "8px",
+                  background: "white", border: "1px solid #e5e7eb",
+                  borderRadius: "6px", padding: "12px 14px",
                 }}>
-                  <p style={{ margin: "0 0 6px 0", fontSize: "12px", fontWeight: 700, color: "#92400e", textTransform: "uppercase", letterSpacing: "0.4px" }}>
-                    Option A — Recommended: Refresh Permissions (30 seconds)
+                  <p style={{ margin: "0 0 10px 0", fontSize: "12px", fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: "0.4px" }}>
+                    Steps once the editor opens
                   </p>
-                  <p style={{ margin: "0 0 8px 0", fontSize: "12px", color: "#78350f", lineHeight: 1.5 }}>
-                    Click below, approve the updated permissions in Shopify, then come back and click Auto Fix again — it will inject automatically.
-                  </p>
-                  <button
-                    onClick={() => { if (window.top) window.top.location.href = state.reauthUrl!; else window.location.href = state.reauthUrl!; }}
-                    style={{
-                      display: "inline-flex", alignItems: "center", gap: "6px",
-                      padding: "7px 16px", background: "#1a4a5a", color: "white",
-                      border: "none", borderRadius: "6px", fontSize: "13px",
-                      fontWeight: 600, cursor: "pointer",
-                    }}
-                  >
-                    🔐 Refresh App Permissions
-                  </button>
+                  {[
+                    { n: 1, text: <>Click <strong>Footer</strong> in the left panel</> },
+                    { n: 2, text: <>Click <strong>Add block</strong> → select <strong>Menu</strong> (or <strong>Link list</strong>)</> },
+                    { n: 3, text: <>In the new block, open the <strong>Menu</strong> picker → select <strong>{menuLabel}</strong></> },
+                    { n: 4, text: <>Set the <strong>Heading</strong> field to <code style={{ background: "#f3f4f6", padding: "1px 5px", borderRadius: "3px" }}>{menuLabel}</code></> },
+                    { n: 5, text: <>Click <strong>Save</strong> ✓</> },
+                  ].map(({ n, text }) => (
+                    <div key={n} style={{ display: "flex", gap: "10px", marginBottom: "10px", alignItems: "flex-start" }}>
+                      <span style={{
+                        flexShrink: 0, width: "22px", height: "22px",
+                        background: "#1a4a5a", color: "white",
+                        borderRadius: "50%", fontSize: "11px", fontWeight: 700,
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                      }}>{n}</span>
+                      <p style={{ margin: 0, fontSize: "13px", color: "#374151", lineHeight: 1.6 }}>{text}</p>
+                    </div>
+                  ))}
                 </div>
               )}
 
-              {/* Option B — manual via Theme Editor */}
-              {state.themeEditorUrl && (
+              {/* Pre-configured: just show save reminder */}
+              {state.preConfigured && (
                 <div style={{
-                  background: "white", border: "1px solid #e5e7eb",
+                  background: "#f0fdf4", border: "1px solid #86efac",
                   borderRadius: "6px", padding: "10px 14px",
+                  display: "flex", alignItems: "center", gap: "10px",
+                  marginBottom: "10px",
                 }}>
-                  <p style={{ margin: "0 0 6px 0", fontSize: "12px", fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: "0.4px" }}>
-                    Option B — Manual: Add via Theme Editor
+                  <span style={{ fontSize: "20px" }}>💡</span>
+                  <p style={{ margin: 0, fontSize: "13px", color: "#166534", lineHeight: 1.5 }}>
+                    The <strong>"{menuLabel}"</strong> block has been added to your footer section. Open the editor above and click the <strong>Save</strong> button — no other steps needed.
                   </p>
-                  <ol style={{ margin: "0 0 8px 0", paddingLeft: "18px", fontSize: "12px", color: "#555", lineHeight: 1.8 }}>
-                    <li>Open your <a href={state.themeEditorUrl} target="_blank" rel="noreferrer" style={{ color: "#006ECB" }}>Theme Editor →</a></li>
-                    <li>Click the <strong>Footer</strong> section in the left panel</li>
-                    <li>Click <strong>Add block</strong> → choose <strong>Link list</strong></li>
-                    <li>Set the menu to <strong>"Policy Links"</strong> → click <strong>Save</strong></li>
-                  </ol>
                 </div>
               )}
+
+              {/* Mark as Done — shown after user completes Theme Editor steps */}
+              <div style={{
+                marginTop: "12px", paddingTop: "12px",
+                borderTop: "1px solid #fcd34d",
+              }}>
+                <p style={{ margin: "0 0 8px 0", fontSize: "12px", color: "#78350f" }}>
+                  ✅ Once you've saved in the Theme Editor, click below to mark this as done:
+                </p>
+                <button
+                  onClick={handleMarkFixed}
+                  disabled={markFixedFetcher.state !== "idle"}
+                  style={{
+                    display: "inline-flex", alignItems: "center", gap: "6px",
+                    padding: "8px 18px", background: "#166534", color: "white",
+                    border: "none", borderRadius: "6px", fontSize: "13px",
+                    fontWeight: 600, cursor: "pointer",
+                  }}
+                >
+                  {markFixedFetcher.state !== "idle" ? "Saving…" : "✓ I've saved in Theme Editor — Mark as Done"}
+                </button>
+              </div>
             </div>
           )}
 
@@ -881,6 +1076,2033 @@ function IssueCard({
               🔗 View on your store →
             </a>
           )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────────────
+
+function calcGroupCredits(count: number) { return Math.max(1, Math.ceil(count / 5)); }
+
+function violationColor(type: string) {
+  if (type?.includes("Pricing")) return { bg: "#fef2f2", color: "#d72c0d", border: "#fca5a5", icon: "💰" };
+  if (type?.includes("Identifier")) return { bg: "#fffbeb", color: "#92400e", border: "#fcd34d", icon: "🏷️" };
+  if (type?.includes("Image")) return { bg: "#fdf4ff", color: "#7e22ce", border: "#e9d5ff", icon: "🖼️" };
+  if (type?.includes("Description") || type?.includes("Syntax")) return { bg: "#f0f9ff", color: "#0369a1", border: "#7dd3fc", icon: "📝" };
+  return { bg: "#f9fafb", color: "#374151", border: "#d1d5db", icon: "⚠️" };
+}
+
+// Whether this violation type can be auto-fixed via AI
+function isAutofixable(type: string) {
+  return type?.includes("Identifier") || type?.includes("Pricing") || type?.includes("Description") || type?.includes("Syntax");
+}
+
+// ── Group card with inline auto-fix ──────────────────────────────────────────
+
+// ── Confidence badge ──────────────────────────────────────────────────────────
+
+function ConfidenceBadge({ confidence, hasGtin }: { confidence: string | null; hasGtin: boolean }) {
+  if (!hasGtin) {
+    return (
+      <span style={{ display: "inline-flex", alignItems: "center", gap: "4px", padding: "3px 8px", borderRadius: "4px", fontSize: "11px", fontWeight: 700, background: "#fef2f2", color: "#d72c0d", border: "1px solid #fca5a5" }}>
+        ✗ Not Found — Manual Entry Needed
+      </span>
+    );
+  }
+  if (confidence === "high") {
+    return (
+      <span style={{ display: "inline-flex", alignItems: "center", gap: "4px", padding: "3px 8px", borderRadius: "4px", fontSize: "11px", fontWeight: 700, background: "#f0fdf4", color: "#166534", border: "1px solid #86efac" }}>
+        ✓ High Confidence
+      </span>
+    );
+  }
+  if (confidence === "medium") {
+    return (
+      <span style={{ display: "inline-flex", alignItems: "center", gap: "4px", padding: "3px 8px", borderRadius: "4px", fontSize: "11px", fontWeight: 700, background: "#fffbeb", color: "#92400e", border: "1px solid #fcd34d" }}>
+        ⚠ Review Recommended
+      </span>
+    );
+  }
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: "4px", padding: "3px 8px", borderRadius: "4px", fontSize: "11px", fontWeight: 700, background: "#fef2f2", color: "#d72c0d", border: "1px solid #fca5a5" }}>
+      ✗ Manual Review Required
+    </span>
+  );
+}
+
+// ── Client-side markdown → HTML (used only in browser) ───────────────────────
+function markdownToHtml(md: string): string {
+  if (!md) return "";
+  return md
+    .replace(/^## (.+)$/gm, "<h2>$1</h2>")
+    .replace(/^### (.+)$/gm, "<h3>$1</h3>")
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replace(/^\* (.+)$/gm, "<li>$1</li>")
+    .replace(/(<li>.*<\/li>\n?)+/g, m => `<ul>${m}</ul>`)
+    .replace(/\n\n/g, "</p><p>")
+    .replace(/^(?!<[hul])(.+)$/gm, "<p>$1</p>")
+    .replace(/<p><\/p>/g, "")
+    .trim();
+}
+
+// ── Description edit card — Quill rich-text editor ────────────────────────────
+
+function DescriptionEditCard({
+  index, productTitle, fix, saveState, onSave, description, setDescription,
+}: {
+  index: number; productTitle: string; fix: any;
+  saveState: "idle" | "saving" | "saved" | "error";
+  onSave: () => void;
+  description: string;        // HTML string (for Quill)
+  setDescription: (v: string) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+
+  // On first expand, if description is still plain-text markdown, convert it
+  const handleExpand = () => {
+    if (!expanded && fix?.suggested_description && !description.includes("<")) {
+      setDescription(markdownToHtml(fix.suggested_description));
+    }
+    setExpanded(e => !e);
+  };
+
+  if (!fix?.suggested_description) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "8px 0" }}>
+        <span style={{ fontSize: "11px", color: "#9ca3af", fontWeight: 700, minWidth: "18px" }}>{index + 1}.</span>
+        <p style={{ margin: 0, fontSize: "13px", fontWeight: 700, color: "#212121" }}>{productTitle}</p>
+        <span style={{ fontSize: "12px", color: "#9ca3af", fontStyle: "italic" }}>No description generated</span>
+      </div>
+    );
+  }
+
+  // Plain text preview (strip HTML/markdown for the collapsed hint)
+  const plainPreview = (description || fix.suggested_description)
+    .replace(/<[^>]+>/g, " ").replace(/#+\s*/g, "").replace(/\*\*/g, "").replace(/\s+/g, " ").trim()
+    .substring(0, 90);
+
+  return (
+    /* No overflow:hidden — Quill toolbar dropdowns must not be clipped */
+    <div style={{ border: "1px solid #e5e7eb", borderRadius: "10px", background: "white" }}>
+
+      {/* Header row — always visible */}
+      <div style={{ padding: "11px 14px", display: "flex", alignItems: "center", gap: "10px", background: "#fafafa", borderRadius: expanded ? "10px 10px 0 0" : "10px" }}>
+        <span style={{ fontSize: "11px", color: "#9ca3af", fontWeight: 700, minWidth: "18px", flexShrink: 0 }}>{index + 1}.</span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <p style={{ margin: "0 0 2px 0", fontSize: "13px", fontWeight: 700, color: "#212121" }}>{productTitle}</p>
+          {!expanded && (
+            <p style={{ margin: 0, fontSize: "11px", color: "#6b7280", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {plainPreview}…
+            </p>
+          )}
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px", flexShrink: 0 }}>
+          {saveState === "saved" && (
+            <span style={{ fontSize: "12px", fontWeight: 700, color: "#166534" }}>✓ Saved</span>
+          )}
+          <button
+            onClick={handleExpand}
+            style={{ background: "none", border: "1px solid #d1d5db", borderRadius: "6px", padding: "5px 12px", fontSize: "11px", color: "#374151", cursor: "pointer", fontWeight: 600, whiteSpace: "nowrap" }}
+          >
+            {expanded ? "▲ Collapse" : "▼ Edit Description"}
+          </button>
+        </div>
+      </div>
+
+      {/* Editor — no clipping, no minHeight constraint */}
+      {expanded && (
+        <>
+          <div style={{ borderTop: "1px solid #e5e7eb" }}>
+            <RichTextEditor
+              value={description || markdownToHtml(fix.suggested_description)}
+              onChange={setDescription}
+            />
+          </div>
+          <div style={{ padding: "10px 14px", background: "#f9fafb", borderTop: "1px solid #e5e7eb", borderRadius: "0 0 10px 10px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px" }}>
+            <p style={{ margin: 0, fontSize: "11px", color: "#9ca3af" }}>
+              Edit with the toolbar above · saved to Shopify as HTML
+            </p>
+            <SaveButton state={saveState} onClick={onSave} />
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ── Per-product inline edit row ───────────────────────────────────────────────
+
+function SaveButton({ state, onClick }: { state: "idle" | "saving" | "saved" | "error"; onClick: () => void }) {
+  if (state === "saved") return <span style={{ fontSize: "12px", fontWeight: 700, color: "#166534", whiteSpace: "nowrap" }}>✓ Saved</span>;
+  return (
+    <button
+      onClick={onClick}
+      disabled={state === "saving"}
+      style={{
+        padding: "5px 14px",
+        background: state === "saving" ? "#9ca3af" : "#166534",
+        color: "white", border: "none", borderRadius: "6px",
+        fontSize: "12px", fontWeight: 700,
+        cursor: state === "saving" ? "not-allowed" : "pointer",
+        whiteSpace: "nowrap", flexShrink: 0,
+      }}
+    >
+      {state === "saving" ? "Saving…" : "💾 Save"}
+    </button>
+  );
+}
+
+function ProductInlineEditRow({
+  index, product, fix, violationType, scanId, onValueChange, onSaved,
+}: {
+  index: number; product: any; fix: any | null; violationType: string; scanId: string;
+  onValueChange?: (field: string, value: string) => void;
+  onSaved?: (productId: string) => void;
+}) {
+  const productId = product.product_id || product.id;
+  const productTitle = product.product_title || product.title || productId;
+  const isIdentifier = violationType?.includes("Identifier");
+  const isPricing   = violationType?.includes("Pricing");
+  const isDesc      = violationType?.includes("Description") || violationType?.includes("Syntax");
+  const isImage     = violationType?.includes("Image");
+
+  const [gtin, setGtin]                 = useState(fix?.suggested_gtin || "");
+  const [mpn, setMpn]                   = useState(fix?.suggested_mpn || product.mpn || "");
+  const [compareAtPrice, setCompareAt]  = useState(String(fix?.suggested_compare_at_price || ""));
+  // Start as empty — converted to HTML on first expand inside DescriptionEditCard
+  const [description, setDescription]  = useState("");
+  const handleSetDescription = (v: string) => { setDescription(v); onValueChange?.("description", v); };
+  const [saveState, setSaveState]       = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [saveError, setSaveError]       = useState("");
+  const [showSteps, setShowSteps]       = useState(false);
+
+  const handleSave = async () => {
+    setSaveState("saving"); setSaveError("");
+    try {
+      let fixType = ""; let fields: any = {};
+      if (isIdentifier)  { fixType = "identifiers"; fields = { gtin, mpn }; }
+      else if (isPricing) { fixType = "pricing";     fields = { compare_at_price: compareAtPrice }; }
+      // For description: use current HTML state; if empty fall back to raw AI suggestion
+      else if (isDesc)    { fixType = "description"; fields = { description: description || fix?.suggested_description || "" }; }
+      else { setSaveState("idle"); return; }
+
+      const res  = await fetch("/api/advanced-scan/save-product-fix", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ productId, fixType, fields }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) { setSaveState("error"); setSaveError(data.error || "Save failed."); return; }
+      setSaveState("saved");
+      onSaved?.(productId);
+    } catch { setSaveState("error"); setSaveError("Network error."); }
+  };
+
+  const inp = (filled: boolean, mono = false): React.CSSProperties => ({
+    padding: "5px 8px",
+    border: `1px solid ${filled ? "#86efac" : "#d1d5db"}`,
+    borderRadius: "6px", fontSize: "12px",
+    fontFamily: mono ? "monospace" : "inherit",
+    outline: "none",
+    background: saveState === "saved" ? "#f9fafb" : "white",
+    color: "#212121",
+  });
+
+  // ── Layout:
+  //   [#]  [Title / badge / reasoning]          [inputs…]  [Save]
+  //
+  //   For description: inputs span full width below the title.
+
+  // Description gets its own self-contained card — no outer wrapper needed
+  if (isDesc) {
+    return (
+      <DescriptionEditCard
+        index={index}
+        productTitle={productTitle}
+        fix={fix}
+        saveState={saveState}
+        onSave={handleSave}
+        description={description}
+        setDescription={handleSetDescription}
+      />
+    );
+  }
+
+  return (
+    <div style={{ border: "1px solid #e5e7eb", borderRadius: "8px", background: "white", overflow: "hidden" }}>
+      <div style={{ padding: "10px 14px" }}>
+
+        {/* ── Identifier & Pricing: single-line row ────────────────────────── */}
+        {(isIdentifier || isPricing) && (
+          <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+            {/* Index */}
+            <span style={{ fontSize: "11px", color: "#9ca3af", fontWeight: 700, flexShrink: 0, minWidth: "18px" }}>
+              {index + 1}.
+            </span>
+
+            {/* Title block */}
+            <div style={{ flex: 1, minWidth: "140px" }}>
+              <p style={{ margin: 0, fontSize: "13px", fontWeight: 700, color: "#212121", lineHeight: 1.4 }}>{productTitle}</p>
+              {isIdentifier && fix?.confidence && (
+                <div style={{ marginTop: "3px" }}>
+                  <ConfidenceBadge confidence={fix.confidence} hasGtin={!!gtin} />
+                </div>
+              )}
+              {isPricing && fix && (
+                <p style={{ margin: "3px 0 0 0", fontSize: "11px", color: "#6b7280" }}>
+                  Current MRP: <strong style={{ color: "#d72c0d" }}>₹{fix.current_compare_at_price ?? product.compare_at_price ?? "—"}</strong>
+                </p>
+              )}
+              {fix?.reasoning && (
+                <p style={{ margin: "3px 0 0 0", fontSize: "10px", color: "#9ca3af", fontStyle: "italic", lineHeight: 1.4 }}>{fix.reasoning}</p>
+              )}
+            </div>
+
+            {/* Inputs — right side */}
+            <div style={{ display: "flex", alignItems: "flex-end", gap: "6px", flexShrink: 0, flexWrap: "wrap" }}>
+              {isIdentifier && (
+                <>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+                    <label style={{ fontSize: "10px", color: "#6b7280", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.4px" }}>GTIN</label>
+                    <input
+                      type="text" value={gtin} onChange={e => setGtin(e.target.value)}
+                      placeholder="Barcode / EAN" disabled={saveState === "saved"}
+                      style={{ ...inp(!!gtin, true), width: "140px" }}
+                    />
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+                    <label style={{ fontSize: "10px", color: "#6b7280", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.4px" }}>MPN</label>
+                    <input
+                      type="text" value={mpn} onChange={e => setMpn(e.target.value)}
+                      placeholder="SKU / MPN" disabled={saveState === "saved"}
+                      style={{ ...inp(!!mpn, true), width: "100px" }}
+                    />
+                  </div>
+                </>
+              )}
+
+              {isPricing && (
+                <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+                  <label style={{ fontSize: "10px", color: "#6b7280", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.4px" }}>New MRP (₹)</label>
+                  <input
+                    type="number" value={compareAtPrice}
+                    onChange={e => { setCompareAt(e.target.value); onValueChange?.("compare_at_price", e.target.value); }}
+                    placeholder="0.00" disabled={saveState === "saved"}
+                    style={{ ...inp(!!compareAtPrice, true), width: "110px" }}
+                  />
+                </div>
+              )}
+
+              <SaveButton state={saveState} onClick={handleSave} />
+            </div>
+          </div>
+        )}
+
+        {/* Description is handled by early return above */}
+
+        {/* ── Image: title + issue detail only (no editable field) ─────────── */}
+        {isImage && (
+          <div style={{ display: "flex", alignItems: "flex-start", gap: "8px" }}>
+            <span style={{ fontSize: "11px", color: "#9ca3af", fontWeight: 700, minWidth: "18px", paddingTop: "2px" }}>{index + 1}.</span>
+            <div>
+              <p style={{ margin: "0 0 3px 0", fontSize: "13px", fontWeight: 700, color: "#212121" }}>{productTitle}</p>
+              {fix?.issue_detail && <p style={{ margin: 0, fontSize: "12px", color: "#7e22ce" }}>{fix.issue_detail}</p>}
+            </div>
+          </div>
+        )}
+
+        {/* No fix yet */}
+        {!fix && (
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <span style={{ fontSize: "11px", color: "#9ca3af", fontWeight: 700, minWidth: "18px" }}>{index + 1}.</span>
+            <p style={{ margin: 0, fontSize: "13px", fontWeight: 700, color: "#212121" }}>{productTitle}</p>
+          </div>
+        )}
+
+        {/* Manual steps toggle */}
+        {fix?.manual_steps?.length > 0 && (
+          <button
+            onClick={() => setShowSteps(s => !s)}
+            style={{ background: "none", border: "none", padding: "6px 0 0 28px", fontSize: "11px", color: "#006ECB", cursor: "pointer", fontWeight: 600, display: "block" }}
+          >
+            {showSteps ? "Hide steps ▲" : "View manual steps ▼"}
+          </button>
+        )}
+      </div>
+
+      {/* Error */}
+      {saveState === "error" && (
+        <div style={{ padding: "6px 14px", borderTop: "1px solid #fca5a5", background: "#fef2f2" }}>
+          <p style={{ margin: 0, fontSize: "11px", color: "#d72c0d" }}>✕ {saveError}</p>
+        </div>
+      )}
+
+      {/* Manual steps */}
+      {showSteps && fix?.manual_steps?.length > 0 && (
+        <div style={{ padding: "10px 14px", borderTop: "1px solid #e5e7eb", background: "#f0f9ff" }}>
+          <ol style={{ margin: 0, paddingLeft: "18px", display: "flex", flexDirection: "column", gap: "3px" }}>
+            {fix.manual_steps.map((step: string, si: number) => (
+              <li key={si} style={{ fontSize: "12px", color: "#0c4a6e", lineHeight: 1.6 }}>{step}</li>
+            ))}
+          </ol>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Legacy bulk table (kept for any persisted old data format) ────────────────
+
+function IdentifierBulkTable({
+  fixes,
+  products,
+  scanId,
+  persistedSaveResults,
+}: {
+  fixes: any[];
+  products: any[];
+  scanId: string;
+  persistedSaveResults: Array<{ productId: string; success: boolean; error?: string }> | null;
+}) {
+  // Build editable rows — merge product data with AI fix suggestions
+  const initRows = () => products.map((p: any) => {
+    const fix = fixes.find((f: any) => f.product_id === (p.product_id || p.id)) || {};
+    return {
+      productId: p.product_id || p.id,
+      productTitle: p.product_title || p.title || p.product_id || p.id,
+      brand: fix.suggested_brand || p.brand || "",
+      gtin: fix.suggested_gtin || "",
+      mpn: fix.suggested_mpn || p.mpn || "",
+      confidence: fix.confidence || null,
+      reasoning: fix.reasoning || "",
+      manual_steps: fix.manual_steps || [],
+    };
+  });
+
+  const [rows, setRows] = useState(initRows);
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "done" | "error">(
+    persistedSaveResults ? "done" : "idle"
+  );
+  const [saveResults, setSaveResults] = useState<Array<{ productId: string; success: boolean; error?: string }>>(
+    persistedSaveResults || []
+  );
+  const [saveMessage, setSaveMessage] = useState("");
+  const [expandedSteps, setExpandedSteps] = useState<Set<number>>(new Set());
+
+  const updateRow = (i: number, field: "brand" | "gtin" | "mpn", value: string) => {
+    setRows(prev => prev.map((r, idx) => idx === i ? { ...r, [field]: value } : r));
+  };
+
+  const handleSaveAll = async () => {
+    setSaveState("saving");
+    setSaveMessage("");
+    try {
+      const res = await fetch("/api/advanced-scan/save-identifiers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          scanId,
+          rows: rows.map(r => ({
+            productId: r.productId,
+            brand: r.brand || null,
+            gtin: r.gtin || null,
+            mpn: r.mpn || null,
+          })),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        setSaveState("error");
+        setSaveMessage(data.error || "Save failed. Please try again.");
+        return;
+      }
+      setSaveResults(data.results || []);
+      setSaveMessage(data.message || "Saved successfully.");
+      setSaveState("done");
+    } catch {
+      setSaveState("error");
+      setSaveMessage("Network error. Please try again.");
+    }
+  };
+
+  const getRowSaveResult = (productId: string) =>
+    saveResults.find(r => r.productId === productId);
+
+  return (
+    <div>
+      {/* GS1 verification notice */}
+      <div style={{ background: "#fffbeb", border: "1px solid #fcd34d", borderRadius: "8px", padding: "12px 16px", marginBottom: "16px" }}>
+        <p style={{ margin: "0 0 4px 0", fontSize: "13px", fontWeight: 700, color: "#92400e" }}>
+          ⚠ Verify GTINs before saving
+        </p>
+        <p style={{ margin: 0, fontSize: "12px", color: "#78350f", lineHeight: 1.6 }}>
+          AI-suggested GTINs are based on product title and brand knowledge. Please cross-check against the{" "}
+          <a href="https://www.gs1.org/services/verified-by-gs1" target="_blank" rel="noreferrer" style={{ color: "#92400e", fontWeight: 700 }}>GS1 Verified database</a>{" "}
+          or your manufacturer before saving. Incorrect GTINs can cause product disapprovals in Google Merchant Center.
+        </p>
+      </div>
+
+      {/* Bulk-edit table */}
+      <div style={{ overflowX: "auto", borderRadius: "8px", border: "1px solid #e5e7eb" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
+          <thead>
+            <tr style={{ background: "#f9fafb", borderBottom: "2px solid #e5e7eb" }}>
+              {["Product", "Brand", "GTIN (Barcode)", "MPN / SKU", "AI Confidence", "Status"].map(h => (
+                <th key={h} style={{ padding: "10px 12px", textAlign: "left", fontWeight: 700, color: "#374151", fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.5px", whiteSpace: "nowrap" }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, i) => {
+              const saveResult = getRowSaveResult(row.productId);
+              const isExpanded = expandedSteps.has(i);
+              return (
+                <>
+                  <tr key={row.productId} style={{ borderBottom: "1px solid #e5e7eb", background: i % 2 === 0 ? "white" : "#fafafa" }}>
+                    {/* Product name */}
+                    <td style={{ padding: "10px 12px", minWidth: "160px", maxWidth: "220px" }}>
+                      <p style={{ margin: "0 0 2px 0", fontSize: "12px", fontWeight: 700, color: "#212121", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={row.productTitle}>
+                        {row.productTitle}
+                      </p>
+                      {row.manual_steps?.length > 0 && (
+                        <button
+                          onClick={() => setExpandedSteps(prev => { const n = new Set(prev); n.has(i) ? n.delete(i) : n.add(i); return n; })}
+                          style={{ background: "none", border: "none", padding: 0, fontSize: "11px", color: "#006ECB", cursor: "pointer", fontWeight: 600 }}
+                        >
+                          {isExpanded ? "Hide steps ▲" : "View steps ▼"}
+                        </button>
+                      )}
+                    </td>
+
+                    {/* Brand */}
+                    <td style={{ padding: "8px 12px", minWidth: "120px" }}>
+                      <input
+                        type="text"
+                        value={row.brand}
+                        onChange={e => updateRow(i, "brand", e.target.value)}
+                        placeholder="e.g. Nike"
+                        disabled={saveState === "saving" || saveState === "done"}
+                        style={{
+                          width: "100%", padding: "5px 8px", border: "1px solid #d1d5db",
+                          borderRadius: "5px", fontSize: "12px", outline: "none",
+                          background: saveState === "done" ? "#f9fafb" : "white",
+                          color: "#212121",
+                        }}
+                      />
+                    </td>
+
+                    {/* GTIN */}
+                    <td style={{ padding: "8px 12px", minWidth: "150px" }}>
+                      <input
+                        type="text"
+                        value={row.gtin}
+                        onChange={e => updateRow(i, "gtin", e.target.value)}
+                        placeholder="13-digit barcode"
+                        disabled={saveState === "saving" || saveState === "done"}
+                        style={{
+                          width: "100%", padding: "5px 8px", border: `1px solid ${row.gtin ? "#86efac" : "#d1d5db"}`,
+                          borderRadius: "5px", fontSize: "12px", fontFamily: "monospace", outline: "none",
+                          background: saveState === "done" ? "#f9fafb" : "white",
+                          color: "#212121",
+                        }}
+                      />
+                      {row.reasoning && (
+                        <p style={{ margin: "3px 0 0 0", fontSize: "10px", color: "#9ca3af", fontStyle: "italic", lineHeight: 1.4 }}>{row.reasoning}</p>
+                      )}
+                    </td>
+
+                    {/* MPN */}
+                    <td style={{ padding: "8px 12px", minWidth: "120px" }}>
+                      <input
+                        type="text"
+                        value={row.mpn}
+                        onChange={e => updateRow(i, "mpn", e.target.value)}
+                        placeholder="SKU / MPN"
+                        disabled={saveState === "saving" || saveState === "done"}
+                        style={{
+                          width: "100%", padding: "5px 8px", border: "1px solid #d1d5db",
+                          borderRadius: "5px", fontSize: "12px", fontFamily: "monospace", outline: "none",
+                          background: saveState === "done" ? "#f9fafb" : "white",
+                          color: "#212121",
+                        }}
+                      />
+                    </td>
+
+                    {/* Confidence */}
+                    <td style={{ padding: "10px 12px", minWidth: "160px" }}>
+                      <ConfidenceBadge confidence={row.confidence} hasGtin={!!row.gtin} />
+                    </td>
+
+                    {/* Save status */}
+                    <td style={{ padding: "10px 12px", minWidth: "120px" }}>
+                      {saveResult ? (
+                        saveResult.success ? (
+                          <span style={{ fontSize: "12px", fontWeight: 700, color: "#166534" }}>✓ Saved</span>
+                        ) : (
+                          <span style={{ fontSize: "12px", fontWeight: 700, color: "#d72c0d" }} title={saveResult.error}>✗ Failed</span>
+                        )
+                      ) : (
+                        <span style={{ fontSize: "12px", color: "#9ca3af" }}>Pending</span>
+                      )}
+                    </td>
+                  </tr>
+
+                  {/* Expandable manual steps row */}
+                  {isExpanded && row.manual_steps?.length > 0 && (
+                    <tr key={`${row.productId}-steps`} style={{ background: "#f0f9ff", borderBottom: "1px solid #e5e7eb" }}>
+                      <td colSpan={6} style={{ padding: "12px 16px" }}>
+                        <p style={{ margin: "0 0 6px 0", fontSize: "11px", fontWeight: 700, color: "#0369a1", textTransform: "uppercase", letterSpacing: "0.4px" }}>Manual fix steps</p>
+                        <ol style={{ margin: 0, paddingLeft: "18px", display: "flex", flexDirection: "column", gap: "3px" }}>
+                          {row.manual_steps.map((step: string, si: number) => (
+                            <li key={si} style={{ fontSize: "12px", color: "#0c4a6e", lineHeight: 1.6 }}>{step}</li>
+                          ))}
+                        </ol>
+                      </td>
+                    </tr>
+                  )}
+                </>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Save bar */}
+      <div style={{ marginTop: "14px", display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+        {saveState !== "done" && (
+          <button
+            onClick={handleSaveAll}
+            disabled={saveState === "saving"}
+            style={{
+              padding: "9px 20px", background: saveState === "saving" ? "#9ca3af" : "#166534",
+              color: "white", border: "none", borderRadius: "7px", fontSize: "13px",
+              fontWeight: 700, cursor: saveState === "saving" ? "not-allowed" : "pointer",
+              display: "flex", alignItems: "center", gap: "7px",
+            }}
+          >
+            {saveState === "saving" ? (
+              <><Spinner size="small" /> Saving to Shopify…</>
+            ) : (
+              "💾 Save All to Shopify"
+            )}
+          </button>
+        )}
+        {saveState === "done" && (
+          <span style={{ fontSize: "13px", fontWeight: 700, color: "#166534" }}>
+            ✓ {saveMessage}
+          </span>
+        )}
+        {saveState === "error" && (
+          <span style={{ fontSize: "13px", color: "#d72c0d" }}>✕ {saveMessage}</span>
+        )}
+        <p style={{ margin: 0, fontSize: "11px", color: "#9ca3af" }}>
+          Brand saved to product vendor · GTIN saved to variant barcode · MPN saved as custom metafield
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// ── Generic product fix row (Pricing / Description / Image) ───────────────────
+
+function ProductFixRow({
+  product,
+  fix,
+  violationType,
+  fixState,
+  cs,
+}: {
+  product: any;
+  fix: any;
+  violationType: string;
+  fixState: string;
+  cs: { bg: string; color: string; border: string; icon: string };
+}) {
+  const [showSteps, setShowSteps] = useState(false);
+  const isImageViolation = violationType?.includes("Image");
+
+  return (
+    <div style={{ border: "1px solid #e5e7eb", borderRadius: "8px", overflow: "hidden" }}>
+      <div style={{ padding: "10px 14px", background: "#f9fafb", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <p style={{ margin: "0 0 1px 0", fontSize: "13px", fontWeight: 700, color: "#212121", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {product.product_title || product.title}
+          </p>
+          <p style={{ margin: 0, fontSize: "11px", color: "#9ca3af" }}>ID: {product.product_id || product.id}</p>
+        </div>
+        {fix?.manual_steps?.length > 0 && (
+          <button
+            onClick={() => setShowSteps(s => !s)}
+            style={{ background: "none", border: "none", fontSize: "11px", color: "#006ECB", cursor: "pointer", fontWeight: 600, whiteSpace: "nowrap" }}
+          >
+            {showSteps ? "Hide steps ▲" : "View steps ▼"}
+          </button>
+        )}
+      </div>
+
+      {fix && (
+        <div style={{ padding: "10px 14px", borderTop: "1px solid #e5e7eb" }}>
+          {/* Pricing fix */}
+          {violationType.includes("Pricing") && (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "12px", alignItems: "center" }}>
+              <div>
+                <span style={{ fontSize: "11px", color: "#6b7280", fontWeight: 600 }}>Current MRP: </span>
+                <span style={{ fontSize: "13px", fontWeight: 700, color: "#d72c0d", fontFamily: "monospace" }}>₹{fix.current_compare_at_price ?? product.compare_at_price ?? "—"}</span>
+              </div>
+              <span style={{ color: "#9ca3af", fontSize: "16px" }}>→</span>
+              <div>
+                <span style={{ fontSize: "11px", color: "#6b7280", fontWeight: 600 }}>Suggested MRP: </span>
+                <span style={{ fontSize: "13px", fontWeight: 700, color: "#166534", fontFamily: "monospace" }}>₹{fix.suggested_compare_at_price}</span>
+              </div>
+              {fix.needs_verification && (
+                <span style={{ fontSize: "11px", color: "#d97706", fontWeight: 600 }}>⚠ Verify before saving</span>
+              )}
+              {fix.reasoning && (
+                <p style={{ margin: "6px 0 0 0", fontSize: "11px", color: "#9ca3af", fontStyle: "italic", width: "100%" }}>{fix.reasoning}</p>
+              )}
+            </div>
+          )}
+
+          {/* Description fix */}
+          {(violationType.includes("Description") || violationType.includes("Syntax")) && fix.suggested_description && (
+            <div style={{ background: "#f0f9ff", borderRadius: "6px", padding: "10px 12px" }}>
+              <p style={{ margin: "0 0 4px 0", fontSize: "11px", fontWeight: 700, color: "#0369a1", textTransform: "uppercase", letterSpacing: "0.4px" }}>AI-generated placeholder</p>
+              <p style={{ margin: 0, fontSize: "13px", color: "#0c4a6e", lineHeight: 1.6 }}>{fix.suggested_description}</p>
+            </div>
+          )}
+
+          {/* Image violation */}
+          {isImageViolation && fix.issue_detail && (
+            <p style={{ margin: 0, fontSize: "12px", color: "#7e22ce" }}>{fix.issue_detail}</p>
+          )}
+
+          {showSteps && fix.manual_steps?.length > 0 && (
+            <div style={{ marginTop: "10px", paddingTop: "10px", borderTop: "1px solid #e5e7eb" }}>
+              <p style={{ margin: "0 0 6px 0", fontSize: "11px", fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: "0.4px" }}>Manual fix steps</p>
+              <ol style={{ margin: 0, paddingLeft: "18px", display: "flex", flexDirection: "column", gap: "4px" }}>
+                {fix.manual_steps.map((step: string, si: number) => (
+                  <li key={si} style={{ fontSize: "12px", color: "#374151", lineHeight: 1.6 }}>{step}</li>
+                ))}
+              </ol>
+            </div>
+          )}
+        </div>
+      )}
+
+      {!fix && fixState !== "loading" && product.merchant_friendly_description && (
+        <div style={{ padding: "10px 14px", borderTop: "1px solid #e5e7eb" }}>
+          <p style={{ margin: 0, fontSize: "12px", color: "#374151", lineHeight: 1.6 }}>{product.merchant_friendly_description}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Collapsible product title list ───────────────────────────────────────────
+
+function CollapsibleProductList({ products, defaultOpen }: { products: any[]; defaultOpen: boolean }) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div style={{ border: "1px solid #f3f4f6", borderRadius: "8px", overflow: "hidden" }}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        style={{
+          width: "100%", padding: "8px 12px", background: "#f9fafb",
+          border: "none", cursor: "pointer", display: "flex", alignItems: "center",
+          justifyContent: "space-between", gap: "8px",
+        }}
+      >
+        <span style={{ fontSize: "12px", fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+          Affected Products ({products.length})
+        </span>
+        <span style={{ fontSize: "11px", color: "#9ca3af" }}>{open ? "▲ Hide" : "▼ Show"}</span>
+      </button>
+      {open && (
+        <div style={{ display: "flex", flexDirection: "column", gap: "2px", padding: "8px", maxHeight: "220px", overflowY: products.length > 7 ? "auto" : "visible" }}>
+          {products.map((p: any, pi: number) => (
+            <div key={p.product_id || p.id || pi} style={{ display: "flex", alignItems: "center", gap: "8px", padding: "5px 8px", background: "white", borderRadius: "5px" }}>
+              <span style={{ fontSize: "11px", color: "#9ca3af", fontWeight: 700, minWidth: "18px" }}>{pi + 1}.</span>
+              <span style={{ fontSize: "12px", color: "#212121", fontWeight: 500 }}>
+                {p.product_title || p.title || p.product_id || p.id}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Identifier group editor (GTIN + MPN with research + Save All) ─────────────
+
+type IdentRow = {
+  productId: string; title: string;
+  gtin: string; mpn: string;
+  confidence: string | null; reasoning: string; manual_steps: string[];
+  saveState: "idle" | "saving" | "saved" | "error"; saveError: string;
+};
+
+const GTIN_DIRECTORIES = [
+  { key: "general",     label: "General Catalog",    icon: "🌐", desc: "Broad AI product knowledge across all categories" },
+  { key: "electronics", label: "Electronics & Tech",  icon: "💻", desc: "Phones, laptops, gadgets, accessories" },
+  { key: "apparel",     label: "Apparel & Fashion",   icon: "👗", desc: "Clothing, footwear, bags, sportswear" },
+  { key: "food",        label: "Open Food Facts",     icon: "🥗", desc: "Food & grocery — live Open Food Facts database" },
+] as const;
+type DirectoryKey = typeof GTIN_DIRECTORIES[number]["key"];
+
+function IdentifierGroupEditor({
+  products, fixes, scanId, onSaveComplete,
+}: {
+  products: any[]; fixes: any[]; scanId: string;
+  onSaveComplete?: (allFixed: boolean, remaining: number) => void;
+}) {
+  const initRows = (): IdentRow[] =>
+    products.map((p: any) => {
+      const fix = fixes.find((f: any) => f.product_id === (p.product_id || p.id)) || {};
+      return {
+        productId: p.product_id || p.id,
+        title: p.product_title || p.title || p.product_id || p.id,
+        gtin: fix.suggested_gtin || "",
+        mpn: fix.suggested_mpn || p.mpn || "",
+        confidence: fix.confidence || null,
+        reasoning: fix.reasoning || "",
+        manual_steps: fix.manual_steps || [],
+        saveState: "idle",
+        saveError: "",
+      };
+    });
+
+  const [rows, setRows] = useState<IdentRow[]>(initRows);
+  const [researchState, setResearchState] = useState<"idle" | "loading" | "done" | "error">("idle");
+  const [researchError, setResearchError] = useState("");
+  const [researchDir, setResearchDir] = useState<DirectoryKey>("general");
+  const [nearestCount, setNearestCount] = useState(0);
+  const [saveAllState, setSaveAllState] = useState<"idle" | "saving" | "done" | "error">("idle");
+  const [saveAllMsg, setSaveAllMsg] = useState("");
+
+  const updateRow = (productId: string, field: "gtin" | "mpn", value: string) =>
+    setRows(prev => prev.map(r => r.productId === productId ? { ...r, [field]: value } : r));
+
+  const saveSingleRow = async (productId: string) => {
+    const row = rows.find(r => r.productId === productId);
+    if (!row) return;
+    setRows(prev => prev.map(r => r.productId === productId ? { ...r, saveState: "saving", saveError: "" } : r));
+    try {
+      const res = await fetch("/api/advanced-scan/save-product-fix", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ productId, fixType: "identifiers", fields: { gtin: row.gtin, mpn: row.mpn } }),
+      });
+      const data = await res.json();
+      const state = (!res.ok || data.error) ? "error" : "saved";
+      setRows(prev => prev.map(r => r.productId === productId ? { ...r, saveState: state, saveError: data.error || "" } : r));
+    } catch {
+      setRows(prev => prev.map(r => r.productId === productId ? { ...r, saveState: "error", saveError: "Network error." } : r));
+    }
+  };
+
+  const handleSaveAll = async () => {
+    setSaveAllState("saving"); setSaveAllMsg("");
+    try {
+      const res = await fetch("/api/advanced-scan/save-identifiers", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          scanId,
+          rows: rows.map(r => ({ productId: r.productId, brand: null, gtin: r.gtin || null, mpn: r.mpn || null })),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) { setSaveAllState("error"); setSaveAllMsg(data.error || "Save failed."); return; }
+      // Count how many still have no GTIN (need manual entry)
+      const blankAtSave = rows.filter(r => !r.gtin.trim()).length;
+      setSaveAllState("done");
+      setSaveAllMsg(blankAtSave > 0
+        ? `Saved. ${blankAtSave} product${blankAtSave > 1 ? "s" : ""} still need manual GTIN entry.`
+        : data.message || "All saved.");
+      setRows(prev => prev.map(r => ({ ...r, saveState: "saved" })));
+      onSaveComplete?.(blankAtSave === 0, blankAtSave);
+    } catch { setSaveAllState("error"); setSaveAllMsg("Network error."); }
+  };
+
+  const handleResearch = async () => {
+    const blankRows = rows.filter(r => !r.gtin.trim());
+    if (!blankRows.length) return;
+    // Collect all currently-filled GTINs to send as exclusion list
+    const filledGtins = rows.filter(r => r.gtin.trim()).map(r => r.gtin.trim());
+    setResearchState("loading"); setResearchError(""); setNearestCount(0);
+    try {
+      const res = await fetch("/api/advanced-scan/gtin-research", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          products: blankRows.map(r => ({ id: r.productId, title: r.title, mpn: r.mpn || undefined })),
+          directory: researchDir,
+          existingGtins: filledGtins,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) { setResearchState("error"); setResearchError(data.error || "Research failed."); return; }
+
+      const resultsMap: Record<string, any> = {};
+      (data.results || []).forEach((r: any) => { resultsMap[r.id] = r; });
+
+      // Client-side duplicate guard: also reject any GTIN that appears more than once in the result set
+      const seenGtins = new Set<string>();
+      let nearest = 0;
+      setRows(prev => {
+        const next = prev.map(r => {
+          if (r.gtin.trim()) return r; // already filled — skip
+          const found = resultsMap[r.productId];
+          if (!found?.gtin) return r;
+          if (seenGtins.has(found.gtin)) {
+            // Duplicate within results — reject
+            return { ...r, reasoning: "Duplicate GTIN detected — not applied. Try a different directory." };
+          }
+          seenGtins.add(found.gtin);
+          if (found.is_nearest) nearest++;
+          return {
+            ...r,
+            gtin: found.gtin,
+            confidence: found.confidence || null,
+            reasoning: found.is_nearest
+              ? `⚠ Nearest match: ${found.nearest_note || found.source}`
+              : (found.source || ""),
+            isNearest: !!found.is_nearest,
+          };
+        });
+        setNearestCount(nearest);
+        return next;
+      });
+      setResearchState("done");
+    } catch { setResearchState("error"); setResearchError("Network error."); }
+  };
+
+  const blankGtinCount = rows.filter(r => !r.gtin.trim()).length;
+  const researchCreditCost = Math.max(1, Math.ceil(blankGtinCount / 5));
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+      {/* Verify notice */}
+      <div style={{ padding: "10px 14px", background: "#fffbeb", border: "1px solid #fcd34d", borderRadius: "8px" }}>
+        <p style={{ margin: 0, fontSize: "12px", color: "#92400e", lineHeight: 1.6 }}>
+          <strong>⚠ Verify GTINs before saving</strong> — AI suggestions are based on product title knowledge.
+          Cross-check against the{" "}
+          <a href="https://www.gs1.org/services/verified-by-gs1" target="_blank" rel="noreferrer" style={{ color: "#92400e", fontWeight: 700 }}>GS1 database</a>{" "}
+          or your manufacturer. Incorrect GTINs cause disapprovals.
+        </p>
+      </div>
+
+      {/* Edit rows */}
+      <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+        {rows.map((row, i) => (
+          <div key={row.productId} style={{ border: "1px solid #e5e7eb", borderRadius: "8px", background: "white", overflow: "hidden" }}>
+            <div style={{ padding: "9px 12px", display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+              {/* Index + title */}
+              <span style={{ fontSize: "11px", color: "#9ca3af", fontWeight: 700, minWidth: "18px", flexShrink: 0 }}>{i + 1}.</span>
+              <div style={{ flex: 1, minWidth: "120px" }}>
+                <p style={{ margin: "0 0 3px 0", fontSize: "13px", fontWeight: 700, color: "#212121" }}>{row.title}</p>
+                <div style={{ display: "flex", gap: "5px", alignItems: "center", flexWrap: "wrap" }}>
+                  {row.confidence && <ConfidenceBadge confidence={row.confidence} hasGtin={!!row.gtin} />}
+                  {(row as any).isNearest && (
+                    <span style={{ padding: "1px 7px", borderRadius: "4px", fontSize: "10px", fontWeight: 700, background: "#fdf4ff", color: "#7e22ce", border: "1px solid #e9d5ff" }}>
+                      ~ Nearest Match
+                    </span>
+                  )}
+                </div>
+                {row.reasoning && (
+                  <p style={{ margin: "3px 0 0 0", fontSize: "10px", color: (row as any).isNearest ? "#7e22ce" : "#9ca3af", fontStyle: "italic", lineHeight: 1.4 }}>
+                    {row.reasoning}
+                  </p>
+                )}
+              </div>
+              {/* Inputs */}
+              <div style={{ display: "flex", alignItems: "flex-end", gap: "6px", flexShrink: 0, flexWrap: "wrap" }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+                  <label style={{ fontSize: "10px", color: "#6b7280", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.4px" }}>GTIN</label>
+                  <input
+                    type="text" value={row.gtin}
+                    onChange={e => updateRow(row.productId, "gtin", e.target.value)}
+                    placeholder="Barcode / EAN"
+                    disabled={row.saveState === "saved" || saveAllState === "done"}
+                    style={{ padding: "5px 8px", border: `1px solid ${row.gtin ? "#86efac" : "#d1d5db"}`, borderRadius: "6px", fontSize: "12px", fontFamily: "monospace", outline: "none", width: "140px", background: row.saveState === "saved" ? "#f9fafb" : "white" }}
+                  />
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+                  <label style={{ fontSize: "10px", color: "#6b7280", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.4px" }}>MPN</label>
+                  <input
+                    type="text" value={row.mpn}
+                    onChange={e => updateRow(row.productId, "mpn", e.target.value)}
+                    placeholder="SKU / MPN"
+                    disabled={row.saveState === "saved" || saveAllState === "done"}
+                    style={{ padding: "5px 8px", border: `1px solid ${row.mpn ? "#86efac" : "#d1d5db"}`, borderRadius: "6px", fontSize: "12px", fontFamily: "monospace", outline: "none", width: "100px", background: row.saveState === "saved" ? "#f9fafb" : "white" }}
+                  />
+                </div>
+                {/* Per-row save */}
+                <SaveButton state={row.saveState === "saved" ? "saved" : (saveAllState === "done" ? "saved" : row.saveState)} onClick={() => saveSingleRow(row.productId)} />
+              </div>
+            </div>
+            {row.saveState === "error" && (
+              <div style={{ padding: "5px 12px", borderTop: "1px solid #fca5a5", background: "#fef2f2" }}>
+                <p style={{ margin: 0, fontSize: "11px", color: "#d72c0d" }}>✕ {row.saveError}</p>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* ── GTIN Research section ─────────────────────────────────────────── */}
+      <div style={{ border: "1px solid #e5e7eb", borderRadius: "10px", overflow: "hidden" }}>
+        <div style={{ padding: "12px 16px", background: "#f9fafb", borderBottom: "1px solid #e5e7eb" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "8px" }}>
+            <div>
+              <p style={{ margin: "0 0 2px 0", fontSize: "13px", fontWeight: 700, color: "#212121" }}>
+                🔍 GTIN Research
+              </p>
+              <p style={{ margin: 0, fontSize: "12px", color: "#6b7280" }}>
+                {blankGtinCount > 0
+                  ? `Researches ${blankGtinCount} product${blankGtinCount > 1 ? "s" : ""} with blank GTINs · `
+                  : "All GTINs filled · "}
+                <strong>{blankGtinCount > 0 ? `${researchCreditCost} credit${researchCreditCost > 1 ? "s" : ""}` : "0 credits"}</strong>
+                {blankGtinCount > 0 && <span style={{ color: "#9ca3af" }}> (1 per 5 products)</span>}
+              </p>
+            </div>
+            {blankGtinCount === 0 && (
+              <span style={{ fontSize: "12px", fontWeight: 700, color: "#166534" }}>✓ No blanks remaining</span>
+            )}
+          </div>
+        </div>
+
+        <div style={{ padding: "14px 16px", display: "flex", flexDirection: "column", gap: "10px" }}>
+          {/* Dropdown + button — joined input-group style */}
+          <div style={{ display: "flex", alignItems: "stretch", gap: "0", maxWidth: "480px" }}>
+            <select
+              value={researchDir}
+              onChange={e => setResearchDir(e.target.value as DirectoryKey)}
+              disabled={researchState === "loading" || blankGtinCount === 0 || saveAllState === "done"}
+              style={{
+                flex: 1,
+                padding: "9px 12px",
+                border: "1px solid #d1d5db",
+                borderRight: "none",
+                borderRadius: "8px 0 0 8px",
+                fontSize: "13px",
+                fontWeight: 500,
+                background: blankGtinCount === 0 ? "#f9fafb" : "white",
+                color: blankGtinCount === 0 ? "#9ca3af" : "#212121",
+                cursor: blankGtinCount === 0 ? "not-allowed" : "pointer",
+                outline: "none",
+                appearance: "auto",
+              }}
+            >
+              {GTIN_DIRECTORIES.map(dir => (
+                <option key={dir.key} value={dir.key}>{dir.icon}  {dir.label}</option>
+              ))}
+            </select>
+
+            <button
+              onClick={handleResearch}
+              disabled={researchState === "loading" || blankGtinCount === 0 || saveAllState === "done"}
+              style={{
+                display: "flex", alignItems: "center", gap: "6px",
+                padding: "9px 18px",
+                background: blankGtinCount === 0 ? "#9ca3af" : researchState === "loading" ? "#2a6b7c" : "#1a4a5a",
+                color: "white",
+                border: "none",
+                borderRadius: "0 8px 8px 0",
+                fontSize: "13px", fontWeight: 700,
+                cursor: blankGtinCount === 0 || researchState === "loading" ? "not-allowed" : "pointer",
+                whiteSpace: "nowrap",
+                flexShrink: 0,
+              }}
+            >
+              {researchState === "loading"
+                ? <><Spinner size="small" />&nbsp;Searching…</>
+                : "🔍 Research GTINs"}
+            </button>
+          </div>
+
+          {/* Directory hint text */}
+          <p style={{ margin: 0, fontSize: "11px", color: "#9ca3af" }}>
+            {GTIN_DIRECTORIES.find(d => d.key === researchDir)?.desc}
+            {blankGtinCount > 0 && (
+              <> · <strong>{researchCreditCost} credit{researchCreditCost > 1 ? "s" : ""}</strong> for {blankGtinCount} product{blankGtinCount > 1 ? "s" : ""} (1 per 5)</>
+            )}
+          </p>
+
+          {/* Feedback */}
+          {researchState === "error" && (
+            <p style={{ margin: 0, fontSize: "12px", color: "#d72c0d" }}>✕ {researchError}</p>
+          )}
+          {researchState === "done" && (
+            <p style={{ margin: 0, fontSize: "12px", color: "#166534", fontWeight: 600 }}>
+              ✓ Research complete.{nearestCount > 0 ? ` ${nearestCount} nearest-match GTIN${nearestCount > 1 ? "s" : ""} found (marked ~ Nearest Match) — verify before saving.` : " Review GTINs above and save."}
+            </p>
+          )}
+        </div>
+      </div>
+
+      {/* ── Save All button ───────────────────────────────────────────────── */}
+      <div style={{ borderTop: "1px solid #e5e7eb", paddingTop: "14px", display: "flex", flexDirection: "column", gap: "10px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "14px", flexWrap: "wrap" }}>
+          {saveAllState === "done" ? (
+            <span style={{ fontSize: "13px", fontWeight: 700, color: saveAllMsg.includes("still need") ? "#92400e" : "#166534" }}>
+              {saveAllMsg.includes("still need") ? "⚠" : "✓"} {saveAllMsg}
+            </span>
+          ) : (
+            <button
+              onClick={handleSaveAll}
+              disabled={saveAllState === "saving"}
+              style={{
+                display: "flex", alignItems: "center", gap: "8px",
+                padding: "10px 24px",
+                background: saveAllState === "saving" ? "#9ca3af" : "#166534",
+                color: "white", border: "none", borderRadius: "8px",
+                fontSize: "14px", fontWeight: 700,
+                cursor: saveAllState === "saving" ? "not-allowed" : "pointer",
+                minWidth: "200px", justifyContent: "center",
+              }}
+            >
+              {saveAllState === "saving" ? <><Spinner size="small" />&nbsp;Saving…</> : "💾 Save All to Shopify"}
+            </button>
+          )}
+          {saveAllState === "error" && (
+            <span style={{ fontSize: "12px", color: "#d72c0d" }}>✕ {saveAllMsg}</span>
+          )}
+          {saveAllState === "idle" && (
+            <p style={{ margin: 0, fontSize: "11px", color: "#9ca3af" }}>
+              GTIN → variant barcode · MPN → custom metafield
+            </p>
+          )}
+        </div>
+        {saveAllState === "done" && (
+          <div style={{ padding: "10px 14px", background: "#f0f9ff", border: "1px solid #7dd3fc", borderRadius: "8px" }}>
+            <p style={{ margin: 0, fontSize: "12px", color: "#0369a1", lineHeight: 1.6 }}>
+              💡 <strong>Run a new scan</strong> to verify all fixes are detected correctly. The next Advanced Scan will check whether saved GTINs are now compliant with Google Merchant Center.
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Non-identifier fix group (Pricing / Description / Image) with Save All ────
+
+function NonIdentifierFixGroup({
+  products, fixes, violationType, scanId, onSaveComplete,
+}: {
+  products: any[]; fixes: any[]; violationType: string; scanId: string;
+  onSaveComplete?: (allFixed: boolean, remaining: number) => void;
+}) {
+  const isDesc    = violationType?.includes("Description") || violationType?.includes("Syntax");
+  const isPricing = violationType?.includes("Pricing");
+  const [saveAllState, setSaveAllState] = useState<"idle" | "saving" | "done" | "error">("idle");
+  const [saveAllMsg, setSaveAllMsg]     = useState("");
+
+  // Track individually saved products — when all done, bubble up onSaveComplete
+  const savedIdsRef = useRef<Set<string>>(new Set());
+  const handleProductSaved = (productId: string) => {
+    savedIdsRef.current.add(productId);
+    if (savedIdsRef.current.size >= products.length) {
+      onSaveComplete?.(true, 0);
+    }
+  };
+
+  // Refs to collect current values from child rows
+  const rowValuesRef = useRef<Record<string, { description?: string; compare_at_price?: string }>>({});
+  const setRowValue = (productId: string, field: string, value: string) => {
+    if (!rowValuesRef.current[productId]) rowValuesRef.current[productId] = {};
+    (rowValuesRef.current[productId] as any)[field] = value;
+  };
+
+  const handleSaveAll = async () => {
+    setSaveAllState("saving"); setSaveAllMsg("");
+    try {
+      const calls = products.map(async (p: any) => {
+        const pid = p.product_id || p.id;
+        const fix = fixes.find((f: any) => f.product_id === pid);
+        if (!fix) return { pid, ok: true };
+
+        const stored = rowValuesRef.current[pid] || {};
+        let fixType = ""; let fields: any = {};
+        if (isDesc)    { fixType = "description"; fields = { description: stored.description || fix.suggested_description || "" }; }
+        if (isPricing) { fixType = "pricing";     fields = { compare_at_price: stored.compare_at_price || String(fix.suggested_compare_at_price || "") }; }
+        if (!fixType) return { pid, ok: true };
+
+        const res  = await fetch("/api/advanced-scan/save-product-fix", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ productId: pid, fixType, fields }),
+        });
+        const data = await res.json();
+        return { pid, ok: res.ok && !data.error, error: data.error };
+      });
+
+      const results = await Promise.all(calls);
+      const failed = results.filter(r => !r.ok);
+      if (failed.length) {
+        setSaveAllState("error");
+        setSaveAllMsg(`${failed.length} product${failed.length > 1 ? "s" : ""} failed to save. Check individual rows.`);
+        onSaveComplete?.(false, failed.length);
+      } else {
+        setSaveAllState("done");
+        setSaveAllMsg(`All ${products.length} products saved successfully.`);
+        onSaveComplete?.(true, 0);
+      }
+    } catch { setSaveAllState("error"); setSaveAllMsg("Network error. Please try again."); }
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+      {products.map((product: any, pi: number) => {
+        const fix = fixes.find((f: any) => f.product_id === (product.product_id || product.id)) || null;
+        return (
+          <ProductInlineEditRow
+            key={product.product_id || product.id || pi}
+            index={pi}
+            product={product}
+            fix={fix}
+            violationType={violationType}
+            scanId={scanId}
+            onValueChange={(field, value) => setRowValue(product.product_id || product.id, field, value)}
+            onSaved={handleProductSaved}
+          />
+        );
+      })}
+
+      {/* Save All */}
+      <div style={{ borderTop: "1px solid #e5e7eb", paddingTop: "14px", display: "flex", flexDirection: "column", gap: "10px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "14px", flexWrap: "wrap" }}>
+          {saveAllState === "done" ? (
+            <span style={{ fontSize: "13px", fontWeight: 700, color: "#166534" }}>✓ {saveAllMsg}</span>
+          ) : (
+            <button
+              onClick={handleSaveAll}
+              disabled={saveAllState === "saving"}
+              style={{
+                display: "flex", alignItems: "center", gap: "8px",
+                padding: "10px 24px",
+                background: saveAllState === "saving" ? "#9ca3af" : "#166534",
+                color: "white", border: "none", borderRadius: "8px",
+                fontSize: "14px", fontWeight: 700,
+                cursor: saveAllState === "saving" ? "not-allowed" : "pointer",
+                minWidth: "200px", justifyContent: "center",
+              }}
+            >
+              {saveAllState === "saving" ? <><Spinner size="small" />&nbsp;Saving…</> : "💾 Save All to Shopify"}
+            </button>
+          )}
+          {saveAllState === "error" && (
+            <span style={{ fontSize: "12px", color: "#d72c0d" }}>✕ {saveAllMsg}</span>
+          )}
+        </div>
+        {saveAllState === "done" && (
+          <div style={{ padding: "10px 14px", background: "#f0f9ff", border: "1px solid #7dd3fc", borderRadius: "8px" }}>
+            <p style={{ margin: 0, fontSize: "12px", color: "#0369a1", lineHeight: 1.6 }}>
+              💡 <strong>Run a new scan</strong> to verify all fixes are detected correctly. The next Advanced Scan will check whether the saved values are now compliant with Google Merchant Center.
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Violation group card ──────────────────────────────────────────────────────
+
+function ViolationGroupCard({
+  violationType,
+  products,
+  scanId,
+  persistedFixes,
+  persistedSaveResults,
+  persistedManualFixed,
+}: {
+  violationType: string;
+  products: any[];
+  scanId: string;
+  persistedFixes: any[] | null;
+  persistedSaveResults: Array<{ productId: string; success: boolean; error?: string }> | null;
+  persistedManualFixed?: boolean;
+}) {
+  const cs = violationColor(violationType);
+  const credits = calcGroupCredits(products.length);
+  const canAutofix = isAutofixable(violationType);
+  const isIdentifier = violationType?.includes("Identifier");
+
+  const [expanded, setExpanded] = useState(false);
+  const [fixState, setFixState] = useState<"idle" | "confirming" | "loading" | "done" | "error">(
+    persistedFixes ? "done" : "idle"
+  );
+  const [fixes, setFixes] = useState<any[]>(persistedFixes || []);
+  const [errorMsg, setErrorMsg] = useState("");
+  const [manuallyFixed, setManuallyFixed] = useState(persistedManualFixed || false);
+  const [markingFixed, setMarkingFixed] = useState(false);
+  // Tracks save completion reported by child save-group components
+  const [saveStatus, setSaveStatus] = useState<{ allFixed: boolean; remaining: number } | null>(
+    persistedSaveResults ? {
+      allFixed: persistedSaveResults.every(r => r.success),
+      remaining: persistedSaveResults.filter(r => !r.success).length,
+    } : null
+  );
+
+  const handleMarkGroupFixed = async (unmark = false) => {
+    setMarkingFixed(true);
+    try {
+      await fetch("/api/advanced-scan/mark-group-fixed", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scanId, violationType, unmark }),
+      });
+      setManuallyFixed(!unmark);
+    } catch { /* non-fatal — state is still updated optimistically */ }
+    setMarkingFixed(false);
+  };
+
+  const handleAutoFix = async () => {
+    setFixState("loading");
+    setErrorMsg("");
+    try {
+      const res = await fetch("/api/advanced-scan/group-fix", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scanId, violationType, products }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) { setFixState("error"); setErrorMsg(data.error || "Auto-fix failed."); return; }
+      setFixes(data.fixes || []);
+      setFixState("done");
+    } catch {
+      setFixState("error");
+      setErrorMsg("Network error. Please try again.");
+    }
+  };
+
+  const isSaved = persistedSaveResults?.some(r => r.success);
+
+  return (
+    <div style={{ border: `1px solid ${cs.border}`, borderRadius: "12px", overflow: "hidden", background: "white" }}>
+      {/* Header */}
+      <div
+        style={{ padding: "16px 18px", background: cs.bg, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px" }}
+        onClick={() => setExpanded(e => !e)}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: "12px", flex: 1, minWidth: 0 }}>
+          <span style={{ fontSize: "22px", flexShrink: 0 }}>{cs.icon}</span>
+          <div>
+            <p style={{ margin: "0 0 2px 0", fontSize: "15px", fontWeight: 700, color: "#212121" }}>{violationType}</p>
+            <div style={{ display: "flex", gap: "6px", alignItems: "center", flexWrap: "wrap" }}>
+              <span style={{ fontSize: "13px", fontWeight: 600, color: cs.color }}>
+                {products.length} product{products.length !== 1 ? "s" : ""} affected
+              </span>
+              {/* Save status badges — priority order: saved > suggestions ready */}
+              {manuallyFixed && (
+                <span style={{ padding: "2px 9px", borderRadius: "4px", fontSize: "11px", fontWeight: 700, background: "#f0fdf4", color: "#166534", border: "1px solid #86efac" }}>
+                  ✓ Marked as Fixed
+                </span>
+              )}
+              {!manuallyFixed && saveStatus?.allFixed && (
+                <span style={{ padding: "2px 9px", borderRadius: "4px", fontSize: "11px", fontWeight: 700, background: "#f0fdf4", color: "#166534", border: "1px solid #86efac" }}>
+                  ✓ All Issues Fixed
+                </span>
+              )}
+              {!manuallyFixed && saveStatus && !saveStatus.allFixed && saveStatus.remaining > 0 && (
+                <span style={{ padding: "2px 9px", borderRadius: "4px", fontSize: "11px", fontWeight: 700, background: "#fffbeb", color: "#92400e", border: "1px solid #fcd34d" }}>
+                  ⚠ {saveStatus.remaining} Manual Fix{saveStatus.remaining > 1 ? "es" : ""} Still Required
+                </span>
+              )}
+              {!manuallyFixed && !saveStatus && fixState === "done" && !isSaved && (
+                <span style={{ padding: "2px 9px", borderRadius: "4px", fontSize: "11px", fontWeight: 700, background: "#f0fdf4", color: "#166534", border: "1px solid #86efac" }}>✓ Suggestions Ready</span>
+              )}
+              {!manuallyFixed && !saveStatus && isSaved && (
+                <span style={{ padding: "2px 9px", borderRadius: "4px", fontSize: "11px", fontWeight: 700, background: "#f0fdf4", color: "#166534", border: "1px solid #86efac" }}>✓ Saved to Shopify</span>
+              )}
+            </div>
+          </div>
+        </div>
+        {/* Mark as Fixed button always visible in header when not already fixed */}
+        {!manuallyFixed && !saveStatus?.allFixed && (
+          <button
+            onClick={(e) => { e.stopPropagation(); handleMarkGroupFixed(false); }}
+            disabled={markingFixed}
+            title="Mark all products in this group as fixed manually"
+            style={{
+              display: "inline-flex", alignItems: "center", gap: "5px",
+              padding: "5px 12px", background: "white", color: "#166534",
+              border: "1px solid #86efac", borderRadius: "6px",
+              fontSize: "12px", fontWeight: 600, flexShrink: 0,
+              cursor: markingFixed ? "wait" : "pointer",
+            }}
+          >
+            {markingFixed ? "Saving…" : "✓ Mark as Fixed"}
+          </button>
+        )}
+        <span style={{ fontSize: "13px", color: "#6b7280", flexShrink: 0 }}>{expanded ? "▲" : "▼"}</span>
+      </div>
+
+      {/* Expanded body */}
+      {expanded && (
+        <div style={{ borderTop: `1px solid ${cs.border}`, padding: "18px", display: "flex", flexDirection: "column", gap: "16px" }}>
+
+          {/* Error banner */}
+          {fixState === "error" && (
+            <div style={{ padding: "12px 16px", background: "#fef2f2", border: "1px solid #fca5a5", borderRadius: "8px" }}>
+              <p style={{ margin: 0, fontSize: "13px", color: "#d72c0d" }}>✕ {errorMsg}</p>
+            </div>
+          )}
+
+          {/* Manually marked fixed banner */}
+          {manuallyFixed && (
+            <div style={{ background: "#f0fdf4", border: "1px solid #86efac", borderRadius: "8px", padding: "12px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px", flexWrap: "wrap" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                <span style={{ fontSize: "20px" }}>✅</span>
+                <div>
+                  <p style={{ margin: "0 0 2px 0", fontSize: "13px", fontWeight: 700, color: "#166534" }}>Marked as fixed manually</p>
+                  <p style={{ margin: 0, fontSize: "12px", color: "#166534", opacity: 0.85 }}>
+                    Run a new Advanced Scan to confirm these changes are now compliant.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => handleMarkGroupFixed(true)}
+                disabled={markingFixed}
+                style={{
+                  display: "inline-flex", alignItems: "center", gap: "5px",
+                  padding: "5px 12px", background: "white", color: "#92400e",
+                  border: "1px solid #fcd34d", borderRadius: "6px",
+                  fontSize: "12px", fontWeight: 600, cursor: markingFixed ? "wait" : "pointer", flexShrink: 0,
+                }}
+              >
+                ↩ Undo
+              </button>
+            </div>
+          )}
+
+          {/* What this violation means — hidden when all fixed or manually marked */}
+          {!manuallyFixed && (saveStatus?.allFixed ? (
+            <div style={{ background: "#f0fdf4", border: "1px solid #86efac", borderRadius: "8px", padding: "12px 16px", display: "flex", alignItems: "center", gap: "10px" }}>
+              <span style={{ fontSize: "20px" }}>✅</span>
+              <div>
+                <p style={{ margin: "0 0 2px 0", fontSize: "13px", fontWeight: 700, color: "#166534" }}>All issues fixed and saved to Shopify</p>
+                <p style={{ margin: 0, fontSize: "12px", color: "#166534", opacity: 0.85 }}>
+                  Run a new Advanced Scan to verify these changes are now compliant with Google Merchant Center.
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div style={{ background: cs.bg, border: `1px solid ${cs.border}`, borderRadius: "8px", padding: "12px 16px" }}>
+              <p style={{ margin: 0, fontSize: "13px", color: "#374151", lineHeight: 1.7 }}>
+                {isIdentifier
+                  ? "These products are missing their GTIN (barcode) or MPN — required by Google Merchant Center. Without identifiers, Google cannot match your products to its catalog and will disapprove them."
+                  : violationType.includes("Pricing")
+                  ? "The Compare-at price (MRP) on these products is equal to or lower than the sale price. Google treats this as deceptive pricing and will disapprove the products."
+                  : violationType.includes("Description")
+                  ? "These products have no description or are missing mandatory attributes. Google requires a description to show products in Shopping ads."
+                  : violationType.includes("Image")
+                  ? "These product images are too small (under 100×100px) or contain promotional overlays. Google rejects images that don't meet its quality standards."
+                  : "These products have compliance issues that need to be resolved before they can be approved in Google Merchant Center."}
+              </p>
+            </div>
+          ))}
+
+          {/* Affected product list + Auto Fix only shown when NOT manually marked fixed */}
+          {!manuallyFixed && <CollapsibleProductList
+            products={products}
+            defaultOpen={fixState !== "done"}
+          />}
+
+          {/* Auto Fix / Re-run button — always visible for fixable types */}
+          {!manuallyFixed && canAutofix && (
+            <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+              {fixState === "loading" ? (
+                <div style={{ display: "flex", alignItems: "center", gap: "10px", padding: "10px 16px", background: "#f9fafb", borderRadius: "8px", border: "1px solid #e5e7eb", flex: 1 }}>
+                  <Spinner size="small" />
+                  <p style={{ margin: 0, fontSize: "13px", color: "#6b7280" }}>
+                    Analyzing {products.length} product{products.length !== 1 ? "s" : ""}…
+                  </p>
+                </div>
+              ) : (
+                <button
+                  onClick={handleAutoFix}
+                  style={{
+                    display: "flex", alignItems: "center", gap: "8px",
+                    padding: "9px 20px",
+                    background: fixState === "done" ? "#f9fafb" : "#1a4a5a",
+                    color: fixState === "done" ? "#374151" : "white",
+                    border: fixState === "done" ? "1px solid #d1d5db" : "none",
+                    borderRadius: "8px", fontSize: "13px", fontWeight: 700,
+                    cursor: "pointer",
+                  }}
+                >
+                  {fixState === "done" ? "🔄 Re-run Auto Fix" : `🔧 Auto Fix All`}
+                </button>
+              )}
+              <span style={{ fontSize: "12px", color: "#9ca3af" }}>
+                {fixState === "done"
+                  ? `Re-runs AI for all ${products.length} products · ${credits} credit${credits > 1 ? "s" : ""}`
+                  : `${credits} credit${credits > 1 ? "s" : ""} · AI generates fixes for all ${products.length} products`}
+              </span>
+            </div>
+          )}
+
+          {/* After auto-fix: identifier group editor OR per-product rows */}
+          {!manuallyFixed && fixState === "done" && isIdentifier && (
+            <IdentifierGroupEditor
+              products={products}
+              fixes={fixes}
+              scanId={scanId}
+              onSaveComplete={(allFixed, remaining) => setSaveStatus({ allFixed, remaining })}
+            />
+          )}
+          {!manuallyFixed && fixState === "done" && !isIdentifier && (
+            <NonIdentifierFixGroup
+              products={products}
+              fixes={fixes}
+              violationType={violationType}
+              scanId={scanId}
+              onSaveComplete={(allFixed, remaining) => setSaveStatus({ allFixed, remaining })}
+            />
+          )}
+
+          {/* ── Mark as Done — always shown when fix suggestions are ready, not already marked ── */}
+          {!manuallyFixed && fixState === "done" && !saveStatus?.allFixed && (
+            <div style={{ borderTop: "1px solid #e5e7eb", paddingTop: "14px", display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+              <button
+                onClick={() => setSaveStatus({ allFixed: true, remaining: 0 })}
+                style={{
+                  display: "flex", alignItems: "center", gap: "7px",
+                  padding: "9px 20px",
+                  background: "#166534", color: "white",
+                  border: "none", borderRadius: "8px",
+                  fontSize: "13px", fontWeight: 700, cursor: "pointer",
+                }}
+              >
+                ✓ Mark All as Fixed
+              </button>
+              <p style={{ margin: 0, fontSize: "12px", color: "#9ca3af" }}>
+                Click after saving all products to update the status
+              </p>
+            </div>
+          )}
+
+          {/* Link to Product Editor */}
+          <div style={{ padding: "14px 16px", background: "#f0f9ff", border: "1px solid #7dd3fc", borderRadius: "8px", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "10px" }}>
+            <div>
+              <p style={{ margin: "0 0 2px 0", fontSize: "13px", fontWeight: 700, color: "#0369a1" }}>💡 Need per-product deep fixes?</p>
+              <p style={{ margin: 0, fontSize: "12px", color: "#0369a1", lineHeight: 1.5 }}>
+                Use the <strong>Product Detailed Error Report</strong> for full AI rewrites, GTIN finder, SEO optimization, and more.
+              </p>
+            </div>
+            <Link to="/app/report" style={{ display: "inline-flex", alignItems: "center", gap: "5px", padding: "7px 14px", background: "#0369a1", color: "white", borderRadius: "6px", fontSize: "12px", fontWeight: 700, textDecoration: "none", whiteSpace: "nowrap", flexShrink: 0 }}>
+              Open Product Error Report →
+            </Link>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Collapsed Basic Results accordion (shown inside Advanced/Deep) ────────────
+
+// ── Shared collapsible section shell ─────────────────────────────────────────
+
+function ScanSection({
+  icon, title, badgeText, badgeBg, badgeColor, badgeBorder,
+  defaultOpen, children,
+}: {
+  icon: string; title: string;
+  badgeText: string; badgeBg: string; badgeColor: string; badgeBorder: string;
+  defaultOpen: boolean; children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div style={{ border: "1px solid #e5e7eb", borderRadius: "12px", overflow: "hidden" }}>
+      <div
+        style={{ padding: "14px 18px", background: "#f9fafb", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px" }}
+        onClick={() => setOpen(o => !o)}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+          <span style={{ fontSize: "18px" }}>{icon}</span>
+          <p style={{ margin: 0, fontSize: "14px", fontWeight: 700, color: "#212121" }}>{title}</p>
+          <span style={{ padding: "2px 9px", borderRadius: "4px", fontSize: "11px", fontWeight: 700, background: badgeBg, color: badgeColor, border: `1px solid ${badgeBorder}` }}>
+            {badgeText}
+          </span>
+        </div>
+        <span style={{ fontSize: "12px", color: "#6b7280", whiteSpace: "nowrap" }}>{open ? "▲ Collapse" : "▼ Expand"}</span>
+      </div>
+      {open && (
+        <div style={{ padding: "18px", borderTop: "1px solid #e5e7eb" }}>
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Basic results inside Advanced/Deep ───────────────────────────────────────
+
+function CollapsedBasicResults({
+  basicResult, credits, fixStates, setFixStates, savedDetails, onDetailsSaved, scanId,
+}: {
+  basicResult: any; credits: number;
+  fixStates: Map<string, IssueFixState>;
+  setFixStates: React.Dispatch<React.SetStateAction<Map<string, IssueFixState>>>;
+  savedDetails: Partial<StoreDetails>; onDetailsSaved: (d: StoreDetails) => void;
+  scanId: string;
+}) {
+  if (!basicResult || basicResult._error) return null;
+
+  const summary = basicResult.scan_summary;
+  const risk = summary?.overall_risk || "Medium";
+  const rs = riskStyle(risk);
+  const totalIssues = [
+    ...(basicResult.missing_pages || []),
+    ...(basicResult.broken_links || []),
+    ...(basicResult.merchant_center_compliance || []),
+    ...(basicResult.customer_trust_and_policy || []),
+    ...(basicResult.site_structure_and_seo || []),
+  ].length;
+
+  const badgeText = totalIssues === 0 ? "✓ All Clear" : `${totalIssues} issue${totalIssues !== 1 ? "s" : ""} · ${risk} Risk`;
+
+  return (
+    <ScanSection
+      icon="🔍" title="Basic Scan Results"
+      badgeText={badgeText}
+      badgeBg={totalIssues === 0 ? "#f0fdf4" : rs.bg}
+      badgeColor={totalIssues === 0 ? "#166534" : rs.color}
+      badgeBorder={totalIssues === 0 ? "#86efac" : rs.border}
+      defaultOpen={false}
+    >
+      <ScanResults
+        scan={{ id: scanId, type: "BASIC", updatedAt: new Date().toISOString(), result: basicResult }}
+        credits={credits}
+        fixStates={fixStates}
+        setFixStates={setFixStates}
+        savedDetails={savedDetails}
+        onDetailsSaved={onDetailsSaved}
+      />
+    </ScanSection>
+  );
+}
+
+// ── Advanced error panel (inner content) ─────────────────────────────────────
+
+function AdvancedErrorPanel({ advancedResult, scanId, groupFixes }: {
+  advancedResult: any; scanId: string; groupFixes: any;
+}) {
+  const errors: any[] = advancedResult?.errors_found || [];
+  const warnings: string[] = advancedResult?.store_warnings || [];
+
+  const persistedGroupFixes: Record<string, any[]> = groupFixes
+    ? Object.fromEntries(Object.entries(groupFixes).map(([k, v]: [string, any]) => [k, v.fixes || []]))
+    : {};
+  const persistedSaveResults: Record<string, any> = groupFixes
+    ? Object.fromEntries(Object.entries(groupFixes).map(([k, v]: [string, any]) => [k, v.saveResults || null]))
+    : {};
+  const persistedManualFixed: Record<string, boolean> = groupFixes
+    ? Object.fromEntries(Object.entries(groupFixes).map(([k, v]: [string, any]) => [k, !!v.manuallyFixed]))
+    : {};
+
+  const groups = errors.reduce((acc: Record<string, any[]>, err: any) => {
+    const key = err.policy_violation_type || err.issue_type || "Other";
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(err);
+    return acc;
+  }, {});
+
+  const uniqueProductsAffected = new Set(errors.map((e: any) => e.product_id)).size;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+      {/* Stats row */}
+      <div style={{ display: "flex", gap: "28px", flexWrap: "wrap" }}>
+        {[
+          { label: "Violation Types", value: Object.keys(groups).length, critical: Object.keys(groups).length > 0 },
+          { label: "Total Issues", value: errors.length, critical: errors.length > 0 },
+          { label: "Products Affected", value: uniqueProductsAffected, critical: uniqueProductsAffected > 0 },
+        ].map(item => (
+          <div key={item.label}>
+            <p style={{ margin: "0 0 2px 0", fontSize: "11px", color: "#6b7280", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.5px" }}>{item.label}</p>
+            <p style={{ margin: 0, fontSize: "22px", fontWeight: 700, color: item.critical ? "#d72c0d" : "#212121" }}>{item.value}</p>
+          </div>
+        ))}
+      </div>
+
+      {warnings.length > 0 && (
+        <div style={{ background: "#fffbeb", border: "1px solid #fcd34d", borderRadius: "8px", padding: "12px 16px" }}>
+          <h4 style={{ margin: "0 0 6px 0", fontSize: "13px", fontWeight: 700, color: "#92400e" }}>⚠ Store Warnings</h4>
+          {warnings.map((w, i) => <p key={i} style={{ margin: i < warnings.length - 1 ? "0 0 4px 0" : 0, fontSize: "12px", color: "#78350f" }}>{w}</p>)}
+        </div>
+      )}
+
+      {errors.length === 0 ? (
+        <div style={{ padding: "14px 16px", background: "#f0fdf4", border: "1px solid #86efac", borderRadius: "8px" }}>
+          <p style={{ color: "#166534", fontSize: "14px", margin: 0, fontWeight: 600 }}>✓ No product feed issues found. Your feed looks clean!</p>
+        </div>
+      ) : (
+        Object.entries(groups).map(([vType, groupProducts]) => (
+          <ViolationGroupCard
+            key={vType}
+            violationType={vType}
+            products={groupProducts}
+            scanId={scanId}
+            persistedFixes={persistedGroupFixes[vType] || null}
+            persistedSaveResults={persistedSaveResults[vType] || null}
+            persistedManualFixed={persistedManualFixed[vType] || false}
+          />
+        ))
+      )}
+    </div>
+  );
+}
+
+function AdvancedScanResults({ scan, credits, fixStates, setFixStates, savedDetails, onDetailsSaved }: {
+  scan: any; credits: number;
+  fixStates: Map<string, IssueFixState>;
+  setFixStates: React.Dispatch<React.SetStateAction<Map<string, IssueFixState>>>;
+  savedDetails: Partial<StoreDetails>; onDetailsSaved: (d: StoreDetails) => void;
+}) {
+  const result = scan.result as any;
+  if (!result) return null;
+
+  // ── New chained format ─────────────────────────────────────────────────────
+  if (result.scan_type === "advanced" && result.advanced_result) {
+    const adv = result.advanced_result;
+    const advErrors: any[] = adv?.errors_found || [];
+    const advBadgeText = adv?.status === "pass" ? "✓ Pass" : `${new Set(advErrors.map((e: any) => e.product_id)).size} Products Affected`;
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+        {/* Basic — collapsed */}
+        {result.basic_result && (
+          <CollapsedBasicResults
+            basicResult={result.basic_result}
+            credits={credits}
+            fixStates={fixStates}
+            setFixStates={setFixStates}
+            savedDetails={savedDetails}
+            onDetailsSaved={onDetailsSaved}
+            scanId={scan.id}
+          />
+        )}
+        {/* Advanced — expanded */}
+        <ScanSection
+          icon="🔬" title="Advanced Scan — Product Feed Analysis"
+          badgeText={advBadgeText}
+          badgeBg={adv?.status === "pass" ? "#f0fdf4" : "#fef2f2"}
+          badgeColor={adv?.status === "pass" ? "#166534" : "#d72c0d"}
+          badgeBorder={adv?.status === "pass" ? "#86efac" : "#fca5a5"}
+          defaultOpen={true}
+        >
+          <AdvancedErrorPanel advancedResult={adv} scanId={scan.id} groupFixes={result.group_fixes} />
+        </ScanSection>
+      </div>
+    );
+  }
+
+  // ── Legacy format ──────────────────────────────────────────────────────────
+  const errors: any[] = result.errors_found || [];
+  const warnings: string[] = result.store_warnings || [];
+  const groupFixes = result.group_fixes;
+
+  const persistedGroupFixes: Record<string, any[]> = groupFixes
+    ? Object.fromEntries(Object.entries(groupFixes).map(([k, v]: [string, any]) => [k, v.fixes || []]))
+    : {};
+  const persistedSaveResults: Record<string, any> = groupFixes
+    ? Object.fromEntries(Object.entries(groupFixes).map(([k, v]: [string, any]) => [k, v.saveResults || null]))
+    : {};
+  const persistedManualFixed: Record<string, boolean> = groupFixes
+    ? Object.fromEntries(Object.entries(groupFixes).map(([k, v]: [string, any]) => [k, !!v.manuallyFixed]))
+    : {};
+
+  const groups = errors.reduce((acc: Record<string, any[]>, err: any) => {
+    const key = err.policy_violation_type || err.issue_type || "Other";
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(err);
+    return acc;
+  }, {});
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+      {warnings.length > 0 && (
+        <div style={{ background: "#fffbeb", border: "1px solid #fcd34d", borderRadius: "10px", padding: "16px 20px" }}>
+          <h4 style={{ margin: "0 0 10px 0", fontSize: "14px", fontWeight: 700, color: "#92400e" }}>⚠ Store Warnings</h4>
+          {warnings.map((w, i) => <p key={i} style={{ margin: i < warnings.length - 1 ? "0 0 6px 0" : 0, fontSize: "13px", color: "#78350f" }}>{w}</p>)}
+        </div>
+      )}
+      {errors.length === 0 ? (
+        <div className="intro-card" style={{ marginBottom: 0 }}>
+          <p style={{ color: "#12a04a", fontSize: "14px", margin: 0 }}>✓ No product feed issues found.</p>
+        </div>
+      ) : (
+        Object.entries(groups).map(([vType, groupProducts]) => (
+          <ViolationGroupCard
+            key={vType}
+            violationType={vType}
+            products={groupProducts}
+            scanId={scan.id}
+            persistedFixes={persistedGroupFixes[vType] || null}
+            persistedSaveResults={persistedSaveResults[vType] || null}
+            persistedManualFixed={persistedManualFixed[vType] || false}
+          />
+        ))
+      )}
+    </div>
+  );
+}
+
+function DeepScanResults({ scan, credits, fixStates, setFixStates, savedDetails, onDetailsSaved }: {
+  scan: any; credits: number;
+  fixStates: Map<string, IssueFixState>;
+  setFixStates: React.Dispatch<React.SetStateAction<Map<string, IssueFixState>>>;
+  savedDetails: Partial<StoreDetails>; onDetailsSaved: (d: StoreDetails) => void;
+}) {
+  const result = scan.result as any;
+  if (!result) return null;
+
+  // ── New chained format: Basic + Advanced + Deep ─────────────────────────────
+  if (result.scan_type === "deep" && (result.deep_result || result.advanced_result || result.basic_result)) {
+    const adv = result.advanced_result;
+    const advErrors: any[] = adv?.errors_found || [];
+    const advBadgeText = !adv ? "—" : adv.status === "pass" ? "✓ Pass" : `${new Set(advErrors.map((e: any) => e.product_id)).size} Products Affected`;
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+        {/* Basic — collapsed */}
+        {result.basic_result && (
+          <CollapsedBasicResults
+            basicResult={result.basic_result}
+            credits={credits}
+            fixStates={fixStates}
+            setFixStates={setFixStates}
+            savedDetails={savedDetails}
+            onDetailsSaved={onDetailsSaved}
+            scanId={scan.id}
+          />
+        )}
+        {/* Advanced — collapsed */}
+        {adv && (
+          <ScanSection
+            icon="🔬" title="Advanced Scan — Product Feed Analysis"
+            badgeText={advBadgeText}
+            badgeBg={adv.status === "pass" ? "#f0fdf4" : "#fef2f2"}
+            badgeColor={adv.status === "pass" ? "#166534" : "#d72c0d"}
+            badgeBorder={adv.status === "pass" ? "#86efac" : "#fca5a5"}
+            defaultOpen={false}
+          >
+            <AdvancedErrorPanel advancedResult={adv} scanId={scan.id} groupFixes={result.group_fixes} />
+          </ScanSection>
+        )}
+        {/* Deep — expanded */}
+        <DeepPanel
+          result={result.deep_result || {}}
+          updatedAt={scan.updatedAt}
+          scanId={scan.id}
+          credits={credits}
+          fixStates={fixStates}
+          setFixStates={setFixStates}
+          savedDetails={savedDetails}
+          onDetailsSaved={onDetailsSaved}
+        />
+      </div>
+    );
+  }
+
+  // ── Legacy format: deep fields at the top level ─────────────────────────────
+  return (
+    <DeepPanel
+      result={result}
+      updatedAt={scan.updatedAt}
+      scanId={scan.id}
+      credits={credits}
+      fixStates={fixStates}
+      setFixStates={setFixStates}
+      savedDetails={savedDetails}
+      onDetailsSaved={onDetailsSaved}
+    />
+  );
+}
+
+// ── Deep finding card — rich header + reusable IssueCard action flow ──────────
+function DeepIssueCard({
+  err, index, scanId, credits, fixStates, setFixStates, savedDetails, onDetailsSaved,
+}: {
+  err: any; index: number; scanId: string; credits: number;
+  fixStates: Map<string, IssueFixState>;
+  setFixStates: React.Dispatch<React.SetStateAction<Map<string, IssueFixState>>>;
+  savedDetails: Partial<StoreDetails>; onDetailsSaved: (d: StoreDetails) => void;
+}) {
+  const issueKey = err.issue_key || `deep_${index}`;
+  const sev = (err.severity || "Medium");
+  const cs = (() => {
+    const s = sev.toLowerCase();
+    if (s === "high") return { bg: "#fef2f2", color: "#d72c0d", border: "#fca5a5" };
+    if (s === "medium") return { bg: "#fffbeb", color: "#92400e", border: "#fcd34d" };
+    return { bg: "#f0f9ff", color: "#0369a1", border: "#7dd3fc" };
+  })();
+
+  // Transform the deep finding into the shape IssueCard expects so the existing,
+  // battle-tested Auto-Fix + Mark-as-Fixed + StoreDetails-modal flow is reused.
+  const transformedIssue = {
+    issue_description: err.merchant_friendly_explanation || err.category || "",
+    severity: sev,
+    suggested_fix: "",
+    detailed_fix_steps: err.remediation_steps || [],
+    auto_fixable: !!err.auto_fixable,
+    auto_fix_type: err.auto_fix_type || null,
+    credit_cost: err.credit_cost || 0,
+    label: err.category,
+  };
+
+  return (
+    <div style={{ border: `1px solid ${cs.border}`, borderRadius: "10px", overflow: "hidden" }}>
+      {/* Rich header — category, policy, fix-method badge */}
+      <div style={{
+        background: cs.bg, borderBottom: `1px solid ${cs.border}`,
+        padding: "12px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px", flexWrap: "wrap",
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+          <span style={{ fontSize: "13px", fontWeight: 700, color: cs.color }}>{err.category}</span>
+          {err.auto_fixable ? (
+            <span style={{ padding: "1px 7px", borderRadius: "4px", fontSize: "10px", fontWeight: 700, background: "#eff6ff", color: "#1d4ed8", border: "1px solid #bfdbfe" }}>⚡ Auto-fixable</span>
+          ) : (
+            <span style={{ padding: "1px 7px", borderRadius: "4px", fontSize: "10px", fontWeight: 700, background: "#f3f4f6", color: "#6b7280", border: "1px solid #d1d5db" }}>✋ Manual fix required</span>
+          )}
+        </div>
+        {err.google_policy_violated && (
+          <span style={{ fontSize: "11px", color: "#6b7280", fontStyle: "italic" }}>Policy: {err.google_policy_violated}</span>
+        )}
+      </div>
+
+      <div style={{ padding: "14px 16px 0", background: "white" }}>
+        {/* Evidence */}
+        {err.evidence && (
+          <div style={{ background: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: "6px", padding: "10px 14px", marginBottom: "14px" }}>
+            <p style={{ margin: "0 0 2px 0", fontSize: "10px", fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.4px" }}>Evidence</p>
+            <p style={{ margin: 0, fontSize: "12px", color: "#374151" }}>{err.evidence}</p>
+          </div>
+        )}
+
+        {/* Reused action card (Auto Fix / Mark as Fixed / steps / modal) */}
+        <IssueCard
+          issue={transformedIssue}
+          issueKey={issueKey}
+          scanId={scanId}
+          fixStates={fixStates}
+          setFixStates={setFixStates}
+          credits={credits}
+          allIssues={[]}
+          savedDetails={savedDetails}
+          onDetailsSaved={onDetailsSaved}
+        />
+      </div>
+    </div>
+  );
+}
+
+function DeepPanel({ result, updatedAt, scanId, credits, fixStates, setFixStates, savedDetails, onDetailsSaved }: {
+  result: any; updatedAt: string; scanId: string; credits: number;
+  fixStates: Map<string, IssueFixState>;
+  setFixStates: React.Dispatch<React.SetStateAction<Map<string, IssueFixState>>>;
+  savedDetails: Partial<StoreDetails>; onDetailsSaved: (d: StoreDetails) => void;
+}) {
+  const errors: any[] = result.critical_misrepresentation_errors || [];
+  const warnings: string[] = result.store_warnings || [];
+  const passedChecks: string[] = result.passed_checks || [];
+  const risk = result.suspension_risk || "Low";
+  const rs = riskStyle(risk);
+
+  // Count by severity among UNFIXED findings (a fixed finding no longer counts).
+  const isFixed = (err: any, i: number) => !!fixStates.get(err.issue_key || `deep_${i}`)?.fixed;
+  const unfixed = errors.filter((e, i) => !isFixed(e, i));
+  const highCount = unfixed.filter(e => (e.severity || "").toLowerCase() === "high").length;
+  const medCount = unfixed.filter(e => (e.severity || "").toLowerCase() === "medium").length;
+  const fixedCount = errors.length - unfixed.length;
+  const autoFixableCount = errors.filter(e => e.auto_fixable).length;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+      {/* Summary */}
+      <div className="intro-card" style={{ marginBottom: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "12px", flexWrap: "wrap" }}>
+          <h3 style={{ margin: 0, fontSize: "18px", fontWeight: 700, color: "#212121" }}>Suspension Risk Audit</h3>
+          <span style={{
+            padding: "3px 10px", borderRadius: "4px", fontSize: "12px", fontWeight: 700,
+            background: rs.bg, color: rs.color, border: `1px solid ${rs.border}`,
+          }}>
+            {risk} Suspension Risk
+          </span>
+        </div>
+        {result.summary && (
+          <p style={{ margin: "0 0 16px 0", fontSize: "13px", color: "#374151", lineHeight: 1.6 }}>{result.summary}</p>
+        )}
+        <div style={{ display: "flex", gap: "32px", flexWrap: "wrap" }}>
+          {[
+            { label: "High-Risk Issues", value: highCount, critical: highCount > 0 },
+            { label: "Medium-Risk Issues", value: medCount, critical: false },
+            { label: "Fixed", value: fixedCount, critical: false },
+            { label: "Checks Passed", value: passedChecks.length, critical: false },
+          ].map((item) => (
+            <div key={item.label}>
+              <p style={{ margin: "0 0 4px 0", fontSize: "12px", color: "#666666", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.5px" }}>{item.label}</p>
+              <p style={{ margin: 0, fontSize: "18px", fontWeight: 700, color: item.critical ? "#d72c0d" : "#212121" }}>{item.value}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Warnings */}
+      {warnings.length > 0 && (
+        <div style={{ background: "#fffbeb", border: "1px solid #fcd34d", borderRadius: "10px", padding: "16px 20px" }}>
+          <h4 style={{ margin: "0 0 10px 0", fontSize: "14px", fontWeight: 700, color: "#92400e" }}>⚠ Store Warnings</h4>
+          {warnings.map((w, i) => (
+            <p key={i} style={{ margin: i < warnings.length - 1 ? "0 0 6px 0" : 0, fontSize: "13px", color: "#78350f" }}>{w}</p>
+          ))}
+        </div>
+      )}
+
+      {/* Findings */}
+      <div className="intro-card" style={{ marginBottom: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px", flexWrap: "wrap", marginBottom: "16px" }}>
+          <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 700, color: "#212121" }}>
+            Suspension & Misrepresentation Findings {errors.length > 0 && <span style={{ color: "#d72c0d" }}>({errors.length})</span>}
+          </h3>
+          {autoFixableCount > 0 && (
+            <span style={{ fontSize: "12px", color: "#1d4ed8", fontWeight: 600 }}>
+              ⚡ {autoFixableCount} can be auto-fixed by the system
+            </span>
+          )}
+        </div>
+        {errors.length === 0 ? (
+          <p style={{ color: "#12a04a", fontSize: "14px", margin: 0 }}>✓ No suspension risks detected. Your store passes all deep compliance checks.</p>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+            {errors.map((err: any, i: number) => (
+              <DeepIssueCard
+                key={err.issue_key || i}
+                err={err}
+                index={i}
+                scanId={scanId}
+                credits={credits}
+                fixStates={fixStates}
+                setFixStates={setFixStates}
+                savedDetails={savedDetails}
+                onDetailsSaved={onDetailsSaved}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Passed checks */}
+      {passedChecks.length > 0 && (
+        <div className="intro-card" style={{ marginBottom: 0 }}>
+          <h3 style={{ margin: "0 0 12px 0", fontSize: "15px", fontWeight: 700, color: "#166534" }}>✓ Checks Passed ({passedChecks.length})</h3>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+            {passedChecks.map((c, i) => (
+              <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: "5px", padding: "4px 10px", background: "#f0fdf4", border: "1px solid #86efac", borderRadius: "6px", fontSize: "12px", color: "#166534", fontWeight: 500 }}>
+                ✓ {c}
+              </span>
+            ))}
+          </div>
         </div>
       )}
     </div>
@@ -1014,6 +3236,40 @@ function ScanResults({
   );
 }
 
+// ── Normalize any scan result (basic / advanced / deep) into a flat report ─────
+// Basic scans store sections at the top level; Advanced/Deep nest them under
+// basic_result / advanced_result / deep_result. This unifies them for export.
+function extractReportSections(result: any): {
+  basic: any;
+  advancedErrors: any[];
+  deepErrors: any[];
+  deepSummary: any;
+  scanLabel: string;
+} {
+  if (!result) return { basic: {}, advancedErrors: [], deepErrors: [], deepSummary: null, scanLabel: "Basic" };
+
+  if (result.scan_type === "deep") {
+    return {
+      basic: result.basic_result || {},
+      advancedErrors: result.advanced_result?.errors_found || [],
+      deepErrors: result.deep_result?.critical_misrepresentation_errors || [],
+      deepSummary: result.deep_result || null,
+      scanLabel: "Deep",
+    };
+  }
+  if (result.scan_type === "advanced") {
+    return {
+      basic: result.basic_result || {},
+      advancedErrors: result.advanced_result?.errors_found || [],
+      deepErrors: [],
+      deepSummary: null,
+      scanLabel: "Advanced",
+    };
+  }
+  // Legacy / basic format — sections live at the top level
+  return { basic: result, advancedErrors: [], deepErrors: [], deepSummary: null, scanLabel: "Basic" };
+}
+
 // ── main page ─────────────────────────────────────────────────────────────────
 
 export default function StoreErrorReport() {
@@ -1041,6 +3297,8 @@ export default function StoreErrorReport() {
   const isProcessing = scan?.status === "PENDING" || scan?.status === "PROCESSING";
   const needsPassword = scan?.status === "NEEDS_PASSWORD";
   const credits = productLimit - productsUsed;
+  // Which scan type is currently running (derived from the active scan record)
+  const activeScanType = isProcessing ? (scan?.type || "BASIC") : null;
 
   const startPolling = useCallback(() => {
     if (pollRef.current) return;
@@ -1092,15 +3350,24 @@ export default function StoreErrorReport() {
 
     setFixStates(prev => {
       const next = new Map(prev);
-      appliedFixes.forEach(fix => {
+      appliedFixes.forEach((fix: any) => {
         const key = fix.autoFixType;
+        const isManual = !!fix.manual && !fix.themeEditorUrl;
         if (!next.has(key) || !next.get(key)?.fixed) {
           next.set(key, {
             confirming: false,
             fixing: false,
             fixed: true,
             error: "",
-            fixSummary: FIX_SUMMARIES[fix.autoFixType] || "Fix applied to your store.",
+            manualFix: isManual,
+            fixSummary: isManual
+              ? "You marked this issue as fixed manually."
+              : (FIX_SUMMARIES[fix.autoFixType] || "Fix applied to your store."),
+            // Restore partial fix state so the Theme Editor card re-appears on reload
+            partialFix: fix.partial ?? false,
+            themeEditorUrl: fix.themeEditorUrl,
+            preConfigured: fix.preConfigured ?? false,
+            menuLabel: fix.menuLabel,
           });
         }
       });
@@ -1117,7 +3384,7 @@ export default function StoreErrorReport() {
   }, [detailsFetcher]);
 
   const handleRunScan = useCallback((scanType: string) => {
-    const cost = scanType === "BASIC" ? 10 : 0;
+    const cost = scanType === "BASIC" ? 10 : scanType === "ADVANCED" ? 20 : scanType === "DEEP" ? 30 : 10;
     if (credits < cost) {
       setError(`You need at least ${cost} credits. You have ${credits} remaining.`);
       return;
@@ -1181,22 +3448,25 @@ export default function StoreErrorReport() {
   const handleDownloadExcel = useCallback(() => {
     if (!scan?.result) return;
     const result = scan.result as any;
-    const summary = result?.scan_summary || {};
+    const { basic, advancedErrors, deepErrors, deepSummary, scanLabel } = extractReportSections(result);
+    const summary = basic?.scan_summary || {};
 
     const rows: string[][] = [];
-    rows.push(["Store GMC Compliance Report"]);
+    rows.push([`Store GMC Compliance Report — ${scanLabel} Scan`]);
     rows.push(["Store URL", summary.store_url || ""]);
     rows.push(["Overall Risk", summary.overall_risk || ""]);
     rows.push(["Pages Scanned", summary.pages_scanned ?? ""]);
     rows.push(["Missing Required Pages", summary.pages_missing ?? ""]);
     rows.push(["Broken Links", summary.broken_links_found ?? ""]);
+    if (deepSummary) rows.push(["Suspension Risk", deepSummary.suspension_risk || ""]);
     rows.push(["Scanned On", new Date(scan.updatedAt).toLocaleString()]);
     rows.push([]);
 
     const addSection = (title: string, issues: any[], extraCols?: (i: any) => string[]) => {
+      if (!issues || !issues.length) return;
       rows.push([title]);
       rows.push(["#", "Severity", "Issue", "Suggested Fix", "Fix Steps", ...(extraCols ? ["Extra"] : [])]);
-      (issues || []).forEach((issue: any, idx: number) => {
+      issues.forEach((issue: any, idx: number) => {
         rows.push([
           String(idx + 1),
           issue.severity || "",
@@ -1209,18 +3479,53 @@ export default function StoreErrorReport() {
       rows.push([]);
     };
 
-    addSection("Missing Required Pages", result?.missing_pages || [], (i) => [i.url || ""]);
-    addSection("Broken Links", result?.broken_links || [], (i) => [i.url || ""]);
-    addSection("GMC Compliance", result?.merchant_center_compliance || []);
-    addSection("Customer Trust & Policy", result?.customer_trust_and_policy || []);
-    addSection("Site Structure & SEO", result?.site_structure_and_seo || []);
+    // ── Basic / store-level sections ──────────────────────────────────────────
+    addSection("Missing Required Pages", basic?.missing_pages || [], (i) => [i.url || ""]);
+    addSection("Broken Links", basic?.broken_links || [], (i) => [i.url || ""]);
+    addSection("GMC Compliance", basic?.merchant_center_compliance || []);
+    addSection("Customer Trust & Policy", basic?.customer_trust_and_policy || []);
+    addSection("Site Structure & SEO", basic?.site_structure_and_seo || []);
+
+    // ── Advanced product-feed errors ────────────────────────────────────────
+    if (advancedErrors.length) {
+      rows.push(["Advanced — Product Feed Issues"]);
+      rows.push(["#", "Product", "Violation", "Explanation", "Fix Steps"]);
+      advancedErrors.forEach((e: any, idx: number) => {
+        rows.push([
+          String(idx + 1),
+          e.product_title || e.product_id || "",
+          e.policy_violation_type || e.issue_type || "",
+          e.merchant_friendly_description || e.description || "",
+          Array.isArray(e.manual_fix_steps) ? e.manual_fix_steps.join(" | ") : "",
+        ]);
+      });
+      rows.push([]);
+    }
+
+    // ── Deep misrepresentation findings ─────────────────────────────────────
+    if (deepErrors.length) {
+      rows.push(["Deep — Suspension & Misrepresentation Findings"]);
+      rows.push(["#", "Severity", "Category", "Explanation", "Evidence", "Policy", "Remediation Steps"]);
+      deepErrors.forEach((e: any, idx: number) => {
+        rows.push([
+          String(idx + 1),
+          e.severity || "",
+          e.category || "",
+          e.merchant_friendly_explanation || "",
+          e.evidence || "",
+          e.google_policy_violated || "",
+          Array.isArray(e.remediation_steps) ? e.remediation_steps.join(" | ") : "",
+        ]);
+      });
+      rows.push([]);
+    }
 
     const csv = rows.map(r => r.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `compliance-report-${new Date().toISOString().split("T")[0]}.csv`;
+    a.download = `compliance-report-${scanLabel.toLowerCase()}-${new Date().toISOString().split("T")[0]}.csv`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -1231,7 +3536,8 @@ export default function StoreErrorReport() {
   const handleDownloadPdf = useCallback(() => {
     if (!scan?.result) return;
     const result = scan.result as any;
-    const summary = result?.scan_summary || {};
+    const { basic, advancedErrors, deepErrors, deepSummary, scanLabel } = extractReportSections(result);
+    const summary = basic?.scan_summary || {};
     const riskColor = summary.overall_risk === "High" ? "#d72c0d" : summary.overall_risk === "Medium" ? "#b98900" : "#12a04a";
 
     const sev = (s: string) => s === "High" ? "#d72c0d" : s === "Medium" ? "#b98900" : "#637381";
@@ -1250,14 +3556,47 @@ export default function StoreErrorReport() {
           </ol>` : ""}
       </div>`).join("");
 
-    const section = (title: string, issues: any[]) => `
+    const section = (title: string, issues: any[], hideIfEmpty = false) => {
+      if (hideIfEmpty && (!issues || !issues.length)) return "";
+      return `
       <div style="margin-bottom:20px;page-break-inside:avoid">
         <h3 style="margin:0 0 10px 0;font-size:15px;font-weight:700;color:#1a4a5a;border-bottom:2px solid #e5e7eb;padding-bottom:6px">${title}</h3>
         ${(issues||[]).length === 0 ? `<p style="color:#12a04a;font-size:13px;margin:0">✓ No issues found.</p>` : issueRows(issues)}
       </div>`;
+    };
+
+    // Advanced product-feed errors block
+    const advancedBlock = advancedErrors.length ? `
+      <div style="margin-bottom:20px;page-break-inside:avoid">
+        <h3 style="margin:0 0 10px 0;font-size:15px;font-weight:700;color:#7e22ce;border-bottom:2px solid #e5e7eb;padding-bottom:6px">Advanced — Product Feed Issues (${advancedErrors.length})</h3>
+        ${advancedErrors.map((e: any) => `
+          <div style="border-left:3px solid #7e22ce;padding:8px 12px;margin-bottom:10px;background:#fafafa">
+            <div style="font-size:13px;font-weight:700;color:#212121">${e.product_title || e.product_id || ""}</div>
+            <div style="font-size:11px;color:#7e22ce;font-weight:600;margin:2px 0">${e.policy_violation_type || e.issue_type || ""}</div>
+            <p style="margin:4px 0 0;font-size:12px;color:#555">${e.merchant_friendly_description || e.description || ""}</p>
+          </div>`).join("")}
+      </div>` : "";
+
+    // Deep misrepresentation findings block
+    const deepBlock = deepErrors.length ? `
+      <div style="margin-bottom:20px;page-break-inside:avoid">
+        <h3 style="margin:0 0 10px 0;font-size:15px;font-weight:700;color:#d72c0d;border-bottom:2px solid #e5e7eb;padding-bottom:6px">Deep — Suspension & Misrepresentation Findings (${deepErrors.length})</h3>
+        ${deepErrors.map((e: any) => `
+          <div style="border-left:3px solid ${sev(e.severity||"")};padding:8px 12px;margin-bottom:10px;background:#fafafa">
+            <div style="display:flex;gap:8px;align-items:center;margin-bottom:4px">
+              <span style="padding:2px 7px;border-radius:4px;font-size:10px;font-weight:700;background:${sevBg(e.severity||"")};color:${sev(e.severity||"")}">${e.severity||""}</span>
+              <span style="font-size:13px;font-weight:700;color:#212121">${e.category||""}</span>
+            </div>
+            <p style="margin:4px 0 0;font-size:12px;color:#555">${e.merchant_friendly_explanation||""}</p>
+            ${e.evidence ? `<p style="margin:4px 0 0;font-size:11px;color:#777"><strong>Evidence:</strong> ${e.evidence}</p>` : ""}
+            ${Array.isArray(e.remediation_steps) && e.remediation_steps.length ? `<ol style="margin:6px 0 0 12px;padding-left:16px;font-size:11px;color:#555;line-height:1.6">${e.remediation_steps.map((s: string) => `<li>${s}</li>`).join("")}</ol>` : ""}
+          </div>`).join("")}
+      </div>` : "";
+
+    const deepRiskColor = deepSummary?.suspension_risk === "High" ? "#d72c0d" : deepSummary?.suspension_risk === "Medium" ? "#b98900" : "#12a04a";
 
     const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
-      <title>GMC Compliance Report</title>
+      <title>GMC Compliance Report — ${scanLabel}</title>
       <style>
         body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;margin:0;padding:24px;color:#212121;font-size:13px}
         @media print{body{padding:0} .no-print{display:none}}
@@ -1269,7 +3608,7 @@ export default function StoreErrorReport() {
       <div style="text-align:center;background:linear-gradient(135deg,#1a4a5a,#2A5B6D);padding:24px;border-radius:8px;margin-bottom:20px;color:white">
         <div style="font-size:32px;margin-bottom:8px">🛡️</div>
         <h1 style="margin:0;font-size:20px;font-weight:700">Store GMC Compliance Report</h1>
-        <p style="margin:6px 0 0;font-size:13px;opacity:0.85">${summary.store_url||""}</p>
+        <p style="margin:6px 0 0;font-size:13px;opacity:0.85">${summary.store_url||""} · ${scanLabel} Scan</p>
       </div>
       <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:20px;padding:16px;background:#f9fafb;border-radius:8px;border:1px solid #e5e7eb">
         <div><p style="margin:0 0 4px;font-size:10px;color:#666;font-weight:600;text-transform:uppercase">Overall Risk</p>
@@ -1280,14 +3619,18 @@ export default function StoreErrorReport() {
           <p style="margin:0;font-size:18px;font-weight:700;color:${summary.pages_missing>0?"#d72c0d":"#212121"}">${summary.pages_missing??""}</p></div>
         <div><p style="margin:0 0 4px;font-size:10px;color:#666;font-weight:600;text-transform:uppercase">Broken Links</p>
           <p style="margin:0;font-size:18px;font-weight:700;color:${summary.broken_links_found>0?"#d72c0d":"#212121"}">${summary.broken_links_found??""}</p></div>
+        ${deepSummary ? `<div><p style="margin:0 0 4px;font-size:10px;color:#666;font-weight:600;text-transform:uppercase">Suspension Risk</p>
+          <p style="margin:0;font-size:18px;font-weight:700;color:${deepRiskColor}">${deepSummary.suspension_risk||"—"}</p></div>` : ""}
         <div><p style="margin:0 0 4px;font-size:10px;color:#666;font-weight:600;text-transform:uppercase">Scanned On</p>
           <p style="margin:0;font-size:13px;font-weight:600">${new Date(scan.updatedAt).toLocaleString()}</p></div>
       </div>
-      ${result?.missing_pages?.length ? section("Missing Required Pages", result.missing_pages) : ""}
-      ${result?.broken_links?.length ? section("Broken Links", result.broken_links) : ""}
-      ${section("Google Merchant Center Compliance", result?.merchant_center_compliance)}
-      ${section("Customer Trust & Policy Pages", result?.customer_trust_and_policy)}
-      ${section("Site Structure & SEO", result?.site_structure_and_seo)}
+      ${section("Missing Required Pages", basic?.missing_pages, true)}
+      ${section("Broken Links", basic?.broken_links, true)}
+      ${section("Google Merchant Center Compliance", basic?.merchant_center_compliance)}
+      ${section("Customer Trust & Policy Pages", basic?.customer_trust_and_policy)}
+      ${section("Site Structure & SEO", basic?.site_structure_and_seo)}
+      ${advancedBlock}
+      ${deepBlock}
       <p style="text-align:center;font-size:11px;color:#9ca3af;margin-top:24px">Generated by ShopFlix AI · ${new Date().toLocaleString()}</p>
       <script>window.onload=function(){window.print();}<\/script>
     </body></html>`;
@@ -1436,9 +3779,9 @@ export default function StoreErrorReport() {
                 className="feature-card-button"
                 onClick={() => handleRunScan("BASIC")}
                 disabled={isStarting || isProcessing || needsPassword || credits < 10}
-                style={(isProcessing || needsPassword) ? { background: "#e5e7eb", color: "#999", cursor: "not-allowed" } : undefined}
+                style={(isProcessing || needsPassword) ? { background: activeScanType === "BASIC" ? undefined : "#e5e7eb", color: activeScanType === "BASIC" ? undefined : "#999", cursor: "not-allowed" } : undefined}
               >
-                {isProcessing ? "Scanning store…" : isStarting ? "Starting…" : needsPassword ? "Waiting for password…" : "Run Basic Scan"}
+                {activeScanType === "BASIC" ? "Scanning store…" : isStarting ? "Starting…" : (isProcessing || needsPassword) ? "Run Basic Scan" : "Run Basic Scan"}
               </button>
             </div>
 
@@ -1471,7 +3814,14 @@ export default function StoreErrorReport() {
               >
                 View what's included →
               </button>
-              <button className="feature-card-button" disabled>Coming Soon</button>
+              <button
+                className="feature-card-button"
+                onClick={() => handleRunScan("ADVANCED")}
+                disabled={isStarting || isProcessing || needsPassword || credits < 20}
+                style={(isProcessing || needsPassword) ? { background: activeScanType === "ADVANCED" ? undefined : "#e5e7eb", color: activeScanType === "ADVANCED" ? undefined : "#999", cursor: "not-allowed" } : undefined}
+              >
+                {activeScanType === "ADVANCED" ? "Scanning products…" : isStarting ? "Starting…" : "Run Advanced Scan"}
+              </button>
             </div>
 
             {/* Deep */}
@@ -1503,7 +3853,14 @@ export default function StoreErrorReport() {
               >
                 View what's included →
               </button>
-              <button className="feature-card-button" disabled>Coming Soon</button>
+              <button
+                className="feature-card-button"
+                onClick={() => handleRunScan("DEEP")}
+                disabled={isStarting || isProcessing || needsPassword || credits < 30}
+                style={(isProcessing || needsPassword) ? { background: activeScanType === "DEEP" ? undefined : "#e5e7eb", color: activeScanType === "DEEP" ? undefined : "#999", cursor: "not-allowed" } : undefined}
+              >
+                {activeScanType === "DEEP" ? "Running deep audit…" : isStarting ? "Starting…" : "Run Deep Scan"}
+              </button>
             </div>
           </div>
 
@@ -1519,8 +3876,11 @@ export default function StoreErrorReport() {
                     {scan.status === "PENDING" ? "Scan queued — starting shortly…" : "Scanning your store…"}
                   </h3>
                   <p className="intro-paragraph" style={{ maxWidth: "480px", margin: "0 auto" }}>
-                    We're fetching your homepage, policy pages, and navigation links, then running
-                    them through our AI compliance engine. This usually takes 60–120 seconds.
+                    {scan.type === "ADVANCED"
+                      ? "We're pulling your product catalog and running feed data through our AI compliance engine. This usually takes 60–180 seconds."
+                      : scan.type === "DEEP"
+                      ? "We're analyzing your schema markup, business identity, and store signals for misrepresentation. This usually takes 90–180 seconds."
+                      : "We're fetching your homepage, policy pages, and navigation links, then running them through our AI compliance engine. This usually takes 60–120 seconds."}
                   </p>
                 </div>
               )}
@@ -1613,14 +3973,34 @@ export default function StoreErrorReport() {
                     </p>
                   )}
 
-                  <ScanResults
-                    scan={scan}
-                    credits={credits}
-                    fixStates={fixStates}
-                    setFixStates={setFixStates}
-                    savedDetails={savedDetails}
-                    onDetailsSaved={handleDetailsSaved}
-                  />
+                  {scan.type === "ADVANCED" ? (
+                    <AdvancedScanResults
+                      scan={scan}
+                      credits={credits}
+                      fixStates={fixStates}
+                      setFixStates={setFixStates}
+                      savedDetails={savedDetails}
+                      onDetailsSaved={handleDetailsSaved}
+                    />
+                  ) : scan.type === "DEEP" ? (
+                    <DeepScanResults
+                      scan={scan}
+                      credits={credits}
+                      fixStates={fixStates}
+                      setFixStates={setFixStates}
+                      savedDetails={savedDetails}
+                      onDetailsSaved={handleDetailsSaved}
+                    />
+                  ) : (
+                    <ScanResults
+                      scan={scan}
+                      credits={credits}
+                      fixStates={fixStates}
+                      setFixStates={setFixStates}
+                      savedDetails={savedDetails}
+                      onDetailsSaved={handleDetailsSaved}
+                    />
+                  )}
                 </>
               )}
             </>

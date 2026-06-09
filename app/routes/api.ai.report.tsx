@@ -283,13 +283,13 @@ async function processAndSendReport(
 }
 
 export async function action({ request }: ActionFunctionArgs) {
-  const clonedRequest = request.clone(); // Clone the request before authentication
-  const { admin, session } = await authenticate.admin(clonedRequest);
+  const bodyClone = request.clone();
+  const { admin, session } = await authenticate.admin(request);
   if (!session) {
     return json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const products = await request.json(); // Expect products directly as JSON body
+  const products = await bodyClone.json();
 
   if (!products || !Array.isArray(products)) {
     return json({ error: "Invalid request body: expected an array of products" }, { status: 400 });

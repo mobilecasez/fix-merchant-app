@@ -2,13 +2,13 @@ import { json, type ActionFunctionArgs } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
 
 export async function action({ request }: ActionFunctionArgs) {
-  const clonedRequest = request.clone();
-  const { session } = await authenticate.admin(clonedRequest);
+  const bodyClone = request.clone();
+  const { session } = await authenticate.admin(request);
   if (!session) {
     return json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const formData = await request.formData();
+  const formData = await bodyClone.formData();
   const storeUrl = formData.get("store_url") as string;
 
   if (!storeUrl) {

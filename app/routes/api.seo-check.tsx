@@ -8,9 +8,6 @@ interface Product {
   handle: string;
   descriptionHtml: string;
   vendor: string; // Added vendor to Product interface
-  category: {
-    name: string;
-  };
   seo: {
     description: string;
   };
@@ -21,9 +18,9 @@ interface Product {
       barcode: string;
     }[];
   };
-  tags: string[]; // Added tags property
-  barcode?: string; // Added barcode to Product interface
-  metafields: { // Added metafields to Product interface
+  tags: string[];
+  barcode?: string;
+  metafields: {
     nodes: {
       key: string;
       value: string;
@@ -57,9 +54,6 @@ const fetchProducts = async (
             descriptionHtml
             vendor # Added vendor to GraphQL query
             status
-            category {
-              name
-            }
             seo {
               description
             }
@@ -72,7 +66,7 @@ const fetchProducts = async (
               }
             }
             tags
-            metafields(first: 10, namespace: "google_merchant_center") { # Fetch GMC metafields
+            metafields(first: 10, namespace: "google_merchant_center") {
               nodes {
                 key
                 value
@@ -121,9 +115,19 @@ interface SeoCheckResult {
 }
 
 const checkSeo = (product: Product): SeoCheckResult => {
-  const { title, descriptionHtml, category } = product;
+  const { title, descriptionHtml } = product;
   const issues: SeoIssue[] = [];
   const suggestions: SeoSuggestion[] = [];
+
+  // Rule 0: Check for missing variants, which can cause other checks to fail
+  if (!product.variants.nodes || product.variants.nodes.length === 0) {
+    issues.push({
+      message: "Product is missing variant information (price, etc.). This is a critical error.",
+      severity: "High"
+    });
+    // Return early, as other checks will fail without variant data
+    return { issues, suggestions_for_sales_improvement: suggestions };
+  }
 
   // Rule 1: compareAtPrice must exist and be greater than price
   // Reverting to original string comparison for consistency with previous behavior
@@ -140,14 +144,14 @@ const checkSeo = (product: Product): SeoCheckResult => {
 
   // Rule 2: Product Title length (common SEO/GMC issue)
   const titleLength = product.title?.length || 0;
-  if (titleLength > 70) {
+  if (titleLength > 70 && titleLength <= 150) {
     issues.push({
-      message: `Product Title is excessively long (${titleLength} characters). Recommended length is 60-70 characters for SEO.`,
-      severity: "Medium"
+      message: `Product Title is slightly long (${titleLength} characters). Recommended length is 60-70 characters for optimal SEO display.`,
+      severity: "Low" // Changed to Low since > 70 is very common and usually fine
     });
     suggestions.push({
-      suggestion: "Shorten product title to be concise and keyword-rich, ideally under 70 characters for better search visibility.",
-      priority: "High"
+      suggestion: "Consider shortening the product title to be concise and keyword-rich (ideally under 70 characters) to prevent truncation in search results.",
+      priority: "Medium"
     });
   }
   if (titleLength > 150) { // GMC specific title length check
@@ -259,9 +263,15 @@ const checkSeo = (product: Product): SeoCheckResult => {
   }
 
   // Additional suggestions based on AI output, even if not directly checkable with current data
+  if (!product.variants.nodes[0]?.barcode) {
+    suggestions.push({
+      suggestion: "Consider populating missing Google Merchant Center attributes like the GTIN (UPC/EAN/Barcode). If you do not have it, try using the GTIN Finder tool provided in the AI Auto-fix modal.",
+      priority: "Medium"
+    });
+  }
   suggestions.push({
-    suggestion: "Populate all Google Merchant Center attributes: Ensure all required and recommended attributes are accurately provided in the product feed, including GTIN (UPC/EAN), 'brand', 'google_product_category', 'color', 'material', and 'condition'.",
-    priority: "High"
+    suggestion: "Ensure recommended attributes are accurately provided in the product feed, including 'brand', 'google_product_category', 'color', 'material', and 'condition'.",
+    priority: "Low"
   });
   suggestions.push({
     suggestion: "Implement Structured Data (Schema Markup): Add Product Schema markup to the product page to help search engines understand key product details and potentially lead to rich snippets in search results.",
@@ -351,10 +361,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
     fetchedProducts = products.map(product => {
       if (savedAiChecksMap.has(product.id)) {
         const savedCheck = savedAiChecksMap.get(product.id);
+        const result = savedCheck.result as any;
         return {
           ...product,
-          issues: JSON.parse(savedCheck.issues),
-          suggestions_for_sales_improvement: JSON.parse(savedCheck.suggestions),
+          issues: result?.issues || [],
+          suggestions_for_sales_improvement: result?.suggestions_for_sales_improvement || [],
         };
       }
 
@@ -371,7 +382,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
     return json({ products: fetchedProducts, pageInfo: finalPageInfo, totalCount });
   } catch (error: any) {
-    console.error("SEO Check Loader - Error fetching products:", error);
+    console.error("SEO Check Loader - Error fetching products:", error?.message, error?.stack);
     return json({ error: 'Failed to fetch products', details: error.message }, { status: 500 });
   }
 }

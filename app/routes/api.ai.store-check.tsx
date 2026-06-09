@@ -6,13 +6,13 @@ import { retryOperation } from "../utils/retry.js";
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_GEMINI_API_KEY!);
 
 export async function action({ request }: ActionFunctionArgs) {
-  const clonedRequest = request.clone();
-  const { admin, session } = await authenticate.admin(clonedRequest);
+  const bodyClone = request.clone();
+  const { admin, session } = await authenticate.admin(request);
   if (!session) {
     return json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const formData = await request.formData();
+  const formData = await bodyClone.formData();
   const storeUrl = formData.get("store_url") as string;
   const rawHtmlContent = formData.get("raw_html_content") as string;
 

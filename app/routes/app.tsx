@@ -72,29 +72,28 @@ export default function App() {
   return (
     <AppProvider isEmbeddedApp apiKey={apiKey}>
       <NavMenu>
+        {/* The first link is the required home link (Shopify NavMenu). Dashboard
+            and Additional page are intentionally hidden from the nav. */}
         <Link to="/app" rel="home">
           Home
         </Link>
         {settings.addProductReplicaEnabled && (
           <Link to="/app/add-product-replica">Add Product Replica</Link>
         )}
-        {subscription && (
-          <>
-            <Link to="/app/choose-subscription">Subscription</Link>
-            <Link to="/app/usage-analytics">Usage Analytics</Link>
-          </>
-        )}
-        {settings.dashboardEnabled && (
-          <Link to="/app/dashboard">Dashboard</Link>
-        )}
-        {settings.reportEnabled && (
-          <Link to="/app/report">Product Error Detailed Report</Link>
-        )}
-        {settings.additionalEnabled && (
-          <Link to="/app/additional">Additional page</Link>
-        )}
         {settings.storeErrorReportEnabled && (
           <Link to="/app/store-error-report">Store Error Report</Link>
+        )}
+        {settings.reportEnabled && (
+          <Link to="/app/report">Product Error Detail Report</Link>
+        )}
+        {settings.merchandisingEnabled !== false && (
+          <Link to="/app/merchandising">Catalog & Merchandising</Link>
+        )}
+        {subscription && (
+          <>
+            <Link to="/app/usage-analytics">Usage Analytics</Link>
+            <Link to="/app/choose-subscription">Subscription</Link>
+          </>
         )}
 
         {isAccountOwner && (

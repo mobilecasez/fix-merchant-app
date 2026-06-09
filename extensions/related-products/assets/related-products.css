@@ -1,0 +1,57 @@
+.shopflix-related {
+  margin: 40px 0;
+}
+.shopflix-related__heading {
+  font-size: 22px;
+  font-weight: 700;
+  margin: 0 0 18px;
+}
+.shopflix-related__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 16px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.shopflix-related__item {
+  margin: 0;
+}
+.shopflix-related__link {
+  display: block;
+  text-decoration: none;
+  color: inherit;
+  border: 1px solid #ececec;
+  border-radius: 12px;
+  overflow: hidden;
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+.shopflix-related__link:hover {
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.08);
+  transform: translateY(-2px);
+}
+.shopflix-related__media {
+  aspect-ratio: 1 / 1;
+  overflow: hidden;
+  background: #f7f7f7;
+}
+.shopflix-related__image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.shopflix-related__title {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.35;
+  padding: 10px 12px 0;
+}
+.shopflix-related__price {
+  display: block;
+  font-size: 14px;
+  font-weight: 700;
+  color: #1a4a5a;
+  padding: 4px 12px 12px;
+}

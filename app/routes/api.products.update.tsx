@@ -16,26 +16,29 @@ export async function action({ request }: ActionFunctionArgs) {
     handle,
     description,
     meta_description,
-    brand, // Added brand to destructuring
-    google_product_category, // Added google_product_category to destructuring
-    color, // Added color to destructuring
-    material, // Added material to destructuring
-    condition, // Added condition to destructuring
+    brand,
+    vendor,
+    google_product_category,
+    color,
+    material,
+    condition,
+    availability,
     variants,
-    tags, // Added tags to destructuring
+    tags,
+    analysis_summary,
+    imagesToAdd, // array of image URLs to add to the product
   } = productData;
 
   const descriptionHtml = await convertMarkdownToHtml(description);
 
-  const productInput = {
+  const productInput: any = {
     id,
     title,
     handle,
     descriptionHtml,
-    seo: {
-      description: meta_description,
-    },
-    tags, // Added tags to productInput
+    seo: { description: meta_description },
+    tags,
+    ...(vendor && vendor.trim() ? { vendor: vendor.trim() } : {}),
   };
 
   const productUpdateResponse = await admin.graphql(
@@ -81,6 +84,7 @@ export async function action({ request }: ActionFunctionArgs) {
   addMetafield("color", color);
   addMetafield("material", material);
   addMetafield("condition", condition);
+  addMetafield("availability", availability);
 
   if (metafieldsToSet.length > 0) {
     const metafieldsSetResponse = await admin.graphql(
@@ -133,14 +137,16 @@ export async function action({ request }: ActionFunctionArgs) {
 
   if (variants && variants.length > 0) {
     // Map the incoming variants data to the structure expected by Shopify's productVariantsBulkUpdate
-    const variantsToUpdate = variants.map((variant: any) => ({
-      id: variant.id, // Reverted to 'id' as per Shopify API documentation
-      price: variant.price,
-      compareAtPrice: variant.compareAtPrice,
-      barcode: (variant.barcode && variant.barcode.trim() !== "null") ? variant.barcode.trim() : "",
-      weight: variant.weight ? parseFloat(variant.weight) : null,
-      weightUnit: variant.weightUnit,
-    }));// Added log
+    const variantsToUpdate = variants.map((variant: any) => {
+      const updateData: any = {
+        id: variant.id,
+        price: variant.price,
+        compareAtPrice: variant.compareAtPrice,
+        barcode: (variant.barcode && variant.barcode.trim() !== "null") ? variant.barcode.trim() : "",
+      };
+
+      return updateData;
+    });
 
     const productVariantsBulkUpdateResponse = await admin.graphql(
       `#graphql
@@ -183,14 +189,110 @@ export async function action({ request }: ActionFunctionArgs) {
     }
   }
 
-  // After successful update, delete any saved AI check so that it reflects the new state
-  try {
-    await prisma.productAICheck.delete({
-      where: { productId: id }
-    });
-  } catch (e) {
-    // Ignore error if it doesn't exist
+  // Add new images if provided
+  if (imagesToAdd && Array.isArray(imagesToAdd) && imagesToAdd.length > 0) {
+    const mediaInput = imagesToAdd.map((imgUrl: string) => ({
+      originalSource: imgUrl,
+      mediaContentType: 'IMAGE',
+    }));
+    try {
+      await admin.graphql(
+        `#graphql
+          mutation productCreateMedia($productId: ID!, $media: [CreateMediaInput!]!) {
+            productCreateMedia(productId: $productId, media: $media) {
+              mediaUserErrors { field message }
+            }
+          }`,
+        { variables: { productId: id, media: mediaInput } }
+      );
+    } catch (imgErr: any) {
+      console.warn('Image upload failed (non-fatal):', imgErr?.message);
+    }
   }
 
-  return json({ success: true });
+  // After successful update, intelligently remove resolved issues and mark auto-fix as complete
+  let remainingIssues: any[] = [];
+  let remainingSuggestions: any[] = [];
+
+  try {
+    const existingCheck = await prisma.productAICheck.findUnique({
+      where: { productId: id },
+    });
+
+    if (existingCheck) {
+      const existingResult = (existingCheck.result as any) || {};
+      const currentIssues: any[] = existingResult.issues || [];
+      const currentSuggestions: any[] = existingResult.suggestions_for_sales_improvement || [];
+
+      // Build a set of keyword groups for each field that was actually saved.
+      // If a field has a non-empty value we just saved, any issue whose message
+      // contains one of its keywords is considered resolved.
+      const savedFieldKeywords: string[][] = [];
+
+      const fieldMap: Record<string, string[]> = {
+        gtin:                   ['gtin', 'global trade item', 'upc', 'ean', 'isbn', 'jan', 'barcode'],
+        brand:                  ['brand name', 'brand', 'manufacturer'],
+        title:                  ['title', 'product name', 'heading'],
+        description:            ['description', 'promotional text', 'promotional language', 'call-to-action', 'non-factual', 'pre-order', 'preorder', 'word count', 'detail', 'insufficient'],
+        meta_description:       ['meta description', 'seo description', 'snippet'],
+        handle:                 ['url', 'handle', 'slug', 'permalink'],
+        google_product_category:['product category', 'google product category', 'category'],
+        color:                  ['color', 'colour'],
+        material:               ['material'],
+        condition:              ['condition', 'new', 'used', 'refurbished'],
+        availability:           ['availability', 'preorder', 'pre-order', 'in_stock', 'out of stock', 'in stock'],
+        tags:                   ['tag', 'keyword'],
+      };
+
+      // Determine which fields were saved with real values
+      const savedFields: Record<string, any> = {
+        gtin:                   productData.variants?.[0]?.barcode,
+        brand,
+        title,
+        description,
+        meta_description,
+        handle,
+        google_product_category,
+        color,
+        material,
+        condition,
+        availability,
+        tags:                   tags?.length ? tags : null,
+      };
+
+      for (const [field, keywords] of Object.entries(fieldMap)) {
+        const val = savedFields[field];
+        const hasValue = val !== undefined && val !== null && String(val).trim() !== '' && String(val).trim() !== 'null';
+        if (hasValue) {
+          savedFieldKeywords.push(keywords);
+        }
+      }
+
+      const isResolved = (text: string): boolean => {
+        const lower = text.toLowerCase();
+        return savedFieldKeywords.some(keywords =>
+          keywords.some(kw => lower.includes(kw))
+        );
+      };
+
+      remainingIssues = currentIssues.filter(issue => !isResolved(issue.message));
+      remainingSuggestions = currentSuggestions.filter(s => !isResolved(s.suggestion));
+
+      await prisma.productAICheck.update({
+        where: { productId: id },
+        data: {
+          autoFixCompleted: true,
+          result: {
+            ...existingResult,
+            issues: remainingIssues,
+            suggestions_for_sales_improvement: remainingSuggestions,
+          },
+        },
+      });
+    }
+  } catch (e) {
+    console.warn(`Could not update AI Check status for product ${id}:`, e);
+  }
+
+  return json({ success: true, remainingIssues, remainingSuggestions });
 }

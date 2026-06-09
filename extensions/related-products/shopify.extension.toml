@@ -1,0 +1,7 @@
+api_version = "2024-07"
+uid = "9586313f-cd56-7a92-c621-d3ea8d110c354fa12c3d"
+
+[[extensions]]
+name = "ShopFlix Related Products"
+handle = "related-products"
+type = "theme"

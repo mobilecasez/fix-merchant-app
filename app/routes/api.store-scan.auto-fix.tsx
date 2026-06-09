@@ -4,12 +4,18 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import { incrementProductUsage, getOrCreateSubscription, getProductsUsed, getEffectiveProductLimit } from "../utils/billing.server";
 import prisma from "../db.server";
 
-// ── Theme injection via Admin GraphQL ─────────────────────────────────────────
-// Uses admin.graphql() (same authenticated client as menu creation) — no REST
-// accessToken needed, so write_themes scope gaps are never an issue.
+// ── Theme injection via Shopify REST API ──────────────────────────────────────
+// Theme file operations (read/write) are REST-only in Shopify API 2024-07.
+// The stored offline access token has write_themes scope after app install.
 
 const SNIPPET_KEY = "snippets/shopflix-policy-links.liquid";
 const SNIPPET_TAG = "{% render 'shopflix-policy-links' %}";
+
+function shopifyFetch(url: string, opts: RequestInit = {}, timeoutMs = 20000): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  return fetch(url, { ...opts, signal: controller.signal }).finally(() => clearTimeout(timer));
+}
 
 function buildComplianceLinkSnippet(menuHandle: string, heading: string): string {
   return `{%- comment -%}ShopFlix AI — GMC Compliance Links. Menu: ${menuHandle}{%- endcomment -%}
@@ -28,113 +34,160 @@ function buildComplianceLinkSnippet(menuHandle: string, heading: string): string
 {%- endif -%}`;
 }
 
-/** Get the main theme GID via GraphQL */
-async function getMainThemeGid(admin: any): Promise<string | null> {
+async function getThemeId(shop: string, accessToken: string): Promise<string | null> {
   try {
-    const res = await admin.graphql(`#graphql
-      query getMainTheme {
-        themes(first: 10) {
-          nodes { id role }
-        }
-      }
-    `);
+    const res = await shopifyFetch(
+      `https://${shop}/admin/api/2024-07/themes.json?role=main`,
+      { headers: { "X-Shopify-Access-Token": accessToken } }
+    );
+    if (!res.ok) return null;
     const data = await res.json();
-    const main = (data?.data?.themes?.nodes || []).find((t: any) => t.role === "MAIN");
-    return main?.id || null;
-  } catch (err: any) {
-    console.warn("[theme] getMainThemeGid failed:", err.message);
-    return null;
-  }
+    const main = (data.themes || []).find((t: any) => t.role === "main");
+    return main ? String(main.id) : null;
+  } catch { return null; }
 }
 
-/** Read a theme file body via GraphQL */
-async function readThemeFileGql(admin: any, themeGid: string, filename: string): Promise<string | null> {
+async function readThemeAsset(shop: string, accessToken: string, themeId: string, key: string): Promise<string | null> {
   try {
-    const res = await admin.graphql(`#graphql
-      query getThemeFile($themeId: ID!, $filenames: [String!]!) {
-        theme(id: $themeId) {
-          files(filenames: $filenames, first: 1) {
-            nodes {
-              filename
-              body { ... on OnlineStoreThemeFileBodyText { content } }
-            }
-            userErrors { filename message }
-          }
-        }
-      }
-    `, { variables: { themeId: themeGid, filenames: [filename] } });
+    const res = await shopifyFetch(
+      `https://${shop}/admin/api/2024-07/themes/${themeId}/assets.json?asset[key]=${encodeURIComponent(key)}`,
+      { headers: { "X-Shopify-Access-Token": accessToken } }
+    );
+    if (!res.ok) return null;
     const data = await res.json();
-    return data?.data?.theme?.files?.nodes?.[0]?.body?.content ?? null;
-  } catch (err: any) {
-    console.warn(`[theme] readThemeFileGql(${filename}) failed:`, err.message);
-    return null;
-  }
+    return data?.asset?.value || null;
+  } catch { return null; }
 }
 
-/** Write/overwrite a theme file via GraphQL */
-async function writeThemeFileGql(admin: any, themeGid: string, filename: string, content: string): Promise<boolean> {
+async function writeThemeAsset(shop: string, accessToken: string, themeId: string, key: string, value: string): Promise<string | null> {
   try {
-    const res = await admin.graphql(`#graphql
-      mutation upsertThemeFile($themeId: ID!, $files: [OnlineStoreThemeFilesUpsertFileInput!]!) {
-        onlineStoreThemeFilesUpsert(themeId: $themeId, files: $files) {
-          upsertedThemeFiles { filename }
-          userErrors { filename message }
-        }
+    const res = await shopifyFetch(
+      `https://${shop}/admin/api/2024-07/themes/${themeId}/assets.json`,
+      {
+        method: "PUT",
+        headers: { "X-Shopify-Access-Token": accessToken, "Content-Type": "application/json" },
+        body: JSON.stringify({ asset: { key, value } }),
       }
-    `, { variables: {
-      themeId: themeGid,
-      files: [{ filename, body: content }],
-    }});
-    const data = await res.json();
-    const errors = data?.data?.onlineStoreThemeFilesUpsert?.userErrors;
-    if (errors?.length) {
-      console.warn(`[theme] writeThemeFileGql(${filename}) userErrors:`, JSON.stringify(errors));
-      return false;
+    );
+    if (!res.ok) {
+      const body = await res.text();
+      return `HTTP ${res.status}: ${body.substring(0, 200)}`;
     }
-    console.log(`[theme] wrote ${filename} via GraphQL`);
-    return true;
-  } catch (err: any) {
-    console.warn(`[theme] writeThemeFileGql(${filename}) failed:`, err.message);
-    return false;
-  }
+    return null; // success
+  } catch (err: any) { return `Exception: ${err.message}`; }
 }
 
 /**
- * Inject compliance links into the live theme using Admin GraphQL only.
- * 1. Write snippets/shopflix-policy-links.liquid
- * 2. Patch layout/theme.liquid to render the snippet before </body>
- * Works on every theme; no REST accessToken required.
+ * Pre-configure the footer block in sections/footer-group.json (or settings_data.json).
+ * On success the Theme Editor will show the block already added — user just clicks Save.
+ * Returns { themeId, sectionFileKey } on success so the caller can build a precise editor URL.
  */
-async function addFooterBlock(
-  admin: any,
-  _blockId: string,
+async function preConfigureFooterBlock(
+  shop: string,
+  accessToken: string,
+  blockId: string,
   menuHandle: string,
   heading: string
-): Promise<boolean> {
-  const themeGid = await getMainThemeGid(admin);
-  if (!themeGid) { console.warn("[theme] Could not resolve main theme GID"); return false; }
+): Promise<{ themeId: string; sectionFileKey: string } | null> {
+  const themeId = await getThemeId(shop, accessToken);
+  if (!themeId) return null;
 
-  // Step 1 — write the snippet
-  const snippetOk = await writeThemeFileGql(admin, themeGid, SNIPPET_KEY, buildComplianceLinkSnippet(menuHandle, heading));
-  if (!snippetOk) return false;
+  const candidates = ["sections/footer-group.json", "config/settings_data.json"];
+  for (const assetKey of candidates) {
+    const raw = await readThemeAsset(shop, accessToken, themeId, assetKey);
+    if (!raw) continue;
+    let parsed: any;
+    try { parsed = JSON.parse(raw); } catch { continue; }
 
-  // Step 2 — patch theme.liquid (idempotent)
-  const themeLiquid = await readThemeFileGql(admin, themeGid, "layout/theme.liquid");
-  if (!themeLiquid) { console.warn("[theme] Could not read layout/theme.liquid"); return false; }
+    const sectionsRoot = parsed.sections || parsed.current?.sections;
+    if (!sectionsRoot) continue;
 
-  if (themeLiquid.includes(SNIPPET_TAG)) {
-    console.log("[theme] Snippet tag already in theme.liquid — skipping");
-    return true;
+    const footerKey = Object.keys(sectionsRoot).find(
+      (k: string) => sectionsRoot[k]?.type === "footer"
+    );
+    if (!footerKey) continue;
+
+    const footerSection = sectionsRoot[footerKey];
+    if (!footerSection.blocks) footerSection.blocks = {};
+    if (!footerSection.block_order) footerSection.block_order = [];
+
+    // Already exists — idempotent
+    const alreadyHas = Object.values(footerSection.blocks).some(
+      (b: any) => b?.settings?.menu === menuHandle
+    );
+    if (alreadyHas) {
+      // Derive the section file key (e.g. "footer-group" from "sections/footer-group.json")
+      const sectionFileKey = assetKey.replace("sections/", "").replace(".json", "");
+      return { themeId, sectionFileKey };
+    }
+
+    footerSection.blocks[blockId] = {
+      type: "link_list",
+      settings: { heading, menu: menuHandle },
+    };
+    footerSection.block_order.push(blockId);
+
+    const err = await writeThemeAsset(shop, accessToken, themeId, assetKey, JSON.stringify(parsed, null, 2));
+    if (!err) {
+      const sectionFileKey = assetKey.replace("sections/", "").replace(".json", "");
+      return { themeId, sectionFileKey };
+    }
+  }
+  return null;
+}
+
+/**
+ * Main footer injection.
+ * Strategy 1: Full Liquid injection (snippet + theme.liquid patch) — fully automatic.
+ * Strategy 2: Pre-configure footer-group.json + return Theme Editor URL — user clicks Save.
+ */
+async function addFooterBlock(
+  shop: string,
+  accessToken: string,
+  blockId: string,
+  menuHandle: string,
+  heading: string
+): Promise<{ ok: boolean; themeEditorUrl?: string; preConfigured?: boolean; error?: string }> {
+  const themeId = await getThemeId(shop, accessToken);
+  if (!themeId) return { ok: false, error: `Could not get theme ID. tokenLen=${accessToken.length}` };
+
+  // ── Strategy 1: full Liquid injection ───────────────────────────────────────
+  const snippetErr = await writeThemeAsset(shop, accessToken, themeId, SNIPPET_KEY, buildComplianceLinkSnippet(menuHandle, heading));
+  if (!snippetErr) {
+    const themeLiquid = await readThemeAsset(shop, accessToken, themeId, "layout/theme.liquid");
+    if (themeLiquid) {
+      if (!themeLiquid.includes(SNIPPET_TAG)) {
+        const updated = themeLiquid.includes("</body>")
+          ? themeLiquid.replace("</body>", `  ${SNIPPET_TAG}\n</body>`)
+          : themeLiquid + `\n${SNIPPET_TAG}\n`;
+        const writeErr = await writeThemeAsset(shop, accessToken, themeId, "layout/theme.liquid", updated);
+        if (!writeErr) return { ok: true }; // ✅ fully automatic
+      } else {
+        return { ok: true }; // already injected
+      }
+    }
   }
 
-  let updated = themeLiquid;
-  if (updated.includes("</body>")) {
-    updated = updated.replace("</body>", `  ${SNIPPET_TAG}\n</body>`);
+  // ── Strategy 2: pre-configure footer-group.json + deep-link Theme Editor ────
+  const configured = await preConfigureFooterBlock(shop, accessToken, blockId, menuHandle, heading);
+
+  // Build a deep link that opens the Theme Editor directly at the footer section.
+  // The sectionFileKey (e.g. "footer-group") maps to the section in the left panel.
+  let editorUrl: string;
+  if (configured) {
+    // Deep link: opens editor → footer section already visible with our block
+    editorUrl = `https://${shop}/admin/themes/${configured.themeId}/editor?context=section&template=index&section=${configured.sectionFileKey}`;
   } else {
-    updated += `\n${SNIPPET_TAG}\n`;
+    // Fallback: open the general Theme Editor
+    editorUrl = `https://${shop}/admin/themes/current/editor`;
   }
 
-  return writeThemeFileGql(admin, themeGid, "layout/theme.liquid", updated);
+  return {
+    ok: false,
+    preConfigured: !!configured,
+    themeEditorUrl: editorUrl,
+    error: snippetErr || "Theme file write restricted on this store",
+  };
 }
 
 // Credit costs per fix type
@@ -164,6 +217,39 @@ const PAGE_META_MAP: Record<string, { title: string; handle: string }> = {
   about_page:   { title: "About Us",   handle: "about-us" },
 };
 
+// Country → international dialing code. Used to prefix the phone number in
+// contact info when the merchant hasn't already entered it in +XX format.
+const COUNTRY_DIAL: Record<string, string> = {
+  "United States": "+1", "United Kingdom": "+44", "Canada": "+1", "Australia": "+61",
+  "India": "+91", "Germany": "+49", "France": "+33", "Spain": "+34", "Italy": "+39",
+  "Netherlands": "+31", "Ireland": "+353", "New Zealand": "+64", "Singapore": "+65",
+  "United Arab Emirates": "+971", "Saudi Arabia": "+966", "South Africa": "+27",
+  "Brazil": "+55", "Mexico": "+52", "Japan": "+81", "China": "+86", "Hong Kong": "+852",
+  "Malaysia": "+60", "Philippines": "+63", "Indonesia": "+62", "Pakistan": "+92",
+  "Bangladesh": "+880", "Nigeria": "+234", "Sweden": "+46", "Norway": "+47",
+  "Denmark": "+45", "Switzerland": "+41", "Belgium": "+32", "Portugal": "+351", "Poland": "+48",
+};
+
+/** Prefix the dialing code for the given country if the phone isn't already in +XX format. */
+function normalizePhone(phone: string | undefined, country: string | undefined): string {
+  const p = (phone || "").trim();
+  if (!p) return "";
+  if (p.startsWith("+")) return p; // already international
+  const dial = COUNTRY_DIAL[(country || "").trim()];
+  if (!dial) return p;
+  // Strip a leading 0 (national trunk prefix) before adding the country code.
+  const local = p.replace(/^0+/, "");
+  return `${dial} ${local}`.trim();
+}
+
+/** Build the full address line including country. */
+function fullAddress(address: string | undefined, country: string | undefined): string {
+  const a = (address || "").trim();
+  const c = (country || "").trim();
+  if (a && c && !a.toLowerCase().includes(c.toLowerCase())) return `${a}, ${c}`;
+  return a || c;
+}
+
 async function generateContent(
   autoFixType: string,
   issueDescription: string,
@@ -185,16 +271,19 @@ async function generateContent(
   // Build a store info block from provided details (no placeholders if not provided)
   const sd = storeDetails || {};
   const effectiveStoreName = sd.storeName || storeName;
+  const normalizedPhone = normalizePhone(sd.contactPhone, sd.country);
+  const addressWithCountry = fullAddress(sd.businessAddress, sd.country);
   const storeInfoLines = [
     `- Store name: ${effectiveStoreName}`,
     `- Store URL: ${storeUrl}`,
     sd.contactEmail    ? `- Contact email: ${sd.contactEmail}`    : null,
-    sd.contactPhone    ? `- Contact phone: ${sd.contactPhone}`    : null,
-    sd.businessAddress ? `- Business address: ${sd.businessAddress}` : null,
+    normalizedPhone    ? `- Contact phone: ${normalizedPhone}`    : null,
+    addressWithCountry ? `- Business address: ${addressWithCountry}` : null,
+    sd.country         ? `- Country: ${sd.country}`              : null,
     sd.returnWindowDays ? `- Return window: ${sd.returnWindowDays} days` : null,
     sd.shippingEstimate ? `- Estimated delivery: ${sd.shippingEstimate}` : null,
     sd.shippingCost    ? `- Shipping cost policy: ${sd.shippingCost}`  : null,
-    sd.aboutDescription ? `- About the store: ${sd.aboutDescription}` : null,
+    sd.aboutDescription ? `- What the store sells / about: ${sd.aboutDescription}` : null,
   ].filter(Boolean).join("\n");
 
   if (isPolicyPage) {
@@ -228,29 +317,56 @@ Requirements:
 
 Return ONLY the HTML content, no explanation.`;
   } else if (isCustomPage) {
-    const pageNames: Record<string, string> = {
-      contact_page: "Contact Us",
-      about_page: "About Us",
-    };
-    const pageName = pageNames[autoFixType] || "Page";
+    const designNote = `
+DESIGN & FORMATTING RULES (produce a polished, well-organised page — not a plain wall of text):
+- Output clean, self-contained HTML using inline styles so it looks designed inside any Shopify theme.
+- Wrap everything in a single container: <div style="max-width:900px;margin:0 auto;line-height:1.7;color:#333;">…</div>
+- Use styled section headings: <h2 style="font-size:24px;margin:32px 0 12px;color:#1a1a1a;">…</h2> and <h3 style="font-size:18px;margin:20px 0 8px;color:#1a1a1a;">…</h3>
+- Use <p style="margin:0 0 16px;font-size:16px;"> for paragraphs.
+- Use cards/callouts where helpful, e.g. <div style="background:#f7f9fb;border:1px solid #e5e7eb;border-radius:10px;padding:18px 22px;margin:14px 0;">…</div>
+- Use <ul style="padding-left:20px;margin:0 0 16px;"> with <li style="margin-bottom:8px;"> for lists.
+- Do NOT include <html>, <head>, <body>, <style>, or markdown — only the inner HTML body.
+- Never invent specifics (exact founding year, employee count, awards) that aren't given; write warm, credible copy instead.
+- Use only the real store details provided. If a contact value is missing, omit just that line — never write a placeholder.`;
 
-    prompt = `You are a professional copywriter for e-commerce stores.
-
-Write compelling HTML content for a ${pageName} page using ONLY the real store details provided below. Do NOT use placeholders — use the actual values given. If a value is not provided, omit that detail entirely.
+    if (autoFixType === "contact_page") {
+      prompt = `You are a senior e-commerce conversion copywriter and web designer. Create a complete, professional, well-designed "Contact Us" page in HTML for the store below.
 
 Store details:
 ${storeInfoLines}
+${designNote}
 
-Requirements:
-- Professional, trust-building content using real store details only
-- For Contact Us: show actual email, phone, and address if provided; include response time commitment
-- For About Us: write a genuine brand story using the store description provided; include mission and values
-- Use plain HTML with <h2>, <h3>, <p>, <ul>, <li> tags (no markdown)
-- Do NOT include <html>, <head>, or <body> tags — only the content body
-- 300-500 words
-- Friendly but professional tone
+Build these sections:
+1. A friendly hero intro (1 short heading + 1–2 sentence welcome that reassures customers we're easy to reach and happy to help).
+2. A "Get in Touch" card grid showing each AVAILABLE contact method as its own styled card with an emoji icon and clickable link:
+   - ✉️ Email → <a href="mailto:EMAIL">EMAIL</a>
+   - 📞 Phone → <a href="tel:PHONE">PHONE</a> (use the exact phone provided, already including country code)
+   - 📍 Address → the full business address including country
+   Only include methods that are actually provided.
+3. A "Customer Support Hours" section with reasonable general hours (e.g. Monday–Friday, 9am–6pm) and a clear response-time commitment (e.g. "We reply to all emails within 24 hours").
+4. A short closing line inviting the customer to reach out, mentioning what the store sells if an about/description was provided.
 
+Tone: warm, professional, trustworthy. Length: 250–450 words of real copy.
 Return ONLY the HTML content, no explanation.`;
+    } else {
+      // about_page
+      prompt = `You are a senior brand storyteller and web designer. Create a complete, engaging, well-designed "About Us" page in HTML for the store below. Take the brief description of what the store sells and EXPAND it into a genuine, compelling brand story — do not just restate it.
+
+Store details:
+${storeInfoLines}
+${designNote}
+
+Build these sections (use the store's product description to make every section specific and authentic):
+1. A compelling hero heading + an opening paragraph introducing the brand and what it stands for.
+2. "Our Story" — a warm narrative about why the store exists and the problem it solves for customers (inferred credibly from what it sells; no invented facts/dates).
+3. "What We Offer" — a styled bullet list or card grid describing the product range and its benefits, based on the description provided.
+4. "Why Choose Us" — 3–4 trust-building points (e.g. quality, customer care, secure shopping, fast support) as styled cards or a list.
+5. "Our Mission" — a concise mission statement.
+6. A closing call-to-invite with the available contact details (email/phone/address) so customers can reach out.
+
+Tone: authentic, customer-focused, professional. Length: 400–650 words of real, specific copy.
+Return ONLY the HTML content, no explanation.`;
+    }
   } else {
     // page_meta — generate a short meta description
     prompt = `Write a compelling, SEO-optimized meta description for a Shopify store page.
@@ -351,6 +467,7 @@ export async function action({ request }: ActionFunctionArgs) {
   // Apply the fix via Shopify Admin GraphQL
   let fixApplied = false;
   let verifyUrl = storeUrl;
+  let partialFixPayload: Record<string, any> | null = null;
 
   try {
     if (POLICY_PAGE_MAP[autoFixType]) {
@@ -576,33 +693,31 @@ export async function action({ request }: ActionFunctionArgs) {
       }
 
       // ── Step 2: Inject a link_list block into the theme footer ───────────────
-      const themeInjected = await addFooterBlock(admin, "shopflix-policy-block", POLICY_MENU_HANDLE, "Policies");
+      const footerResult = await addFooterBlock(session.shop, accessToken, "shopflix-policy-block", POLICY_MENU_HANDLE, "Policies");
 
       fixApplied = true;
       verifyUrl = `${storeUrl}/`;
 
-      // If theme injection failed (e.g. token lacks write_themes scope), surface
-      // manual instructions + a re-auth URL so the merchant can fix it in one click.
-      if (!themeInjected) {
-        const themeEditorUrl = `https://${session.shop}/admin/themes/current/editor`;
-        const reauthUrl = `/auth?shop=${session.shop}`;
-        return json({
-          success: true,
-          fixApplied: true,
-          creditsCharged: creditCost,
-          verifyUrl,
+      // Store partial fix payload — do NOT return early so credits and scan
+      // record are always saved, keeping fixed state across page refreshes.
+      if (!footerResult.ok) {
+        partialFixPayload = {
           partialFix: true,
-          reauthUrl,
-          themeEditorUrl,
-        });
+          preConfigured: footerResult.preConfigured ?? false,
+          themeEditorUrl: footerResult.themeEditorUrl,
+          debugError: footerResult.error,
+          menuLabel: "Policy Links",
+        };
       }
 
     } else if (autoFixType === "business_contact") {
       const sd = storeDetails || {};
       const effectiveStoreName = sd.storeName || storeName;
       const contactEmail = sd.contactEmail || "";
-      const contactPhone = sd.contactPhone || "";
-      const businessAddress = sd.businessAddress || "";
+      // Phone gets the country dial code prefixed when not already international.
+      const contactPhone = normalizePhone(sd.contactPhone, sd.country);
+      // Address always includes the country so the footer shows a complete address.
+      const businessAddress = fullAddress(sd.businessAddress, sd.country);
 
       // ── Step 1: Regenerate ALL existing policy & info pages with correct details
       // This fixes conflicting/incorrect business identity across all pages at once.
@@ -684,8 +799,12 @@ export async function action({ request }: ActionFunctionArgs) {
       }));
 
       // ── Step 2: Add contact info to the footer via settings_data.json ─────────
-      // Create a dedicated "Contact" nav menu and add it as a link_list block
+      // Create a dedicated "Contact Information" nav menu and add it as a
+      // link_list block. The menu TITLE must match the label the merchant is told
+      // to look for in the Theme Editor (menuLabel below) — otherwise the Menu
+      // picker shows the store name instead of "Contact Information".
       const CONTACT_MENU_HANDLE = "shopflix-contact-info";
+      const CONTACT_MENU_TITLE = "Contact Information";
       const contactMenuItems = [
         contactEmail    ? { title: `Email: ${contactEmail}`,       url: `mailto:${contactEmail}`,    type: "HTTP" } : null,
         contactPhone    ? { title: `Phone: ${contactPhone}`,       url: `tel:${contactPhone.replace(/\s/g,"")}`, type: "HTTP" } : null,
@@ -706,20 +825,34 @@ export async function action({ request }: ActionFunctionArgs) {
           mutation menuUpdate($id: ID!, $handle: String!, $title: String!, $items: [MenuItemUpdateInput!]!) {
             menuUpdate(id: $id, handle: $handle, title: $title, items: $items) { userErrors { field message } }
           }
-        `, { variables: { id: existingContactMenu.id, handle: CONTACT_MENU_HANDLE, title: effectiveStoreName, items: contactMenuItems.map(i => ({ title: i.title, url: i.url, type: i.type })) } });
+        `, { variables: { id: existingContactMenu.id, handle: CONTACT_MENU_HANDLE, title: CONTACT_MENU_TITLE, items: contactMenuItems.map(i => ({ title: i.title, url: i.url, type: i.type })) } });
       } else {
         await admin.graphql(`#graphql
           mutation menuCreate($title: String!, $handle: String!, $items: [MenuItemCreateInput!]!) {
             menuCreate(title: $title, handle: $handle, items: $items) { userErrors { field message } }
           }
-        `, { variables: { title: effectiveStoreName, handle: CONTACT_MENU_HANDLE, items: contactMenuItems } });
+        `, { variables: { title: CONTACT_MENU_TITLE, handle: CONTACT_MENU_HANDLE, items: contactMenuItems } });
       }
 
-      // Inject link_list block into the theme footer
-      await addFooterBlock(admin, "shopflix-contact-block", CONTACT_MENU_HANDLE, effectiveStoreName);
+      // Inject link_list block into the theme footer (same mechanism as
+      // footer_links). The footer heading + menuLabel must match CONTACT_MENU_TITLE
+      // so the merchant finds the right menu in the Theme Editor.
+      const contactFooterResult = await addFooterBlock(
+        session.shop, accessToken, "shopflix-contact-block", CONTACT_MENU_HANDLE, CONTACT_MENU_TITLE
+      ).catch(() => ({ ok: false } as { ok: boolean; themeEditorUrl?: string; preConfigured?: boolean; error?: string }));
 
       fixApplied = true;
-      verifyUrl = `${storeUrl}/pages/about-us`;
+      verifyUrl = `${storeUrl}/`;
+
+      if (!contactFooterResult.ok) {
+        partialFixPayload = {
+          partialFix: true,
+          preConfigured: contactFooterResult.preConfigured ?? false,
+          themeEditorUrl: contactFooterResult.themeEditorUrl,
+          debugError: contactFooterResult.error,
+          menuLabel: CONTACT_MENU_TITLE,
+        };
+      }
     }
   } catch (err: any) {
     console.error("[auto-fix] Shopify API error:", err);
@@ -736,14 +869,21 @@ export async function action({ request }: ActionFunctionArgs) {
     // Fix was applied but credits couldn't be deducted — log but don't fail
   }
 
-  // Update scan record if scanId provided
+  // Update scan record if scanId provided — always, even for partial fixes,
+  // so the fixed/partial state survives page refreshes.
   if (scanId) {
     try {
       const scan = await (prisma as any).storeScan.findUnique({ where: { id: scanId } });
       if (scan) {
         const result = (scan.result as any) || {};
         const appliedFixes = result.applied_fixes || [];
-        appliedFixes.push({ autoFixType, issueDescription, appliedAt: new Date().toISOString() });
+        appliedFixes.push({
+          autoFixType,
+          issueDescription,
+          appliedAt: new Date().toISOString(),
+          partial: !!partialFixPayload,
+          ...(partialFixPayload ?? {}),
+        });
         await (prisma as any).storeScan.update({
           where: { id: scanId },
           data: { result: { ...result, applied_fixes: appliedFixes } },
@@ -759,5 +899,6 @@ export async function action({ request }: ActionFunctionArgs) {
     fixApplied,
     creditsCharged: creditCost,
     verifyUrl,
+    ...(partialFixPayload ?? {}),
   });
 }

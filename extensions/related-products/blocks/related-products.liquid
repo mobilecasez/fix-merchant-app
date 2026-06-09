@@ -1,0 +1,83 @@
+{%- comment -%}
+  ShopFlix AI — Related / Complementary Products app block.
+  Reads the product metafield custom.complementary_products (list.product_reference)
+  set by the ShopFlix Catalog & Merchandising → Cross-Sell Engine, and renders the
+  matched products. Theme-check clean (image_tag auto-emits width/height).
+{%- endcomment -%}
+
+{%- liquid
+  assign complementary = product.metafields.custom.complementary_products.value
+  assign max = block.settings.products_to_show | default: 4
+-%}
+
+{%- comment -%} An empty list metafield evaluates to blank, so this guard also skips no-match products {%- endcomment -%}
+{%- if complementary != blank -%}
+  <div class="shopflix-related" {{ block.shopify_attributes }}>
+    {%- if block.settings.heading != blank -%}
+      <h2 class="shopflix-related__heading">{{ block.settings.heading }}</h2>
+    {%- endif -%}
+
+    <ul class="shopflix-related__grid" role="list">
+      {%- for item in complementary limit: max -%}
+        {%- comment -%} Handle both typed (item is product) and wrapped (item.product) references {%- endcomment -%}
+        {%- assign ref = item.product | default: item -%}
+        {%- if ref != blank and ref.url != blank -%}
+          <li class="shopflix-related__item">
+            <a href="{{ ref.url }}" class="shopflix-related__link">
+              {%- if ref.featured_image -%}
+                <div class="shopflix-related__media">
+                  {{
+                    ref.featured_image
+                    | image_url: width: 400
+                    | image_tag:
+                        loading: 'lazy',
+                        widths: '180, 280, 400',
+                        sizes: '(min-width: 750px) 200px, 45vw',
+                        alt: ref.featured_image.alt | default: ref.title,
+                        class: 'shopflix-related__image'
+                  }}
+                </div>
+              {%- endif -%}
+              <span class="shopflix-related__title">{{ ref.title }}</span>
+              <span class="shopflix-related__price">
+                {%- if ref.price_varies -%}
+                  {{ 'products.product.from_price_html' | t: price: ref.price | money }}
+                {%- else -%}
+                  {{ ref.price | money }}
+                {%- endif -%}
+              </span>
+            </a>
+          </li>
+        {%- endif -%}
+      {%- endfor -%}
+    </ul>
+  </div>
+{%- endif -%}
+
+{% schema %}
+{
+  "name": "Related Products",
+  "target": "section",
+  "stylesheet": "related-products.css",
+  "enabled_on": {
+    "templates": ["product"]
+  },
+  "settings": [
+    {
+      "type": "text",
+      "id": "heading",
+      "label": "Heading",
+      "default": "You may also like"
+    },
+    {
+      "type": "range",
+      "id": "products_to_show",
+      "label": "Maximum products to show",
+      "min": 2,
+      "max": 12,
+      "step": 1,
+      "default": 4
+    }
+  ]
+}
+{% endschema %}

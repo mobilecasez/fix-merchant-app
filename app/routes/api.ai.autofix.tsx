@@ -3,18 +3,20 @@ import { authenticate } from "../shopify.server";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { retryOperation } from "../utils/retry.js";
 import { convertMarkdownToHtml } from "../utils/markdown.js";
+import { incrementProductUsage } from "../utils/billing.server";
 
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_GEMINI_API_KEY!);
 const IS_DEVELOPMENT = process.env.NODE_ENV === 'development';
 
 export async function action({ request }: ActionFunctionArgs) {
-  const clonedRequest = request.clone();
-  const { admin, session } = await authenticate.admin(clonedRequest);
+  // Clone for body reading first, authenticate with the original to avoid body-disturbed errors.
+  const bodyClone = request.clone();
+  const { admin, session } = await authenticate.admin(request);
   if (!session) {
     return json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { original_product_data, gemini_analysis } = await request.json();
+  const { original_product_data, gemini_analysis } = await bodyClone.json();
 
   if (!original_product_data) {
     return json({ error: "Original product data is required." }, { status: 400 });
@@ -39,6 +41,9 @@ export async function action({ request }: ActionFunctionArgs) {
 
   Your goal is to use this information to generate a new, optimized version of the product's data.
 
+  **ABSOLUTE PROHIBITION — Apply to ALL output fields:**
+  -   NEVER use any of the following phrases or their variants anywhere in the title, description, meta description, tags, or any other field: "Pre-order today", "Pre-order now", "Order now", "Pre-order yours", "Pre-order today and", "Buy now", "Shop now", "Limited offer", "Don't miss out", "Act now". These are promotional calls-to-action and are strictly forbidden in any output field.
+
   **Specific Instructions for Rewriting and Analysis:**
 
   **Conditional Logic:**
@@ -51,45 +56,47 @@ export async function action({ request }: ActionFunctionArgs) {
   **Rewriting Guidelines for Problematic Fields (Apply ONLY if a field needs improvement):**
   -   **Rewrite the Title:**
       -   The new title must be SEO-friendly, descriptive, and engaging.
-      -   Incorporate relevant keywords and accurately reflect the product.
-      -   **Strictly adhere to Google Merchant Center guidelines:** The title's length must be between 60 and 70 characters for optimal SEO display. Avoid keyword stuffing, excessive capitalization, and promotional text.
-      -   **Crucially, the title must include essential product attributes such as brand, product type, model, color, and minimum key features** to ensure uniqueness, prevent duplicate issues, and enhance specificity for search engines and Google Merchant Center.
+      -   **Brand in Title:** If the analysis identifies a missing brand name and the brand is known (from the \`brand\` field or product context), prepend the brand name to the title (e.g., "Apple iPhone 17 Pro Max 2TB Cosmic Orange").
+      -   **Crucial Length Rule:** The title must be under 70 characters if possible. If adding the brand would push it over 70 characters, include the brand anyway — staying under 70 is a goal, not a hard limit.
+      -   If the original title is already concise and accurate, leave it alone.
   -   **Rewrite the Description:**
       -   The new description must be highly detailed, compelling, and very well-structured.
-      -   Use clear and logical headings (e.g., \`### Key Features\`, \`### Benefits\`, \`### What's Included\`, \`### Compatibility\`, \`### Why Choose This Product?\`).
-      -   Utilize bullet points (\`*\`) for lists of features, benefits, or specifications.
-      -   Break down text into concise, readable paragraphs.
-      -   Highlight key features, benefits, use cases, and include a clear, persuasive call-to-action.
-      -   Ensure the language is persuasive and addresses all relevant issues raised in the \`suggestions_for_sales_improvement\` from the analysis report.
-      -   **Use Markdown for all formatting** (e.g., \`**bold**\`, \`*italic*\`, \`### heading\`, \`* bullet points\`).
-      -   Minimum recommended length: 150 words for comprehensive SEO.
+      -   **ALWAYS start the description with the exact bold heading \`**About This Item**\` on the first line**, followed by a blank line, then the introductory paragraph.
+      -   Use clear and logical headings (e.g., \`### Key Features\`, \`### Benefits\`, \`### What's Included\`) for subsequent sections.
+      -   Utilize bullet points (\`*\`) for lists of features or specifications.
+      -   **Remove ALL Promotional Text:** Strip any promotional language, calls-to-action, urgency phrases, or non-factual claims from the description. This includes (but is not limited to): "Pre-order today", "Pre-order now", "Pre-order yours", "Order now", "Buy now", "Shop now", "Don't miss out", "Limited offer". Replace any removed text with factual product information.
+      -   Ensure the language is persuasive yet factual and addresses relevant issues.
+      -   **Use Markdown for all formatting**.
   -   **Create a New Handle:**
       -   The new handle (URL slug) must be SEO-friendly.
-      -   It should be lowercase, use hyphens as separators, and contain the most important keywords from the new title.
+      -   It should be lowercase, use hyphens as separators, and contain the most important keywords from the title.
       -   Avoid excessively long handles (ideally under 60 characters).
-      -   **Must include essential product identifiers like brand, model, and color** to ensure uniqueness and SEO relevance.
   -   **Rewrite the Meta Description:**
       -   The new meta description should be a concise summary of the product.
-      -   **Strictly adhere to SEO guidelines:** The meta description's length must be between 150 and 160 characters strictly for optimal search engine results page (SERP) display. It absolutely must not exceed 160 characters.
-      -   It must be unique, compelling, include a primary keyword and a clear call-to-action to encourage clicks from search results.
+      -   **Strictly adhere to SEO guidelines:** The meta description's length must be strictly between 150 and 160 characters.
       -   Must NOT be a direct copy of the product description.
   -   **Determine Google Product Category, Color, Material, and Condition:**
-      -   Based on the product data, determine the most accurate \`google_product_category\`. Use the official Google Product Taxonomy.
-      -   Identify the primary \`color\` of the product.
-      -   Identify the primary \`material\` of the product.
-      -   Determine the \`condition\` of the product (e.g., "new", "used", "refurbished").
+      -   Based on the product data, determine the most accurate \`google_product_category\`.
+      -   Identify the primary \`color\`, \`material\`, and \`condition\` of the product.
   -   **Find the GTIN:**
       -   Based on the original product data and your extensive e-commerce knowledge, attempt to identify the GTIN (Global Trade Item Number) for this product.
-      -   If you find a valid GTIN, include it in the output. If you are unable to find or determine a valid GTIN, set the value to \`null\`. Do not invent a GTIN.
+      -   If you find a valid GTIN, include it in the output. If you are unable to find or determine a valid GTIN, set the value to the original barcode if it exists, or \`null\` if it does not. Do not invent a GTIN. We have a dedicated GTIN Finder tool in the app for the merchant to use later.
   -   **Determine the Brand:**
       -   Based on the product's title and your extensive e-commerce knowledge, identify the brand of the product.
       -   If the brand is clearly identifiable, include it in the output. If you are unable to determine the brand, set the value to \`null\`.
-  -   **Generate Tags:**
-      -   Based on the product's type, brand name, model, and the provided \`existing_tags\`, generate a concise list of highly relevant tags.
-      -   **Crucially, avoid generating tags that are repetitive or too similar to the \`existing_tags\` or to the product's core attributes (size, model, brand, type, color).** Focus on adding new, valuable, and non-redundant tags. 
-      -   Also if there are tags already against that product that covers Size, Model, Brand, Type, Color then dont generate new tags and instead return blank or null for tags, but if the product doesn't have those tags covered or dont have any tags or have very less tags then please do generate the tags covering all those points and send it back.
-      -   These tags should help categorize the product and improve its discoverability.
-      -   Ensure the tags are applicable to all types of products for multiple users.
+  -   **Generate Tags (MANDATORY):**
+      -   You MUST always output a non-empty tags array. Never return null, undefined, or an empty array for tags.
+      -   Always generate tags covering: Brand, Model, Type, Color, Size/Storage (where applicable), and key feature keywords relevant to the product.
+      -   Additionally include any tags from \`existing_tags\` that are still relevant — combine the existing with the new.
+      -   Avoid exact duplicates, but do not skip generating tags just because some attributes already exist.
+      -   Example output for an iPhone: ["Apple", "iPhone 17 Pro Max", "Smartphone", "Cosmic Orange", "2TB", "A19 Pro", "iOS", "5G", "ProMotion Display"]
+  -   **Determine Availability:**
+      -   Use the \`status\` field from the original product data to set the correct Google Merchant Center availability:
+          -   \`"ACTIVE"\` → \`"in_stock"\`
+          -   \`"DRAFT"\` → \`"preorder"\` or \`"out_of_stock"\` depending on context clues in the description
+          -   \`"ARCHIVED"\` → \`"out_of_stock"\`
+      -   If the description mentions "pre-order" or "coming soon", set availability to \`"preorder"\`.
+      -   Output the resolved availability in the \`condition\` field is NOT for this — output it in a separate \`availability\` field in the JSON response.
   -   **Pricing:**
       -   Ensure the new output includes the \`price\` and \`compareAtPrice\` from the original product data.
       -   The \`compareAtPrice\` must be greater than the \`price\` to indicate a sale. This is a critical Google Merchant Center requirement.
@@ -106,7 +113,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
   Output Format:
 
-  Your entire response must be a single JSON object. The object must contain the following keys: id, product_name, title, description, handle, meta_description, gtin, brand, price, compareAtPrice, google_product_category, color, material, condition, tags, and a new object called analysis_summary that contains a list of resolved_issues and a list of pending_issues_for_manual_fix.
+  Your entire response must be a single JSON object. The object must contain the following keys: id, product_name, title, description, handle, meta_description, gtin, brand, price, compareAtPrice, google_product_category, color, material, condition, availability, tags, and a new object called analysis_summary that contains a list of resolved_issues and a list of pending_issues_for_manual_fix.
 
   resolved_issues: An array of strings describing the issues that were successfully addressed by the rewrite.
 
@@ -129,6 +136,7 @@ export async function action({ request }: ActionFunctionArgs) {
   "color": "Black",
   "material": "Plastic",
   "condition": "new",
+  "availability": "in_stock",
   "tags": ["tag1", "tag2", "tag3"], // Example tags
   "analysis_summary": {
   "resolved_issues": [
@@ -168,6 +176,8 @@ export async function action({ request }: ActionFunctionArgs) {
     if (aiResponse.description) {
       aiResponse.description = await convertMarkdownToHtml(aiResponse.description);
     }
+
+    await incrementProductUsage(session.shop);
 
     return json({
       success: true,

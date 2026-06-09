@@ -33,6 +33,8 @@ model AppSettings {
   additionalEnabled        Boolean  @default(false)
   reportEnabled            Boolean  @default(false)
   storeErrorReportEnabled  Boolean  @default(false)
+  merchandisingEnabled     Boolean  @default(true)
+  storeDetails             Json?
   createdAt                DateTime @default(now())
   updatedAt                DateTime @updatedAt
 }
@@ -112,10 +114,25 @@ model ProductAICheck {
   shop      String
   status    String // e.g., 'PENDING', 'COMPLETE', 'ERROR'
   result    Json?
+  aiCheckCompleted Boolean @default(false)
+  autoFixCompleted Boolean @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([productId])
+  @@index([shop])
+}
+
+model StoreScan {
+  id        String   @id @default(uuid())
+  shop      String
+  type      String   @default("BASIC") // BASIC, ADVANCED, DEEP
+  status    String   @default("PENDING") // PENDING, PROCESSING, COMPLETE, FAILED
+  result    Json?
+  error     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   @@index([shop])
 }
 
