@@ -18,13 +18,25 @@ const OWNER_STATUS_CYCLE = ["open", "planned", "in_progress", "done", "declined"
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
+
+  let isAccountOwner = false;
+  let reviewRating = 0;
+  let reviewDismissed = false;
+  let requests: any[] = [];
+  let loadError = false;
+
+  // Data queries are wrapped defensively: a transient Prisma/DB issue (e.g. the
+  // very first request during a deploy cutover before `prisma generate` finishes)
+  // shows a friendly "refresh" state instead of crashing the page.
   try {
     const sessionData = await prisma.session.findFirst({ where: { shop: session.shop } });
-    const isAccountOwner = sessionData?.accountOwner || false;
+    isAccountOwner = sessionData?.accountOwner || false;
 
     const review = await prisma.shopReview.findUnique({ where: { shop: session.shop } }).catch(() => null);
+    reviewRating = review?.rating || 0;
+    reviewDismissed = review?.dismissed || false;
 
-    const requests = await prisma.featureRequest.findMany({
+    const reqs = await prisma.featureRequest.findMany({
       orderBy: [{ votes: { _count: "desc" } }, { createdAt: "desc" }],
       include: { _count: { select: { votes: true } } },
     });
@@ -33,28 +45,22 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       select: { requestId: true },
     });
     const votedSet = new Set(myVotes.map((v) => v.requestId));
-
-    return json({
-      shop: session.shop,
-      isAccountOwner,
-      reviewRating: review?.rating || 0,
-      reviewDismissed: review?.dismissed || false,
-      requests: requests.map((r) => ({
-        id: r.id,
-        title: r.title,
-        description: r.description,
-        status: r.status,
-        voteCount: r._count.votes,
-        votedByMe: votedSet.has(r.id),
-        mine: r.createdByShop === session.shop,
-        createdAt: r.createdAt,
-      })),
-    });
+    requests = reqs.map((r) => ({
+      id: r.id,
+      title: r.title,
+      description: r.description,
+      status: r.status,
+      voteCount: r._count.votes,
+      votedByMe: votedSet.has(r.id),
+      mine: r.createdByShop === session.shop,
+      createdAt: r.createdAt,
+    }));
   } catch (error) {
-    if (error instanceof Response) throw error;
-    const msg = error instanceof Error ? error.message : String(error);
-    throw new Response(`Loader error: ${msg}`, { status: 500 });
+    console.error("[requests] loader data query failed:", error);
+    loadError = true;
   }
+
+  return json({ shop: session.shop, isAccountOwner, reviewRating, reviewDismissed, requests, loadError });
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
@@ -251,7 +257,7 @@ const ownerBtn: React.CSSProperties = {
 };
 
 export default function FeatureRequests() {
-  const { requests, isAccountOwner, reviewRating, reviewDismissed } = useLoaderData<typeof loader>();
+  const { requests, isAccountOwner, reviewRating, reviewDismissed, loadError } = useLoaderData<typeof loader>();
   const revalidator = useRevalidator();
   const checkFetcher = useFetcher<any>();
 
@@ -413,7 +419,13 @@ export default function FeatureRequests() {
             <button type="button" onClick={() => setView("roadmap")} style={tabStyle(view === "roadmap")}>🗺️ Roadmap</button>
           </div>
 
-          {requests.length === 0 ? (
+          {loadError ? (
+            <div className="intro-card" style={{ textAlign: "center" }}>
+              <p className="intro-paragraph" style={{ margin: 0 }}>
+                We couldn't load the requests just now — please refresh the page in a moment. 🔄
+              </p>
+            </div>
+          ) : requests.length === 0 ? (
             <div className="intro-card" style={{ textAlign: "center" }}>
               <p className="intro-paragraph" style={{ margin: 0 }}>No requests yet — be the first to suggest a feature above! 🚀</p>
             </div>
