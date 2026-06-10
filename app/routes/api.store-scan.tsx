@@ -99,9 +99,14 @@ export async function action({ request }: ActionFunctionArgs) {
 
   // ── Intent: start a brand new scan ─────────────────────────────────────────
   const scanType = (formData.get("scanType") as string) || "BASIC";
-  const credits = SCAN_CREDITS[scanType] ?? 10;
 
   const subscription = await getOrCreateSubscription(session.shop);
+
+  // First Basic scan is FREE (one per shop) so every new install can experience
+  // the core value before the paywall — keeps the 2 free credits intact for fixes.
+  const isFreeBasicScan = scanType === "BASIC" && !(subscription as any).freeBasicScanUsed;
+  const credits = isFreeBasicScan ? 0 : (SCAN_CREDITS[scanType] ?? 10);
+
   const used = getProductsUsed(subscription);
   const limit = getEffectiveProductLimit(subscription);
   if (used + credits > limit) {
@@ -213,6 +218,14 @@ export async function action({ request }: ActionFunctionArgs) {
   // ── Charge credits and create the record only after all data fetching succeeds
   for (let i = 0; i < credits; i++) {
     await incrementProductUsage(session.shop);
+  }
+
+  // Consume the one-time free Basic scan so subsequent scans are credit-based.
+  if (isFreeBasicScan) {
+    await prisma.shopSubscription.update({
+      where: { shop: session.shop },
+      data: { freeBasicScanUsed: true } as any,
+    }).catch((e) => console.error("[StoreScan] Could not mark free basic scan used:", e));
   }
 
   const scan = await (prisma as any).storeScan.create({

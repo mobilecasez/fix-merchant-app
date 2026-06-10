@@ -7,6 +7,7 @@ import { useState, useEffect, useCallback, useRef, useMemo, Fragment } from "rea
 import { getOrCreateSubscription, getProductsUsed, getEffectiveProductLimit } from "../utils/billing.server";
 import "../styles/dashboard.css";
 import RichTextEditor from "../components/RichTextEditor";
+import { notifyAiSuccess } from "../utils/ai-success";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
@@ -34,7 +35,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     }
 
     const savedDetails = (settings?.storeDetails as Record<string, string>) || {};
-    return json({ productsUsed, productLimit, latestScan, review, savedDetails });
+    const freeBasicScanAvailable = !(subscription as any).freeBasicScanUsed;
+    return json({ productsUsed, productLimit, latestScan, review, savedDetails, freeBasicScanAvailable });
   } catch (error) {
     if (error instanceof Response) throw error;
     const msg = error instanceof Error ? error.message : String(error);
@@ -3325,6 +3327,7 @@ function SuspensionRecoveryScan({
       setMeta(data);
       setLetterHtml(markdownToHtml(data.result?.appeal_letter || ""));
       setState("done");
+      notifyAiSuccess("suspension-recovery");
     } catch { setState("error"); setErr("Network error. Please try again."); }
   };
 
@@ -3508,7 +3511,7 @@ function SuspensionRecoveryScan({
 }
 
 export default function StoreErrorReport() {
-  const { productsUsed, productLimit, latestScan: initialScan, review: initialReview, savedDetails: initialSavedDetails } = useLoaderData<typeof loader>();
+  const { productsUsed, productLimit, latestScan: initialScan, review: initialReview, savedDetails: initialSavedDetails, freeBasicScanAvailable } = useLoaderData<typeof loader>();
 
   const [scan, setScan] = useState<any>(initialScan);
   const [suspensionOpen, setSuspensionOpen] = useState(false);
@@ -3550,7 +3553,10 @@ export default function StoreErrorReport() {
     const polled = (pollFetcher.data as any).scan;
     if (polled) {
       setScan(polled);
-      if (polled.status === "COMPLETE" || polled.status === "FAILED") stopPolling();
+      if (polled.status === "COMPLETE" || polled.status === "FAILED") {
+        stopPolling();
+        if (polled.status === "COMPLETE") notifyAiSuccess("scan");
+      }
     }
   }, [pollFetcher.data, stopPolling]);
 
@@ -3620,7 +3626,9 @@ export default function StoreErrorReport() {
   }, [detailsFetcher]);
 
   const handleRunScan = useCallback((scanType: string) => {
-    const cost = scanType === "BASIC" ? 10 : scanType === "ADVANCED" ? 20 : scanType === "DEEP" ? 30 : 10;
+    // First Basic scan is free (one per shop) — don't gate it on credits.
+    const isFreeBasic = scanType === "BASIC" && freeBasicScanAvailable;
+    const cost = isFreeBasic ? 0 : scanType === "BASIC" ? 10 : scanType === "ADVANCED" ? 20 : scanType === "DEEP" ? 30 : 10;
     if (credits < cost) {
       setError(`You need at least ${cost} credits. You have ${credits} remaining.`);
       return;
@@ -3991,9 +3999,15 @@ export default function StoreErrorReport() {
                 Google Merchant Center policies. The lightest check to catch instant-suspension risks.
               </p>
               <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
-                <span style={{ fontSize: "12px", fontWeight: 700, color: "#006ECB", background: "#eff6ff", padding: "2px 8px", borderRadius: "4px", border: "1px solid #bfdbfe" }}>
-                  10 Credits
-                </span>
+                {freeBasicScanAvailable ? (
+                  <span style={{ fontSize: "12px", fontWeight: 700, color: "#166534", background: "#f0fdf4", padding: "2px 8px", borderRadius: "4px", border: "1px solid #86efac" }}>
+                    ✨ First scan FREE
+                  </span>
+                ) : (
+                  <span style={{ fontSize: "12px", fontWeight: 700, color: "#006ECB", background: "#eff6ff", padding: "2px 8px", borderRadius: "4px", border: "1px solid #bfdbfe" }}>
+                    10 Credits
+                  </span>
+                )}
                 {isProcessing && (
                   <span style={{ fontSize: "12px", fontWeight: 700, color: "#92400e", background: "#fffbeb", padding: "2px 8px", borderRadius: "4px", border: "1px solid #fcd34d" }}>
                     Processing…

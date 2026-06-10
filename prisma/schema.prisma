@@ -63,6 +63,7 @@ model ShopSubscription {
   billingCycleEnd       DateTime?
   trialProductsUsed Int              @default(0)
   triedPlanIds      String           @default("")
+  freeBasicScanUsed Boolean          @default(false)
   cancelledAt       DateTime?
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
@@ -85,6 +86,7 @@ model ShopReview {
   id        String    @id @default(cuid())
   shop      String    @unique
   rating    Int       @default(0)
+  feedback  String?
   dismissed Boolean   @default(false)
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt

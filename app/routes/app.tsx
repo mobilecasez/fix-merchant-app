@@ -8,6 +8,7 @@ import polarisStyles from "@shopify/polaris/build/esm/styles.css?url";
 
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
+import { RatingPrompt } from "../components/RatingPrompt";
 
 export const links = () => [{ rel: "stylesheet", href: polarisStyles }];
 
@@ -58,16 +59,22 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     include: { plan: true },
   });
 
+  // Review state for the global rating prompt (so already-rated shops aren't re-asked)
+  const review = await prisma.shopReview.findUnique({ where: { shop: session.shop } }).catch(() => null);
+
   return json({
     apiKey: process.env.SHOPIFY_API_KEY || "",
     settings,
     isAccountOwner: sessionData?.accountOwner || false,
     subscription,
+    reviewRating: review?.rating || 0,
+    reviewDismissed: review?.dismissed || false,
+    reviewUrl: process.env.SHOPIFY_APP_LISTING_URL || "",
   });
 };
 
 export default function App() {
-  const { apiKey, settings, isAccountOwner, subscription } = useLoaderData<typeof loader>();
+  const { apiKey, settings, isAccountOwner, subscription, reviewRating, reviewDismissed, reviewUrl } = useLoaderData<typeof loader>();
 
   return (
     <AppProvider isEmbeddedApp apiKey={apiKey}>
@@ -105,6 +112,7 @@ export default function App() {
         )}
       </NavMenu>
       <Outlet />
+      <RatingPrompt initialRating={reviewRating} initialDismissed={reviewDismissed} reviewUrl={reviewUrl} />
     </AppProvider>
   );
 }

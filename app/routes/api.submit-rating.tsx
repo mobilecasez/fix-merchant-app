@@ -8,7 +8,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   }
 
   const { session } = await authenticate.admin(request);
-  const { rating, dismissed } = await request.json();
+  const { rating, dismissed, feedback } = await request.json();
+  const cleanFeedback = typeof feedback === "string" ? feedback.trim().slice(0, 2000) : undefined;
+  const hasFeedback = cleanFeedback !== undefined && cleanFeedback !== "";
 
   try {
     // Upsert review record
@@ -18,12 +20,14 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         update: {
           ...(rating !== undefined && { rating }),
           ...(dismissed !== undefined && { dismissed }),
+          ...(hasFeedback && ({ feedback: cleanFeedback } as any)),
           updatedAt: new Date(),
         },
         create: {
           shop: session.shop,
           ...(rating !== undefined && { rating }),
           ...(dismissed !== undefined && { dismissed }),
+          ...(hasFeedback && ({ feedback: cleanFeedback } as any)),
         },
       }
     );

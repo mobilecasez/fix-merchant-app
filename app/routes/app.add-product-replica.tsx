@@ -4,6 +4,7 @@ import { json, LoaderFunction } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { getProductCategories } from "../utils/categories.server";
+import { notifyAiSuccess } from "../utils/ai-success";
 import { getOrCreateSubscription, incrementProductUsage, getProductsUsed, getEffectiveProductLimit } from "../utils/billing.server";
 import {
   Page,
@@ -525,6 +526,7 @@ export default function AddProductReplica() {
       } else if (product || (data && !data.errors)) {
         setToastMessage(`Product created successfully!`);
         setToastError(false);
+        notifyAiSuccess("product-import");
         // Clear manual HTML to speed up UI
         setManualHtml('');
         setHtmlPanelOpen(false);
