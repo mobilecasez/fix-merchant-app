@@ -189,7 +189,13 @@ const checkSeo = (product: Product): SeoCheckResult => {
   // Rule 4: Missing Meta Description
   const metaDescription = product.seo?.description || '';
   const descriptionHtmlText = product.descriptionHtml || '';
-  const descriptionText = descriptionHtmlText.replace(/<[^>]*>/g, '') || ''; // Strip HTML from main description
+  // Strip script/style content (not just tags) before removing markup, so inline
+  // JS/CSS never inflates or pollutes the description text.
+  const descriptionText = descriptionHtmlText
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<style[\s\S]*?<\/style>/gi, '')
+    .replace(/<[^>]*>/g, '')
+    .trim() || '';
 
   if (metaDescription.trim() === '') {
     issues.push({

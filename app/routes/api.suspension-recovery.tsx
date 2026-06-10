@@ -107,6 +107,14 @@ export async function action({ request }: ActionFunctionArgs) {
     scan = scans.find((s: any) => s.type === "DEEP") || scans.find((s: any) => s.type === "ADVANCED") || scans[0] || null;
   } catch { /* non-fatal */ }
 
+  // Suspension Recovery is the FINAL step — it needs real scan data to diagnose the
+  // violation and draft an accurate appeal. Require a completed scan first.
+  if (!scan) {
+    return json({
+      error: "Please run a Basic, Advanced, or Deep scan first. Suspension Recovery uses your scan results to diagnose the issue and draft an accurate appeal letter — it's the final step after your other scans are complete.",
+    }, { status: 400 });
+  }
+
   const { findings } = extractFindings(scan?.result);
 
   // Shop identity for the letter
@@ -119,8 +127,13 @@ export async function action({ request }: ActionFunctionArgs) {
     storeUrl = d?.data?.shop?.primaryDomain?.url || storeUrl;
   } catch { /* non-fatal */ }
 
-  const openFindings = findings.filter(f => !f.fixed);
-  const fixedFindings = findings.filter(f => f.fixed);
+  // Cap the lists by severity/recency so a heavily-flagged store doesn't blow up
+  // the prompt — the appeal only needs the most material issues.
+  const sevRank: Record<string, number> = { High: 0, Medium: 1, Low: 2 };
+  const openFindings = findings.filter(f => !f.fixed)
+    .sort((a, b) => (sevRank[a.severity] ?? 3) - (sevRank[b.severity] ?? 3))
+    .slice(0, 15);
+  const fixedFindings = findings.filter(f => f.fixed).slice(0, 10);
 
   const prompt = `You are a senior Google Merchant Center (GMC) policy & reinstatement specialist. A Shopify merchant's store has been ${statusKind === "warning" ? "WARNED" : statusKind === "preventive" ? "asked to prepare a preventive appeal" : "SUSPENDED"} by Google. Help them get reinstated by (1) diagnosing the most likely policy violation, (2) producing a prioritized remediation checklist, and (3) drafting a professional reinstatement request letter.
 

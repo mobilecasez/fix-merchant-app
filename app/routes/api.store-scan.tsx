@@ -188,7 +188,7 @@ export async function action({ request }: ActionFunctionArgs) {
         metafields[mf.node.key] = mf.node.value;
       });
 
-      const description = (node.descriptionHtml || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().substring(0, 500);
+      const description = extractReadableText(node.descriptionHtml || "", 500);
       const productPath = node.onlineStoreUrl || `${storeUrl}/products/${node.id.split("/").pop()}`;
 
       return {

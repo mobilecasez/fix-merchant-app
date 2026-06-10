@@ -228,13 +228,73 @@ interface PageScanResult {
   markdown: string;
 }
 
+// Keyword patterns to recognize policy/contact pages under ANY slug. Kept in sync
+// with REQUIRED_FOOTER_VARIANTS so footer-link validation and page discovery agree.
+const POLICY_LINK_PATTERNS: Array<{ key: string; pattern: RegExp }> = [
+  { key: "privacy",  pattern: /privacy/i },
+  { key: "refund",   pattern: /refund|returns?/i },
+  { key: "shipping", pattern: /shipping|delivery/i },
+  { key: "terms",    pattern: /terms|conditions|\btos\b/i },
+  { key: "contact",  pattern: /contact|support/i },
+];
+
+/** Maps a PAGES_TO_SCAN label to its discovered-policy key. */
+const DISCOVERY_KEY_BY_LABEL: Record<string, string> = {
+  "Privacy Policy": "privacy",
+  "Refund/Return Policy": "refund",
+  "Shipping Policy": "shipping",
+  "Terms of Service": "terms",
+  "Contact Page": "contact",
+};
+
+/**
+ * Discover the real URL of each policy/contact page from the homepage's internal
+ * links (footer + nav + anywhere). Lets the scanner find pages that live under
+ * CUSTOM slugs — e.g. /pages/returns-and-refunds, /pages/terms-and-conditions,
+ * /pages/contact-us — which the conventional /policies/* and /pages/<standard>
+ * probes miss. Returns { privacy, refund, shipping, terms, contact } → absolute URL.
+ */
+function discoverPolicyLinks(html: string, baseUrl: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  try {
+    const root = parse(html);
+    root.querySelectorAll("a[href]").forEach((el: any) => {
+      const href = (el.getAttribute("href") || "").trim();
+      if (!href || href.startsWith("#") || /^(mailto:|tel:|javascript:)/i.test(href)) return;
+      const full = href.startsWith("/") ? `${baseUrl}${href}` : href;
+      if (!full.toLowerCase().startsWith(baseUrl.toLowerCase())) return; // internal only
+      // Only consider real content pages, not account/cart/collections/products.
+      if (/\/(cart|account|collections|products|blogs|search)(\/|$|\?)/i.test(full)) return;
+      const text = (el.text || "").trim();
+      const hay = `${full} ${text}`.toLowerCase();
+      for (const { key, pattern } of POLICY_LINK_PATTERNS) {
+        if (!out[key] && pattern.test(hay)) out[key] = full.split("#")[0].split("?")[0];
+      }
+    });
+  } catch { /* non-fatal */ }
+  return out;
+}
+
 /** Main scanner — fetches all pages, optimizes HTML, returns structured data for AI */
 async function gatherStoreData(
   baseUrl: string,
   cookie?: string
-): Promise<{ pages: PageScanResult[]; brokenNavLinks: string[]; footerLinks: string[]; baseUrl: string }> {
+): Promise<{ pages: PageScanResult[]; brokenNavLinks: string[]; footerLinks: string[]; baseUrl: string; discoveredPolicies: Record<string, string> }> {
+  // Fetch the homepage ONCE up front and reuse it for page content, footer/nav
+  // link extraction, and policy/contact discovery (so custom slugs are found).
+  const homeFetch = await safeFetch(`${baseUrl}/`, 15000, cookie);
+  const homepageHtml = homeFetch.html;
+  const discoveredPolicies = homepageHtml ? discoverPolicyLinks(homepageHtml, baseUrl) : {};
+
   const pageResults: PageScanResult[] = await Promise.all(
     PAGES_TO_SCAN.map(async (page) => {
+      // Homepage: reuse the HTML already fetched (no second request).
+      if (page.path === "/") {
+        if (!homepageHtml) return { ...page, status: homeFetch.status, exists: false, foundAt: "/", markdown: "" };
+        const { markdown } = optimizeHtmlForAI(homepageHtml);
+        return { ...page, status: homeFetch.status || 200, exists: true, foundAt: "/", markdown: markdown.substring(0, 6000) };
+      }
+
       // Try primary path
       const primaryUrl = `${baseUrl}${page.path}`;
       let { html, status } = await safeFetch(primaryUrl, 15000, cookie);
@@ -251,46 +311,59 @@ async function gatherStoreData(
         }
       }
 
+      // Custom-slug fallback: use the URL discovered from the homepage links
+      // (e.g. /pages/returns-and-refunds, /pages/contact-us) so a present page on
+      // a non-standard slug isn't falsely reported as missing.
+      if (!html || status === 404 || status === 0) {
+        const dkey = DISCOVERY_KEY_BY_LABEL[page.label];
+        const durl = dkey ? discoveredPolicies[dkey] : undefined;
+        if (durl && durl !== primaryUrl) {
+          const d = await safeFetch(durl, 10000, cookie);
+          if (d.html && d.status !== 404 && d.status !== 0) {
+            html = d.html;
+            status = d.status;
+            foundAt = durl.toLowerCase().startsWith(baseUrl.toLowerCase()) ? durl.slice(baseUrl.length) : durl;
+          }
+        }
+      }
+
       if (!html) return { ...page, status, exists: false, foundAt: page.path, markdown: "" };
 
-      const { markdown, dataScripts } = optimizeHtmlForAI(html);
-      const combined = `${markdown}\n\n<!-- DATA -->\n${dataScripts.substring(0, 2000)}`;
+      // Clean readable content only — the raw dataScripts blobs (JSON-LD / state)
+      // are not used by the compliance checks and wasted ~2K tokens per page.
+      const { markdown } = optimizeHtmlForAI(html);
 
       return {
         ...page,
         status,
         exists: true,
         foundAt,
-        markdown: combined.substring(0, 6000),
+        markdown: markdown.substring(0, 6000),
       };
     })
   );
 
-  const homePage = pageResults.find((p) => p.path === "/");
   let brokenNavLinks: string[] = [];
   let footerLinks: string[] = [];
 
-  if (homePage?.exists) {
-    const { html } = await safeFetch(`${baseUrl}/`, 10000, cookie);
-    if (html) {
-      const navLinks = extractNavLinks(html, baseUrl);
-      brokenNavLinks = await checkLinksForBroken(navLinks.slice(0, 20), cookie);
+  if (homepageHtml) {
+    const navLinks = extractNavLinks(homepageHtml, baseUrl);
+    brokenNavLinks = await checkLinksForBroken(navLinks.slice(0, 20), cookie);
 
-      // Extract footer links explicitly for the AI prompt
-      const root = parse(html);
-      root.querySelectorAll("footer a, .footer a, [class*='footer'] a").forEach((el: any) => {
-        const href = el.getAttribute("href") || "";
-        const text = el.text?.trim() || "";
-        if (href && text) {
-          const full = href.startsWith("/") ? `${baseUrl}${href}` : href;
-          footerLinks.push(`${text} → ${full}`);
-        }
-      });
-      footerLinks = Array.from(new Set(footerLinks)).slice(0, 30);
-    }
+    // Extract footer links explicitly for the AI prompt
+    const root = parse(homepageHtml);
+    root.querySelectorAll("footer a, .footer a, [class*='footer'] a").forEach((el: any) => {
+      const href = el.getAttribute("href") || "";
+      const text = el.text?.trim() || "";
+      if (href && text) {
+        const full = href.startsWith("/") ? `${baseUrl}${href}` : href;
+        footerLinks.push(`${text} → ${full}`);
+      }
+    });
+    footerLinks = Array.from(new Set(footerLinks)).slice(0, 30);
   }
 
-  return { pages: pageResults, brokenNavLinks, footerLinks, baseUrl };
+  return { pages: pageResults, brokenNavLinks, footerLinks, baseUrl, discoveredPolicies };
 }
 
 // ── Prompt: Basic Scan (Store Fundamentals & Legal Compliance) ─────────────────
@@ -555,7 +628,7 @@ STRICT EVALUATION RULES (FOR CONSISTENCY):
 4. Your output MUST be a valid JSON object. Do not include markdown like \`\`\`json or any text outside the JSON.
 
 INPUT DATA:
-${JSON.stringify(deepData, null, 2)}
+${JSON.stringify(deepData)}
 
 COMPREHENSIVE CHECKS TO PERFORM (evaluate ALL of these — report each as a separate finding when there is a risk):
 
@@ -1180,6 +1253,13 @@ async function enrichDeepData(
   const out: DeepAuditData = { ...deepData };
   out.https_enabled = storeUrl.startsWith("https://");
 
+  // Policy/contact pages discovered from homepage links (custom slugs), plus
+  // footer contact-link evidence. Declared outside the try so they survive a
+  // homepage-fetch failure.
+  let discoveredPolicies: Record<string, string> = {};
+  let footerHasEmailLink = false;
+  let footerHasPhoneLink = false;
+
   // ── Homepage signals ───────────────────────────────────────────────────────
   try {
     const { html } = await safeFetch(`${storeUrl}/`, 12000, cookie);
@@ -1187,7 +1267,7 @@ async function enrichDeepData(
       const text = html.replace(/<script[\s\S]*?<\/script>/gi, " ")
         .replace(/<style[\s\S]*?<\/style>/gi, " ")
         .replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
-      out.homepage_text = text.substring(0, 3500);
+      out.homepage_text = text.substring(0, 2500);
       const lowerHtml = html.toLowerCase();
 
       // Scarcity / urgency language
@@ -1228,43 +1308,59 @@ async function enrichDeepData(
       while ((m = socialRe.exec(html)) !== null) social.add(m[1].toLowerCase());
       out.social_links = Array.from(social);
 
-      // ── Contact channels (deterministic) ─────────────────────────────────────
-      // Authoritative evidence of how the business can be reached, detected from
-      // the contact page text, homepage/footer (incl. mailto:/tel: links), and the
-      // Shopify business address. Lets the AI avoid false "Insufficient Contact
-      // Information" / "Missing Business Address" flags when details ARE present.
-      const contactCorpus = `${out.contact_page_text || ""}\n${out.homepage_text || ""}\n${html}`;
-      const channels: string[] = [];
-      if (/mailto:[^"'\s>]+@|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(contactCorpus)) channels.push("email");
-      if (/tel:[+\d][^"'\s>]*|(?:\+?\d[\d\s().-]{7,}\d)/.test(contactCorpus)) channels.push("phone");
-      const addressText = `${out.contact_page_text || ""} ${out.homepage_text || ""}`;
-      if (looksLikeAddress(addressText) || (out.business_identity?.legal_address || "").trim().length > 5) {
-        channels.push("physical address");
-      }
-      out.contact_channels_found = channels;
+      // Discover policy/contact pages under custom slugs from the homepage links.
+      discoveredPolicies = discoverPolicyLinks(html, storeUrl);
+      // Footer mailto:/tel: links are strong, slug-agnostic contact evidence.
+      if (/mailto:[^"'\s>]+@/i.test(html)) footerHasEmailLink = true;
+      if (/tel:[+\d][^"'\s>]*/i.test(html)) footerHasPhoneLink = true;
     }
   } catch { /* non-fatal */ }
 
+  // If the contact page wasn't captured by the caller (e.g. it lives on a custom
+  // slug like /pages/contact-us), fetch the discovered contact URL now.
+  if ((!out.contact_page_text || out.contact_page_text.trim().length < 40) && discoveredPolicies.contact) {
+    try {
+      const { html } = await safeFetch(discoveredPolicies.contact, 9000, cookie);
+      if (html && !isPasswordPage(html)) out.contact_page_text = extractReadableText(html, 2500);
+    } catch { /* non-fatal */ }
+  }
+
+  // ── Contact channels (deterministic, ALWAYS computed) ──────────────────────
+  // Authoritative evidence of how the business can be reached — from the contact
+  // page text, homepage text/footer links, and the Shopify business address.
+  // Computed even when the homepage fetch failed, so the AI never false-flags
+  // "Insufficient Contact Information" / "Missing Business Address" when present.
+  {
+    const contactCorpus = `${out.contact_page_text || ""}\n${out.homepage_text || ""}`;
+    const channels: string[] = [];
+    if (footerHasEmailLink || /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(contactCorpus)) channels.push("email");
+    if (footerHasPhoneLink || /(?:\+?\d[\d\s().-]{7,}\d)/.test(contactCorpus)) channels.push("phone");
+    if (looksLikeAddress(contactCorpus) || (out.business_identity?.legal_address || "").trim().length > 5) channels.push("physical address");
+    out.contact_channels_found = channels;
+  }
+
   // ── Policy page completeness (word counts) ─────────────────────────────────
-  const policyPaths: Array<[keyof NonNullable<DeepAuditData["policy_pages"]>, string[]]> = [
-    ["refund_return", ["/policies/refund-policy", "/pages/refund-policy"]],
-    ["shipping", ["/policies/shipping-policy", "/pages/shipping-policy"]],
-    ["terms", ["/policies/terms-of-service", "/pages/terms-of-service"]],
-    ["privacy", ["/policies/privacy-policy", "/pages/privacy-policy"]],
+  // Probe the conventional paths first, then fall back to the custom slug
+  // discovered from the homepage (e.g. /pages/returns-and-refunds), so policies
+  // on non-standard slugs aren't falsely reported missing/thin.
+  const policyPaths: Array<[keyof NonNullable<DeepAuditData["policy_pages"]>, string[], string]> = [
+    ["refund_return", ["/policies/refund-policy", "/pages/refund-policy"], "refund"],
+    ["shipping", ["/policies/shipping-policy", "/pages/shipping-policy"], "shipping"],
+    ["terms", ["/policies/terms-of-service", "/pages/terms-of-service"], "terms"],
+    ["privacy", ["/policies/privacy-policy", "/pages/privacy-policy"], "privacy"],
   ];
   const policyPages: NonNullable<DeepAuditData["policy_pages"]> = {};
-  await Promise.all(policyPaths.map(async ([key, paths]) => {
-    for (const path of paths) {
+  await Promise.all(policyPaths.map(async ([key, paths, discoveryKey]) => {
+    const candidates = [...paths.map(p => `${storeUrl}${p}`)];
+    if (discoveredPolicies[discoveryKey]) candidates.push(discoveredPolicies[discoveryKey]);
+    for (const url of candidates) {
       try {
-        const { html, status } = await safeFetch(`${storeUrl}${path}`, 9000, cookie);
+        const { html, status } = await safeFetch(url, 9000, cookie);
         if (html && status !== 404 && !isPasswordPage(html)) {
-          // Strip scripts/styles before counting so word_count reflects the real
-          // policy prose, not inline JS/CSS.
-          const text = html
-            .replace(/<script[\s\S]*?<\/script>/gi, " ")
-            .replace(/<style[\s\S]*?<\/style>/gi, " ")
-            .replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
-          const wordCount = text ? text.split(/\s+/).length : 0;
+          // Readable text only (strips scripts/styles) so word_count reflects the
+          // real policy prose, not inline JS/CSS.
+          const text = extractReadableText(html, 8000);
+          const wordCount = text ? text.split(/\s+/).filter(Boolean).length : 0;
           policyPages[key] = { exists: true, word_count: wordCount };
           return;
         }
@@ -1320,6 +1416,43 @@ function annotateDeepErrors(deepResult: any): void {
       ? meta.auto_fix_type
       : `deep_${i}_${slug(err.category)}`;
   });
+}
+
+/**
+ * Deterministic reconciliation for the Deep scan — the AI is non-deterministic
+ * and sometimes re-flags trust signals that the live store demonstrably HAS.
+ * This drops any finding the gathered facts contradict (contact channels present,
+ * policy pages present & substantive, HTTPS on, address present), so a correct
+ * store isn't told it has suspension risks it has already satisfied. Mutates
+ * deepResult in place and records the dropped items under passed_checks.
+ */
+function reconcileDeepResult(deepResult: any, auditData: DeepAuditData): void {
+  const errors: any[] = deepResult?.critical_misrepresentation_errors;
+  if (!Array.isArray(errors)) return;
+
+  const channels = auditData.contact_channels_found || [];
+  const hasAddress = channels.includes("physical address") || (auditData.business_identity?.legal_address || "").trim().length > 5;
+  const pp: any = auditData.policy_pages || {};
+
+  const resolvedReason = (category: string): string | null => {
+    const c = (category || "").toLowerCase();
+    if (c.includes("insufficient contact") && channels.length >= 2) return `Contact channels present: ${channels.join(", ")}`;
+    if (c.includes("missing business address") && hasAddress) return "Business address present";
+    if (c.includes("missing privacy") && pp.privacy?.exists) return "Privacy Policy present";
+    if (c.includes("missing terms") && pp.terms?.exists) return "Terms of Service present";
+    if ((c.includes("refund") || c.includes("return")) && pp.refund_return?.exists && (pp.refund_return.word_count || 0) >= 80) return "Refund/Return policy present & substantive";
+    if (c.includes("shipping") && pp.shipping?.exists && (pp.shipping.word_count || 0) >= 50) return "Shipping policy present & substantive";
+    if ((c.includes("no ssl") || c.includes("insecure")) && auditData.https_enabled) return "HTTPS enabled";
+    return null;
+  };
+
+  const passed: string[] = Array.isArray(deepResult.passed_checks) ? deepResult.passed_checks : [];
+  deepResult.critical_misrepresentation_errors = errors.filter((err: any) => {
+    const reason = resolvedReason(err.category || "");
+    if (reason) { passed.push(reason); return false; }
+    return true;
+  });
+  deepResult.passed_checks = Array.from(new Set(passed));
 }
 
 export async function processDeepScan(
@@ -1381,6 +1514,9 @@ export async function processDeepScan(
 
     // 2. Deep misrepresentation audit (AI).
     const deepResult = await runGeminiJson(buildDeepPrompt(auditData), 180000, scanId);
+
+    // Drop AI findings the live-store facts contradict (deterministic safety net).
+    reconcileDeepResult(deepResult, auditData);
 
     // Annotate findings with system auto-fix metadata (reuses the basic auto-fix engine).
     annotateDeepErrors(deepResult);
