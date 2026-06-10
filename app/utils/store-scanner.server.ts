@@ -362,7 +362,7 @@ CHECKS TO PERFORM:
 1. Missing Essential Pages: The store MUST have distinct, working pages for: "Privacy Policy", "Terms of Service" (or Terms and Conditions), "Contact Us", "Shipping Policy", and "Refund/Return Policy". Use the CONFIRMED MISSING PAGES list as the authoritative source. Only flag a page as missing if it appears in that list OR if it is genuinely absent from all provided page content.
 2. Contact Information: The store MUST display at least two of the following: a physical business address, a support email, or a phone number. Check extracted_contact_info. Only flag as missing if none of these are found in the provided data.
 3. Broken Navigation Links: Use the CONFIRMED BROKEN LINKS list. Do not flag any URL that is not in that list.
-4. Footer/Navigation Compliance (CRITICAL for GMC): The store footer MUST contain visible links to Privacy Policy, Refund/Return Policy, Shipping Policy, Terms of Service, and Contact page. Evaluate strictly against header_footer_text_and_links. If any of these links are absent, flag as a SINGLE issue with auto_fix_type "footer_links".
+4. Footer/Navigation Compliance (CRITICAL for GMC): The store footer MUST contain visible links to Privacy Policy, Refund/Return Policy, Shipping Policy, Terms of Service, and Contact page. Evaluate against header_footer_text_and_links AND the [Footer links] list. A link COUNTS AS PRESENT even under a custom slug or alternate wording — e.g. "Returns and Refunds" or "/pages/returns-and-refunds" satisfies Refund/Return Policy; "Terms and Conditions" or "/pages/terms-and-conditions" satisfies Terms of Service; "Contact Us" or "/pages/contact-us" satisfies Contact. Only flag a SINGLE "footer_links" issue if a required link is genuinely absent from BOTH lists. NEVER flag based on slug naming differences alone.
 5. Password Protection: If is_password_protected is true, add ONE Medium severity issue in site_structure_and_seo: "Store is password-protected — disable this before going live so Google bots can crawl the store." Set auto_fixable=false, auto_fix_type=null. Do NOT attribute any other failures to password protection.
 
 FIELD RULES:
@@ -641,12 +641,17 @@ const FIX_TYPE_BY_PATH: Record<string, string> = {
 // The links GMC actually requires to be visible site-wide. About Us is NOT
 // required by Google, so it is intentionally excluded — requiring it caused the
 // footer issue to be flagged forever on stores that legitimately omit it.
-const REQUIRED_FOOTER_VARIANTS: Array<{ type: string; variants: string[] }> = [
-  { type: "privacy_policy",   variants: ["/pages/privacy-policy", "/policies/privacy-policy"] },
-  { type: "refund_policy",    variants: ["/pages/refund-policy", "/policies/refund-policy"] },
-  { type: "shipping_policy",  variants: ["/pages/shipping-policy", "/policies/shipping-policy"] },
-  { type: "terms_of_service", variants: ["/pages/terms-of-service", "/policies/terms-of-service"] },
-  { type: "contact_page",     variants: ["/pages/contact", "/contact"] },
+// Match required footer links by KEYWORD (not exact slug) so custom page slugs
+// and alternate wording are recognized — e.g. "returns-and-refunds" / "Returns and
+// Refunds" = Refund/Return Policy, "terms-and-conditions" = Terms of Service,
+// "contact-us" = Contact. Each pattern is tested against the footer link's URL
+// AND its anchor text.
+const REQUIRED_FOOTER_VARIANTS: Array<{ type: string; label: string; pattern: RegExp }> = [
+  { type: "privacy_policy",   label: "Privacy Policy",       pattern: /privacy/i },
+  { type: "refund_policy",    label: "Refund/Return Policy", pattern: /refund|returns?/i },
+  { type: "shipping_policy",  label: "Shipping Policy",      pattern: /shipping|delivery/i },
+  { type: "terms_of_service", label: "Terms of Service",     pattern: /terms|conditions|\btos\b/i },
+  { type: "contact_page",     label: "Contact Page",         pattern: /contact|support/i },
 ];
 
 // Selectors that target the FOOTER region only (no header/nav). GMC requires the
@@ -844,11 +849,17 @@ async function reconcileBasicResult(result: any, storeData: any, storeUrl: strin
   }
 
   // 3. Footer links — resolved only if ALL required GMC links are present.
-  let missingFooter: Array<{ type: string; variants: string[] }> = [];
-  if (footerLinks.length > 0) {
-    missingFooter = REQUIRED_FOOTER_VARIANTS.filter(
-      ({ variants }) => !variants.some(v => footerLinks.some(l => l.endsWith(v)))
-    );
+  //    Match by keyword against the footer link URLs AND their anchor text, so
+  //    custom slugs / alternate names (e.g. "Returns and Refunds",
+  //    "Terms and Conditions", "Contact Us") are correctly recognized instead of
+  //    being falsely reported as missing.
+  let missingFooter: Array<{ type: string; label: string; pattern: RegExp }> = [];
+  const footerCorpus = [
+    ...footerLinks,
+    ...(((storeData as any).footerLinks || []) as string[]),
+  ].join(" \n ").toLowerCase();
+  if (footerCorpus.trim().length > 0) {
+    missingFooter = REQUIRED_FOOTER_VARIANTS.filter(({ pattern }) => !pattern.test(footerCorpus));
     if (missingFooter.length === 0) resolved.add("footer_links");
   }
 
@@ -873,7 +884,7 @@ async function reconcileBasicResult(result: any, storeData: any, storeUrl: strin
     if (!result.site_structure_and_seo) result.site_structure_and_seo = [];
     result.site_structure_and_seo.unshift({
       severity: "High",
-      issue_description: `Footer is missing ${missingFooter.length} required GMC link${missingFooter.length > 1 ? "s" : ""}: ${missingFooter.map(v => v.variants[0].split("/").pop()).join(", ")}. These must be visible from every page.`,
+      issue_description: `Footer is missing ${missingFooter.length} required GMC link${missingFooter.length > 1 ? "s" : ""}: ${missingFooter.map(v => v.label).join(", ")}. These must be visible from every page.`,
       suggested_fix: "Add all required policy and contact links to your store's footer navigation.",
       detailed_fix_steps: [
         "Go to Online Store → Navigation in Shopify Admin.",
