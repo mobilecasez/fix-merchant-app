@@ -53,7 +53,7 @@ export default function UsageAnalytics() {
 
   if (data.error) {
     return (
-      <Page title="Usage Analytics">
+      <Page title="Usage & Limits">
         <Banner tone="critical">
           <p>{data.error}</p>
         </Banner>
@@ -67,7 +67,7 @@ export default function UsageAnalytics() {
 
   return (
     <Page
-      title="Usage Analytics"
+      title="Usage & Limits"
       subtitle="Track your product import usage and optimize your plan"
       backAction={{ content: "Home", url: "/app" }}
     >

@@ -1407,3 +1407,43 @@ export async function processStoreScan(
     });
   }
 }
+
+/**
+ * Run a store-level (Basic) scan for monitoring — no DB writes, no admin session.
+ * Returns null if the store is unreachable or password-protected (so monitoring
+ * doesn't falsely alert on a parked/locked store).
+ */
+export async function runMonitoringScan(storeUrl: string): Promise<any | null> {
+  const { html, finalUrl } = await safeFetch(`${storeUrl}/`, 12000);
+  if (!html || isPasswordPage(html || "", finalUrl)) return null;
+  return runBasicScan(storeUrl);
+}
+
+/**
+ * Extract the issues from a Basic scan result with a STABLE fingerprint each, used
+ * to diff monitoring runs and detect NEW problems regardless of wording changes.
+ */
+export function extractBasicIssues(result: any): Array<{ fp: string; label: string; severity: string }> {
+  if (!result) return [];
+  const out: Array<{ fp: string; label: string; severity: string }> = [];
+  const seen = new Set<string>();
+  const norm = (s: string) => (s || "").toLowerCase().replace(/\s+/g, " ").trim().slice(0, 80);
+  const push = (fp: string, label: string, severity: string) => {
+    if (seen.has(fp)) return;
+    seen.add(fp);
+    out.push({ fp, label, severity: severity || "Medium" });
+  };
+
+  for (const p of (result.missing_pages || [])) {
+    push(`missing_page|${p.auto_fix_type || norm(p.label || p.url || "")}`, `Missing page: ${p.label || p.url || "required page"}`, p.severity || "High");
+  }
+  for (const l of (result.broken_links || [])) {
+    push(`broken_link|${norm(l.url || l.issue_description || "")}`, `Broken link: ${l.url || l.issue_description || ""}`, l.severity || "High");
+  }
+  for (const section of ["merchant_center_compliance", "customer_trust_and_policy", "site_structure_and_seo"]) {
+    for (const i of (result[section] || [])) {
+      push(`${section}|${i.auto_fix_type || norm(i.issue_description || "")}`, i.issue_description || i.label || "Compliance issue", i.severity || "Medium");
+    }
+  }
+  return out;
+}

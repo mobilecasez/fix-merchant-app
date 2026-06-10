@@ -3272,10 +3272,246 @@ function extractReportSections(result: any): {
 
 // ── main page ─────────────────────────────────────────────────────────────────
 
+// ── Auto-fix credit costs (mirrors the server's FIX_CREDIT_COSTS; for display) ─
+const AUTO_FIX_CREDITS: Record<string, number> = {
+  privacy_policy: 3, refund_policy: 3, shipping_policy: 3, terms_of_service: 3,
+  contact_page: 2, about_page: 2, page_meta: 1, footer_links: 3, business_contact: 2,
+};
+
+// Strip HTML tags → plain text, used when copying / downloading the appeal letter
+// (Google's reinstatement form is a plain-text field).
+function htmlToPlainText(html: string): string {
+  if (!html) return "";
+  if (typeof document === "undefined") return html.replace(/<[^>]+>/g, "");
+  const el = document.createElement("div");
+  el.innerHTML = html.replace(/<\/(p|h[1-6]|li|ul|ol|div)>/gi, "$&\n");
+  return (el.textContent || "").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+// ── Suspension Recovery — the full-width 4th "scan" ──────────────────────────
+// Diagnoses the likely GMC suspension category, builds an auto-fixable
+// remediation checklist (reusing the exact IssueCard auto-fix flow as the scans
+// above), and drafts an editable, richly-formatted reinstatement letter.
+function SuspensionRecoveryScan({
+  credits, scanId, fixStates, setFixStates, savedDetails, onDetailsSaved,
+}: {
+  credits: number;
+  scanId?: string;
+  fixStates: Map<string, IssueFixState>;
+  setFixStates: React.Dispatch<React.SetStateAction<Map<string, IssueFixState>>>;
+  savedDetails: Partial<StoreDetails>;
+  onDetailsSaved: (details: StoreDetails) => void;
+}) {
+  const CREDIT_COST = 10;
+  const [statusKind, setStatusKind] = useState<"suspended" | "warning" | "preventive">("suspended");
+  const [reason, setReason] = useState("");
+  const [state, setState] = useState<"idle" | "loading" | "done" | "error">("idle");
+  const [result, setResult] = useState<any>(null);
+  const [meta, setMeta] = useState<any>(null);
+  const [err, setErr] = useState("");
+  const [letterHtml, setLetterHtml] = useState("");
+  const [copied, setCopied] = useState(false);
+
+  const generate = async () => {
+    setState("loading"); setErr("");
+    try {
+      const res = await fetch("/api/suspension-recovery", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ suspensionReason: reason, statusKind }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) { setState("error"); setErr(data.error || "Failed to generate."); return; }
+      setResult(data.result);
+      setMeta(data);
+      setLetterHtml(markdownToHtml(data.result?.appeal_letter || ""));
+      setState("done");
+    } catch { setState("error"); setErr("Network error. Please try again."); }
+  };
+
+  const copyLetter = () => {
+    navigator.clipboard?.writeText(htmlToPlainText(letterHtml));
+    setCopied(true); setTimeout(() => setCopied(false), 1500);
+  };
+  const downloadLetter = () => {
+    const blob = new Blob([htmlToPlainText(letterHtml)], { type: "text/plain;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = "gmc-reinstatement-request.txt";
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const statusOptions = [
+    { key: "suspended", label: "I've been suspended", icon: "🚫" },
+    { key: "warning", label: "I got a warning", icon: "⚠️" },
+    { key: "preventive", label: "Just preparing ahead", icon: "🛡️" },
+  ] as const;
+
+  // Map the AI's priority_fixes onto the IssueCard shape so each one reuses the
+  // identical "Auto Fix with AI" / "Mark as Fixed" flow as the scan results.
+  const mappedFixes = (result?.priority_fixes || []).map((f: any) => {
+    const type = f.auto_fix_type && f.auto_fix_type !== "null" ? f.auto_fix_type : null;
+    return {
+      severity: f.severity || "Medium",
+      issue_description: f.title,
+      suggested_fix: [f.why_it_matters, f.how_to_fix].filter(Boolean).join(" — "),
+      detailed_fix_steps: [],
+      auto_fixable: !!(f.auto_fixable && type),
+      auto_fix_type: type,
+      credit_cost: type ? (AUTO_FIX_CREDITS[type] ?? 3) : 1,
+    };
+  });
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+      {/* Situation selector */}
+      <div>
+        <p style={{ margin: "0 0 8px 0", fontSize: "12px", fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: "0.4px" }}>What's your situation?</p>
+        <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+          {statusOptions.map(o => (
+            <button key={o.key} onClick={() => setStatusKind(o.key)}
+              style={{
+                display: "flex", alignItems: "center", gap: "6px", padding: "8px 14px",
+                borderRadius: "8px", fontSize: "13px", fontWeight: 600, cursor: "pointer",
+                background: statusKind === o.key ? "#1a4a5a" : "white",
+                color: statusKind === o.key ? "white" : "#374151",
+                border: `1px solid ${statusKind === o.key ? "#1a4a5a" : "#d1d5db"}`,
+              }}>
+              {o.icon} {o.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Paste Google's message */}
+      <div>
+        <p style={{ margin: "0 0 6px 0", fontSize: "12px", fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: "0.4px" }}>
+          Paste Google's message <span style={{ fontWeight: 400, textTransform: "none", color: "#9ca3af" }}>(optional — improves accuracy)</span>
+        </p>
+        <textarea
+          value={reason}
+          onChange={e => setReason(e.target.value)}
+          rows={3}
+          placeholder="e.g. 'Your Merchant Center account has been suspended for Misrepresentation…' — paste the exact reason Google gave."
+          style={{ width: "100%", boxSizing: "border-box", padding: "10px 12px", border: "1px solid #d1d5db", borderRadius: "8px", fontSize: "13px", lineHeight: 1.6, resize: "vertical", outline: "none", fontFamily: "inherit" }}
+        />
+      </div>
+
+      {state !== "done" && (
+        <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+          <button
+            onClick={generate}
+            disabled={state === "loading" || credits < CREDIT_COST}
+            className="feature-card-button"
+            style={{ maxWidth: "360px", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", opacity: state === "loading" ? 0.7 : 1 }}
+          >
+            {state === "loading" ? <><Spinner size="small" /> Building your recovery plan…</> : `🛟 Generate Recovery Plan & Appeal (${CREDIT_COST} credits)`}
+          </button>
+          {credits < CREDIT_COST && <span style={{ fontSize: "12px", color: "#d72c0d" }}>You need {CREDIT_COST} credits.</span>}
+        </div>
+      )}
+      {state === "error" && <p style={{ margin: 0, fontSize: "13px", color: "#d72c0d" }}>✕ {err}</p>}
+
+      {state === "done" && result && (
+        <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+          {/* Category + readiness badges */}
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "10px", alignItems: "center" }}>
+            <span style={{ padding: "4px 12px", borderRadius: "6px", fontSize: "13px", fontWeight: 700, background: "#fef2f2", color: "#d72c0d", border: "1px solid #fca5a5" }}>
+              {result.suspension_category}
+            </span>
+            <span style={{
+              padding: "4px 12px", borderRadius: "6px", fontSize: "12px", fontWeight: 700,
+              background: result.readiness === "ready_to_appeal" ? "#f0fdf4" : "#fffbeb",
+              color: result.readiness === "ready_to_appeal" ? "#166534" : "#92400e",
+              border: `1px solid ${result.readiness === "ready_to_appeal" ? "#86efac" : "#fcd34d"}`,
+            }}>
+              {result.readiness === "ready_to_appeal" ? "✓ Ready to appeal" : "⚠ Fix high-priority items first"}
+            </span>
+            {meta?.scanType && <span style={{ fontSize: "11px", color: "#9ca3af" }}>Based on your latest {meta.scanType} scan</span>}
+          </div>
+
+          {result.category_explanation && (
+            <p style={{ margin: 0, fontSize: "13px", color: "#374151", lineHeight: 1.7 }}>{result.category_explanation}</p>
+          )}
+          {result.overall_assessment && (
+            <div style={{ background: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: "8px", padding: "12px 16px" }}>
+              <p style={{ margin: 0, fontSize: "13px", color: "#374151", lineHeight: 1.6 }}>{result.overall_assessment}</p>
+              {result.readiness_note && <p style={{ margin: "6px 0 0 0", fontSize: "12px", color: "#6b7280" }}>{result.readiness_note}</p>}
+            </div>
+          )}
+
+          {/* Fix-before-you-appeal checklist — reuses the IssueCard auto-fix flow */}
+          {mappedFixes.length > 0 && (
+            <div>
+              <p style={{ margin: "0 0 10px 0", fontSize: "14px", fontWeight: 700, color: "#212121" }}>Fix-before-you-appeal checklist</p>
+              {mappedFixes.map((iss: any, i: number) => (
+                <IssueCard
+                  key={iss.auto_fix_type || `susp_${i}`}
+                  issue={iss}
+                  issueKey={iss.auto_fix_type || `susp_${i}`}
+                  scanId={scanId || ""}
+                  fixStates={fixStates}
+                  setFixStates={setFixStates}
+                  credits={credits}
+                  allIssues={mappedFixes}
+                  savedDetails={savedDetails}
+                  onDetailsSaved={onDetailsSaved}
+                />
+              ))}
+            </div>
+          )}
+
+          {/* Reinstatement letter — editable rich-text box (formatting renders, no raw **) */}
+          {letterHtml && (
+            <div>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px", flexWrap: "wrap", marginBottom: "8px" }}>
+                <p style={{ margin: 0, fontSize: "14px", fontWeight: 700, color: "#212121" }}>📧 Your Reinstatement Request Letter</p>
+                <div style={{ display: "flex", gap: "8px" }}>
+                  <button onClick={copyLetter}
+                    style={{ padding: "6px 14px", background: "#166534", color: "white", border: "none", borderRadius: "6px", fontSize: "12px", fontWeight: 700, cursor: "pointer" }}>
+                    {copied ? "✓ Copied" : "Copy text"}
+                  </button>
+                  <button onClick={downloadLetter}
+                    style={{ padding: "6px 14px", background: "white", color: "#374151", border: "1px solid #d1d5db", borderRadius: "6px", fontSize: "12px", fontWeight: 700, cursor: "pointer" }}>
+                    Download .txt
+                  </button>
+                </div>
+              </div>
+              <RichTextEditor value={letterHtml} onChange={setLetterHtml} />
+              <p style={{ margin: "8px 0 0 0", fontSize: "11px", color: "#9ca3af" }}>
+                Edit the letter above with the toolbar before sending. <strong>Copy text</strong> gives you a clean plain-text version for Google's reinstatement form.
+              </p>
+            </div>
+          )}
+
+          {result.evidence_points?.length > 0 && (
+            <div style={{ background: "#f0f9ff", border: "1px solid #7dd3fc", borderRadius: "8px", padding: "12px 16px" }}>
+              <p style={{ margin: "0 0 8px 0", fontSize: "12px", fontWeight: 700, color: "#0369a1", textTransform: "uppercase", letterSpacing: "0.4px" }}>Evidence to mention to Google</p>
+              <ul style={{ margin: 0, paddingLeft: "18px", display: "flex", flexDirection: "column", gap: "4px" }}>
+                {result.evidence_points.map((e: string, i: number) => (
+                  <li key={i} style={{ fontSize: "12px", color: "#0c4a6e", lineHeight: 1.6 }}>{e}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          <div>
+            <button onClick={() => { setState("idle"); setResult(null); setLetterHtml(""); }}
+              style={{ padding: "7px 16px", background: "white", color: "#374151", border: "1px solid #d1d5db", borderRadius: "7px", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}>
+              🔄 Regenerate ({CREDIT_COST} credits)
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function StoreErrorReport() {
   const { productsUsed, productLimit, latestScan: initialScan, review: initialReview, savedDetails: initialSavedDetails } = useLoaderData<typeof loader>();
 
   const [scan, setScan] = useState<any>(initialScan);
+  const [suspensionOpen, setSuspensionOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [emailStatus, setEmailStatus] = useState<{ msg: string; ok: boolean } | null>(null);
   const [reviewBannerDismissed, setReviewBannerDismissed] = useState(initialReview?.dismissed || false);
@@ -3675,7 +3911,7 @@ export default function StoreErrorReport() {
           <div className="header-section">
             <div className="header-content">
               <div className="logo-icon">🛡️</div>
-              <h1 className="app-title">Store GMC Compliance Scan</h1>
+              <h1 className="app-title">GMC Compliance Fix</h1>
             </div>
           </div>
 
@@ -4005,6 +4241,66 @@ export default function StoreErrorReport() {
               )}
             </>
           )}
+
+          {/* Suspension Recovery & Reinstatement — the final step, collapsed, after the scan results */}
+          <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: "14px", marginTop: "24px" }}>
+            <button
+              onClick={() => setSuspensionOpen(v => !v)}
+              aria-expanded={suspensionOpen}
+              style={{
+                width: "100%", display: "flex", alignItems: "center", gap: "12px",
+                padding: "18px 24px", background: "none", border: "none", cursor: "pointer", textAlign: "left",
+              }}
+            >
+              <span style={{ fontSize: "26px", flexShrink: 0 }}>🚨</span>
+              <span style={{ flex: 1, minWidth: 0 }}>
+                <span style={{ display: "block", fontSize: "18px", fontWeight: 700, color: "#212121" }}>Suspension Recovery & Reinstatement</span>
+                <span style={{ display: "block", marginTop: "2px", fontSize: "12px", fontWeight: 600, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.4px" }}>
+                  The final step — diagnosis, fix plan & appeal letter
+                </span>
+              </span>
+              <span style={{ fontSize: "12px", fontWeight: 700, color: "#006ECB", background: "#eff6ff", padding: "4px 10px", borderRadius: "4px", border: "1px solid #bfdbfe", whiteSpace: "nowrap", flexShrink: 0 }}>
+                10 Credits
+              </span>
+              <span style={{ fontSize: "14px", color: "#6b7280", flexShrink: 0 }}>{suspensionOpen ? "▲" : "▼"}</span>
+            </button>
+
+            {suspensionOpen && (
+              <div style={{ padding: "0 24px 24px 24px" }}>
+                <p style={{ margin: 0, fontSize: "13px", color: "#374151", lineHeight: 1.7 }}>
+                  If Google Merchant Center has <strong>suspended</strong> or <strong>warned</strong> your store, this analyzes your latest
+                  scan results to pinpoint the most likely policy violation (Misrepresentation, Insufficient Contact Information,
+                  Untrustworthy Promotions, and more), builds a prioritized <strong>fix-before-you-appeal checklist</strong> — with the same
+                  one-click Auto Fix as the scans above — and drafts a professional, ready-to-send <strong>reinstatement request letter</strong>
+                  you can edit and copy straight into Google's appeal form.
+                </p>
+
+                {/* Run-this-last warning */}
+                <div style={{ marginTop: "16px", padding: "12px 16px", background: "#fffbeb", border: "1px solid #fcd34d", borderRadius: "8px" }}>
+                  <p style={{ margin: 0, fontSize: "13px", fontWeight: 700, color: "#92400e" }}>
+                    ⚠️ Run this last
+                  </p>
+                  <p style={{ margin: "4px 0 0 0", fontSize: "12px", color: "#78350f", lineHeight: 1.6 }}>
+                    Run the <strong>Basic</strong>, <strong>Advanced</strong> and <strong>Deep</strong> scans above and fix every issue they
+                    surface <strong>first</strong>. Google only reinstates stores that have actually resolved the underlying problems —
+                    appealing before they're fixed almost always gets rejected. This assistant uses your most recent (ideally Deep) scan to
+                    write the strongest possible case.
+                  </p>
+                </div>
+
+                <div style={{ marginTop: "20px" }}>
+                  <SuspensionRecoveryScan
+                    credits={credits}
+                    scanId={scan?.id}
+                    fixStates={fixStates}
+                    setFixStates={setFixStates}
+                    savedDetails={savedDetails}
+                    onDetailsSaved={handleDetailsSaved}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
 
         </div>
       </Page>

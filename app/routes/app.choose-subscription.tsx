@@ -270,7 +270,7 @@ export default function ChooseSubscription() {
   return (
     <Frame>
       <Page 
-        title="Choose Your Subscription Plan" 
+        title="Plans & Billing"
         narrowWidth
         backAction={{ content: "Dashboard", url: "/app" }}
       >

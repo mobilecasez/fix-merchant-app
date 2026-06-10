@@ -125,7 +125,7 @@ export default function Settings() {
   return (
     <Frame>
       <Page
-        title="App Settings"
+        title="Control Access"
         subtitle="Control which features are accessible to users"
         backAction={{ content: "Dashboard", url: "/app" }}
         primaryAction={{
@@ -155,7 +155,7 @@ export default function Settings() {
 
                 <BlockStack gap="300">
                   <Checkbox
-                    label="Add Product Replica"
+                    label="AI Product Import"
                     checked={addProductReplicaEnabled}
                     onChange={setAddProductReplicaEnabled}
                     helpText="Allow users to fetch and add products from external URLs"
@@ -176,17 +176,17 @@ export default function Settings() {
                   />
 
                   <Checkbox
-                    label="Reports"
+                    label="Products Repair"
                     checked={reportEnabled}
                     onChange={setReportEnabled}
-                    helpText="Enable product reports functionality"
+                    helpText="Enable the per-product scan & auto-repair page"
                   />
 
                   <Checkbox
-                    label="Store Error Reports"
+                    label="GMC Compliance Fix"
                     checked={storeErrorReportEnabled}
                     onChange={setStoreErrorReportEnabled}
-                    helpText="Enable store-wide error checking and reports"
+                    helpText="Enable store-wide compliance scanning & fixes"
                   />
                 </BlockStack>
               </BlockStack>

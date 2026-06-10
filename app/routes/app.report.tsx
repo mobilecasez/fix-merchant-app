@@ -1204,7 +1204,7 @@ export default function ReportPage() {
 
   return (
     <Page
-      title={`Product Error Detailed Report (${credits.used}/${credits.limit} used)`}
+      title={`Products Repair (${credits.used}/${credits.limit} used)`}
       fullWidth
     >
       <CentralizedLoader loading={seoFetcher.state === "loading"} />
@@ -1454,7 +1454,7 @@ export function ErrorBoundary() {
     : (error instanceof Error ? error.message : 'An unexpected error occurred.');
 
   return (
-    <Page title="Product Error Detailed Report">
+    <Page title="Products Repair">
       <Layout>
         <Layout.Section>
           <Card>

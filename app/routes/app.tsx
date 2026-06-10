@@ -78,28 +78,29 @@ export default function App() {
           Home
         </Link>
         {settings.addProductReplicaEnabled && (
-          <Link to="/app/add-product-replica">Add Product Replica</Link>
+          <Link to="/app/add-product-replica">AI Product Import</Link>
         )}
         {settings.storeErrorReportEnabled && (
-          <Link to="/app/store-error-report">Store Error Report</Link>
+          <Link to="/app/store-error-report">GMC Compliance Fix</Link>
         )}
         {settings.reportEnabled && (
-          <Link to="/app/report">Product Error Detail Report</Link>
+          <Link to="/app/report">Products Repair</Link>
         )}
         {settings.merchandisingEnabled !== false && (
-          <Link to="/app/merchandising">Catalog & Merchandising</Link>
+          <Link to="/app/merchandising">Boost Sales</Link>
         )}
+        <Link to="/app/growth">Protect & Grow</Link>
         {subscription && (
           <>
-            <Link to="/app/usage-analytics">Usage Analytics</Link>
-            <Link to="/app/choose-subscription">Subscription</Link>
+            <Link to="/app/usage-analytics">Usage & Limits</Link>
+            <Link to="/app/choose-subscription">Plans & Billing</Link>
           </>
         )}
 
         {isAccountOwner && (
           <>
             <Link to="/app/subscription-plans">Manage Plans</Link>
-            <Link to="/app/settings">Settings</Link>
+            <Link to="/app/settings">Control Access</Link>
           </>
         )}
       </NavMenu>

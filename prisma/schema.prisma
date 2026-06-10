@@ -136,6 +136,20 @@ model StoreScan {
   @@index([shop])
 }
 
+model StoreMonitor {
+  id             String    @id @default(uuid())
+  shop           String    @unique
+  enabled        Boolean   @default(false)
+  frequency      String    @default("weekly") // daily | weekly
+  email          String
+  storeUrl       String
+  lastRunAt      DateTime?
+  lastIssueCount Int       @default(0)
+  baseline       Json?     // string[] of issue fingerprints from the last run
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+}
+
 enum AdminBannerState {
   PENDING
   COMPLETE

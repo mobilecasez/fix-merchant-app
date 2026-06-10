@@ -1,0 +1,67 @@
+{%- comment -%}
+  ShopFlix AI — Product Structured Data (JSON-LD) app EMBED.
+  Injects schema.org/Product markup on product pages with brand, GTIN, MPN, price,
+  availability and ratings — preventing Google Merchant Center "structured data
+  mismatch" issues and unlocking Google rich results. Enabled once from the theme
+  editor → Theme settings → App embeds.
+{%- endcomment -%}
+
+{%- if request.page_type == 'product' and product != blank -%}
+  {%- assign v = product.selected_or_first_available_variant | default: product.first_available_variant -%}
+  {%- assign gtin = v.barcode | default: product.metafields.custom.gtin -%}
+  {%- capture price_value -%}{{ v.price | divided_by: 100.0 }}{%- endcapture -%}
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org/",
+    "@type": "Product",
+    "name": {{ product.title | json }},
+    "description": {{ product.description | strip_html | truncate: 500 | json }},
+    "image": [ {{ product.featured_image | image_url: width: 1200 | json }} ],
+    "url": {{ request.origin | append: product.url | json }},
+    "sku": {{ v.sku | default: product.id | json }},
+    {%- if v.sku != blank %}
+    "mpn": {{ v.sku | json }},
+    {%- endif %}
+    {%- if product.vendor != blank %}
+    "brand": { "@type": "Brand", "name": {{ product.vendor | json }} },
+    {%- endif %}
+    {%- if gtin != blank %}
+    "gtin": {{ gtin | json }},
+    {%- endif %}
+    {%- if block.settings.include_rating and product.metafields.reviews.rating.value != blank and product.metafields.reviews.rating_count.value > 0 %}
+    "aggregateRating": {
+      "@type": "AggregateRating",
+      "ratingValue": {{ product.metafields.reviews.rating.value.rating | json }},
+      "reviewCount": {{ product.metafields.reviews.rating_count.value | json }}
+    },
+    {%- endif %}
+    "offers": {
+      "@type": "Offer",
+      "url": {{ request.origin | append: product.url | json }},
+      "priceCurrency": {{ cart.currency.iso_code | json }},
+      "price": "{{ price_value }}",
+      "availability": "{%- if v.available -%}https://schema.org/InStock{%- else -%}https://schema.org/OutOfStock{%- endif -%}",
+      "itemCondition": "https://schema.org/NewCondition"
+    }
+  }
+  </script>
+{%- endif -%}
+
+{% schema %}
+{
+  "name": "Product Structured Data",
+  "target": "head",
+  "settings": [
+    {
+      "type": "paragraph",
+      "content": "Adds schema.org Product data (brand, GTIN, MPN, price, availability, ratings) to your product pages — for Google rich results and Merchant Center accuracy. Works automatically on every product page."
+    },
+    {
+      "type": "checkbox",
+      "id": "include_rating",
+      "label": "Include star ratings when available",
+      "default": true
+    }
+  ]
+}
+{% endschema %}

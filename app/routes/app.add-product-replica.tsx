@@ -682,7 +682,7 @@ export default function AddProductReplica() {
         progress={loadingProgress} 
       />
       <Page
-        title={`Add product (${currentProductsUsed}/${productLimit} used)`}
+        title={`AI Product Import (${currentProductsUsed}/${productLimit} used)`}
         backAction={{ content: "Products", url: "/app" }}
         primaryAction={{
           content: "Save product",

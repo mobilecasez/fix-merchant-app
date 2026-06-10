@@ -27,8 +27,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 };
 
 // ── Shared helpers ──────────────────────────────────────────────────────────
-const post = async (intent: string, extra: Record<string, any> = {}) => {
-  const res = await fetch("/api/merchandising", {
+const post = async (intent: string, extra: Record<string, any> = {}, endpoint = "/api/merchandising") => {
+  const res = await fetch(endpoint, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ intent, ...extra }),
@@ -367,7 +367,7 @@ export default function Merchandising() {
           <div className="header-section">
             <div className="header-content">
               <div className="logo-icon">🧩</div>
-              <h1 className="app-title">Catalog & Merchandising</h1>
+              <h1 className="app-title">Boost Sales</h1>
             </div>
           </div>
 

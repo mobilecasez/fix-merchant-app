@@ -1,0 +1,23 @@
+name: Store Compliance Monitor
+
+# Runs the Always-On Monitoring batch. The endpoint itself decides which shops are
+# due (daily vs weekly), so a single daily trigger is enough.
+#
+# Required repo secrets (Settings → Secrets and variables → Actions):
+#   APP_URL      e.g. https://shopflixai-production.up.railway.app
+#   CRON_SECRET  must match CRON_SECRET set on Railway
+
+on:
+  schedule:
+    - cron: "0 8 * * *" # every day at 08:00 UTC
+  workflow_dispatch: {} # allow manual "Run workflow" from the Actions tab
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger monitoring run
+        run: |
+          curl -fsS --max-time 300 -X POST \
+            -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" \
+            "${{ secrets.APP_URL }}/api/cron/monitor"
