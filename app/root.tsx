@@ -7,8 +7,17 @@ import {
   useRouteError,
   isRouteErrorResponse,
 } from "@remix-run/react";
+import { useEffect } from "react";
+
+const CHUNK_RELOAD_KEY = "shopflix_reloaded_after_chunk_error";
 
 export default function App() {
+  // Clear the chunk-error reload guard once the app renders successfully, so a
+  // future deploy in the same session can auto-recover again.
+  useEffect(() => {
+    try { sessionStorage.removeItem(CHUNK_RELOAD_KEY); } catch { /* no-op */ }
+  }, []);
+
   return (
     <html>
       <head>
@@ -34,6 +43,24 @@ export default function App() {
 
 export function ErrorBoundary() {
   const error = useRouteError();
+
+  // Auto-recover from stale-bundle errors after a deploy: when the client tries
+  // to load a route chunk whose filename changed in a new deploy, the dynamic
+  // import fails and bubbles to this root boundary. Reload ONCE (guarded against
+  // loops) to fetch the fresh bundle, turning a scary error into a silent retry.
+  useEffect(() => {
+    if (isRouteErrorResponse(error)) return;
+    if (typeof window === "undefined") return;
+    const msg = (error instanceof Error ? `${error.message} ${error.name}` : String(error || "")).toLowerCase();
+    const isChunkError = /dynamically imported module|loading chunk|importing a module script failed|module script failed|failed to fetch|chunkloaderror/.test(msg);
+    if (!isChunkError) return;
+    try {
+      if (!sessionStorage.getItem(CHUNK_RELOAD_KEY)) {
+        sessionStorage.setItem(CHUNK_RELOAD_KEY, "1");
+        window.location.reload();
+      }
+    } catch { /* no-op */ }
+  }, [error]);
 
   return (
     <html>
