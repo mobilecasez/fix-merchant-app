@@ -66,3 +66,32 @@ export function optimizeHtmlForAI(html: string): { markdown: string; dataScripts
     dataScripts: dataScripts.join('\n\n')
   };
 }
+
+/**
+ * Extract clean, human-readable text from a page's HTML for AI consumption.
+ *
+ * Critically strips <script>/<style>/<noscript>/<svg> CONTENT *before* removing
+ * tags — a naive `html.replace(/<[^>]+>/g, " ")` leaves all the inline JS/JSON in
+ * a Shopify page's <head> as text, so the first couple-thousand characters become
+ * "mostly code" and the real page content (contact details, policy text) gets
+ * truncated away. Prefers Readability's article extraction (visible content only)
+ * and falls back to a script/style-stripped tag strip when Readability can't parse.
+ */
+export function extractReadableText(html: string, maxLen = 2500): string {
+  if (!html) return "";
+  try {
+    const { markdown } = optimizeHtmlForAI(html);
+    if (markdown && markdown !== "Readability failed to parse content.") {
+      return markdown.substring(0, maxLen);
+    }
+  } catch { /* fall through to plain strip */ }
+  const text = html
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<noscript[\s\S]*?<\/noscript>/gi, " ")
+    .replace(/<svg[\s\S]*?<\/svg>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return text.substring(0, maxLen);
+}

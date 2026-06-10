@@ -3,6 +3,7 @@ import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { processStoreScan, processAdvancedScan, processDeepScan, unlockStorefront } from "../utils/store-scanner.server";
 import { incrementProductUsage, getOrCreateSubscription, getProductsUsed, getEffectiveProductLimit } from "../utils/billing.server";
+import { extractReadableText } from "../utils/dom-optimizer.server";
 
 const SCAN_CREDITS: Record<string, number> = {
   BASIC: 10,
@@ -252,7 +253,9 @@ export async function action({ request }: ActionFunctionArgs) {
       });
       if (contactRes.ok) {
         const html = await contactRes.text();
-        contactPageText = html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().substring(0, 2000);
+        // Clean, readable text only — strips inline JS/CSS so the AI sees the
+        // actual contact details instead of "mostly code".
+        contactPageText = extractReadableText(html, 2500);
       }
     } catch { /* non-fatal */ }
 

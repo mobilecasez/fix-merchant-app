@@ -1,5 +1,5 @@
 import { parse } from "node-html-parser";
-import { optimizeHtmlForAI } from "./dom-optimizer.server";
+import { optimizeHtmlForAI, extractReadableText } from "./dom-optimizer.server";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { retryOperation } from "./retry";
 import prisma from "../db.server";
@@ -520,6 +520,10 @@ export interface DeepAuditData {
   is_password_protected: boolean;
   business_identity: { name: string; domain: string; legal_address: string; contact_email?: string };
   contact_page_text: string;
+  /** Deterministically detected contact channels (email / phone / physical address)
+   *  found in the footer, contact page, or store settings. Authoritative — the AI
+   *  must treat 2+ channels here as sufficient contact information. */
+  contact_channels_found?: string[];
   homepage_text?: string;
   https_enabled?: boolean;
   policy_pages?: {
@@ -557,8 +561,8 @@ COMPREHENSIVE CHECKS TO PERFORM (evaluate ALL of these — report each as a sepa
 
 A. BUSINESS IDENTITY & MISREPRESENTATION
 1. Business Identity Consistency: Does business_identity (name, domain, legal_address) appear consistently in contact_page_text and homepage_text? Flag mismatches or a generic/placeholder business name as "Business Identity Mismatch".
-2. Missing Physical Address: Google requires a verifiable physical business address. If legal_address is empty/incomplete AND no address appears in contact_page_text or homepage_text, flag "Missing Business Address".
-3. Missing/Generic Contact Channels: Google requires multiple ways to contact the business (email, phone, physical address, or contact form). If fewer than two are evidenced, flag "Insufficient Contact Information".
+2. Missing Physical Address: Google requires a verifiable physical business address. Treat a physical address as PRESENT if contact_channels_found includes "physical address", OR legal_address is non-empty, OR an address appears in contact_page_text or homepage_text. Only flag "Missing Business Address" when NONE of these show an address.
+3. Missing/Generic Contact Channels: Google requires multiple ways to contact the business (email, phone, physical address, or contact form). contact_channels_found is the AUTHORITATIVE, deterministically-detected list of channels present on the live store — if it contains 2 OR MORE channels, contact information is SUFFICIENT and you MUST NOT flag "Insufficient Contact Information" (and MUST NOT claim the contact page is "mostly code" or hides details). Only flag "Insufficient Contact Information" when fewer than two channels are evidenced across contact_channels_found, contact_page_text, and homepage_text combined.
 
 B. POLICY & TRANSPARENCY (Conditions Not Met)
 4. Refund/Return Policy Quality: Using policy_pages.refund_return, if it does not exist OR word_count is very low (< 80 words ≈ too thin to be a real policy), flag "Inadequate Refund/Return Policy".
@@ -1223,6 +1227,21 @@ async function enrichDeepData(
       let m: RegExpExecArray | null;
       while ((m = socialRe.exec(html)) !== null) social.add(m[1].toLowerCase());
       out.social_links = Array.from(social);
+
+      // ── Contact channels (deterministic) ─────────────────────────────────────
+      // Authoritative evidence of how the business can be reached, detected from
+      // the contact page text, homepage/footer (incl. mailto:/tel: links), and the
+      // Shopify business address. Lets the AI avoid false "Insufficient Contact
+      // Information" / "Missing Business Address" flags when details ARE present.
+      const contactCorpus = `${out.contact_page_text || ""}\n${out.homepage_text || ""}\n${html}`;
+      const channels: string[] = [];
+      if (/mailto:[^"'\s>]+@|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(contactCorpus)) channels.push("email");
+      if (/tel:[+\d][^"'\s>]*|(?:\+?\d[\d\s().-]{7,}\d)/.test(contactCorpus)) channels.push("phone");
+      const addressText = `${out.contact_page_text || ""} ${out.homepage_text || ""}`;
+      if (looksLikeAddress(addressText) || (out.business_identity?.legal_address || "").trim().length > 5) {
+        channels.push("physical address");
+      }
+      out.contact_channels_found = channels;
     }
   } catch { /* non-fatal */ }
 
@@ -1239,7 +1258,12 @@ async function enrichDeepData(
       try {
         const { html, status } = await safeFetch(`${storeUrl}${path}`, 9000, cookie);
         if (html && status !== 404 && !isPasswordPage(html)) {
-          const text = html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+          // Strip scripts/styles before counting so word_count reflects the real
+          // policy prose, not inline JS/CSS.
+          const text = html
+            .replace(/<script[\s\S]*?<\/script>/gi, " ")
+            .replace(/<style[\s\S]*?<\/style>/gi, " ")
+            .replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
           const wordCount = text ? text.split(/\s+/).length : 0;
           policyPages[key] = { exists: true, word_count: wordCount };
           return;
@@ -1340,7 +1364,9 @@ export async function processDeepScan(
     try {
       const { html } = await safeFetch(`${storeUrl}/pages/contact`, 10000, cookie);
       if (html && !isPasswordPage(html)) {
-        const text = html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().substring(0, 2000);
+        // Clean, readable text only — strips inline JS/CSS so the AI sees the
+        // actual contact details instead of "mostly code".
+        const text = extractReadableText(html, 2500);
         if (text) auditData.contact_page_text = text;
       }
     } catch { /* non-fatal — keep originally gathered text */ }
