@@ -97,6 +97,7 @@ export default function App() {
           <Link to="/app/merchandising">Boost Sales</Link>
         )}
         <Link to="/app/growth">Protect & Grow</Link>
+        <Link to="/app/requests">Feature Requests</Link>
         {subscription && (
           <>
             <Link to="/app/usage-analytics">Usage & Limits</Link>

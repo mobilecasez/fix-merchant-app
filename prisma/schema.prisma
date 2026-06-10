@@ -92,6 +92,33 @@ model ShopReview {
   updatedAt DateTime  @updatedAt
 }
 
+// Public, cross-shop feature-request board. Merchants submit requests and upvote
+// existing ones; the app prioritizes the highest-voted. Votes are one-per-shop.
+model FeatureRequest {
+  id            String               @id @default(cuid())
+  title         String
+  description   String
+  tags          String               @default("") // space-separated normalized keywords for similarity matching
+  status        String               @default("open") // open | planned | in_progress | done | declined
+  createdByShop String
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+  votes         FeatureRequestVote[]
+
+  @@index([status])
+}
+
+model FeatureRequestVote {
+  id        String         @id @default(cuid())
+  requestId String
+  shop      String
+  createdAt DateTime       @default(now())
+  request   FeatureRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@unique([requestId, shop])
+  @@index([shop])
+}
+
 model ContactMessage {
   id        String   @id @default(cuid())
   name      String
