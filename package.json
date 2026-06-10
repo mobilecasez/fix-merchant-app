@@ -66,6 +66,7 @@
     "react-dropzone": "^14.3.8",
     "react-quill": "^2.0.0",
     "resend": "^6.12.4",
+    "sharp": "^0.34.5",
     "turndown": "^7.2.4",
     "undici": "^7.18.2",
     "user-agents": "^2.1.56",
@@ -88,7 +89,6 @@
     "eslint": "^8.42.0",
     "eslint-config-prettier": "^10.0.1",
     "prettier": "^3.2.4",
-    "sharp": "^0.34.5",
     "typescript": "^5.2.2",
     "vite": "^6.2.2"
   },
