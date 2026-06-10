@@ -369,7 +369,7 @@ async function gatherStoreData(
 // ── Prompt: Basic Scan (Store Fundamentals & Legal Compliance) ─────────────────
 
 function buildBasicPrompt(data: ReturnType<typeof gatherStoreData> extends Promise<infer T> ? T : never): string {
-  const { pages, brokenNavLinks, baseUrl, footerLinks } = data as any;
+  const { pages, brokenNavLinks, baseUrl, footerLinks, discoveredPolicies } = data as any;
 
   // Structured INPUT DATA block
   const isPasswordProtected = pages.some((p: any) => p.path === "/" && !p.exists && p.status === 0);
@@ -390,6 +390,21 @@ function buildBasicPrompt(data: ReturnType<typeof gatherStoreData> extends Promi
     contactPage?.exists ? contactPage.markdown.substring(0, 1500) : "",
     homePage?.exists ? homePage.markdown.substring(0, 500) : "",
   ].filter(Boolean).join("\n");
+
+  // Deterministic ground truth the AI can rely on (code's job = supply complete,
+  // clean data; the AI's job = judge compliance across any store layout):
+  //  - contact_channels_found: contact methods actually detected on the live store
+  //  - discovered_pages: real policy/contact URLs found in the store's own links,
+  //    so pages under custom slugs are KNOWN to exist.
+  const channelCorpus = `${contactInfo}\n${(footerLinks || []).join("\n")}`;
+  const contactChannels: string[] = [];
+  if (/mailto:|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(channelCorpus)) contactChannels.push("email");
+  if (/tel:|(?:\+?\d[\d\s().-]{7,}\d)/.test(channelCorpus)) contactChannels.push("phone");
+  if (looksLikeAddress(channelCorpus)) contactChannels.push("physical address");
+
+  const discoveredPagesText = discoveredPolicies && Object.keys(discoveredPolicies).length
+    ? Object.entries(discoveredPolicies).map(([k, v]) => `- ${k}: ${v}`).join("\n")
+    : "None discovered from homepage links.";
 
   // Pages already confirmed missing/broken by HTTP — provide as ground truth
   const confirmedMissingPages = pages
@@ -417,8 +432,12 @@ INPUT DATA:
   "store_url": "${baseUrl}",
   "is_password_protected": ${isPasswordProtected},
   "header_footer_text_and_links": ${JSON.stringify(headerFooterContent.substring(0, 4000))},
-  "extracted_contact_info": ${JSON.stringify(contactInfo.substring(0, 2000))}
+  "extracted_contact_info": ${JSON.stringify(contactInfo.substring(0, 2000))},
+  "contact_channels_found": ${JSON.stringify(contactChannels)}
 }
+
+DISCOVERED POLICY/CONTACT PAGES (real URLs found in the store's OWN footer/nav links — these pages EXIST and are LINKED, even under custom slugs):
+${discoveredPagesText}
 
 CONFIRMED MISSING PAGES (verified via HTTP — these are definite failures):
 ${confirmedMissingPages.length > 0 ? confirmedMissingPages.join("\n") : "None — all required pages responded with content."}
@@ -432,10 +451,10 @@ ${pagesSummary}
 ---
 
 CHECKS TO PERFORM:
-1. Missing Essential Pages: The store MUST have distinct, working pages for: "Privacy Policy", "Terms of Service" (or Terms and Conditions), "Contact Us", "Shipping Policy", and "Refund/Return Policy". Use the CONFIRMED MISSING PAGES list as the authoritative source. Only flag a page as missing if it appears in that list OR if it is genuinely absent from all provided page content.
-2. Contact Information: The store MUST display at least two of the following: a physical business address, a support email, or a phone number. Check extracted_contact_info. Only flag as missing if none of these are found in the provided data.
+1. Missing Essential Pages: The store MUST have distinct, working pages for: "Privacy Policy", "Terms of Service" (or Terms and Conditions), "Contact Us", "Shipping Policy", and "Refund/Return Policy". Use the CONFIRMED MISSING PAGES list as the authoritative source. A page listed under DISCOVERED POLICY/CONTACT PAGES EXISTS (it was found via the store's own links) — NEVER flag it as missing even if its slug is non-standard. Only flag a page as missing if it appears in CONFIRMED MISSING PAGES AND is not in DISCOVERED POLICY/CONTACT PAGES.
+2. Contact Information: The store MUST display at least two of: a physical business address, a support email, or a phone number. contact_channels_found lists the channels detected deterministically on the live store — if it contains 2 or more entries, contact info is SUFFICIENT and you MUST NOT flag it. Only flag "business_contact" when fewer than two channels are evidenced across contact_channels_found and extracted_contact_info combined.
 3. Broken Navigation Links: Use the CONFIRMED BROKEN LINKS list. Do not flag any URL that is not in that list.
-4. Footer/Navigation Compliance (CRITICAL for GMC): The store footer MUST contain visible links to Privacy Policy, Refund/Return Policy, Shipping Policy, Terms of Service, and Contact page. Evaluate against header_footer_text_and_links AND the [Footer links] list. A link COUNTS AS PRESENT even under a custom slug or alternate wording — e.g. "Returns and Refunds" or "/pages/returns-and-refunds" satisfies Refund/Return Policy; "Terms and Conditions" or "/pages/terms-and-conditions" satisfies Terms of Service; "Contact Us" or "/pages/contact-us" satisfies Contact. Only flag a SINGLE "footer_links" issue if a required link is genuinely absent from BOTH lists. NEVER flag based on slug naming differences alone.
+4. Footer/Navigation Compliance (CRITICAL for GMC): The store footer MUST contain visible links to Privacy Policy, Refund/Return Policy, Shipping Policy, Terms of Service, and Contact page. Evaluate against header_footer_text_and_links AND the [Footer links] list. A link COUNTS AS PRESENT even under a custom slug or alternate wording — e.g. "Returns and Refunds" or "/pages/returns-and-refunds" satisfies Refund/Return Policy; "Terms and Conditions" or "/pages/terms-and-conditions" satisfies Terms of Service; "Contact Us" or "/pages/contact-us" satisfies Contact. Only flag a SINGLE "footer_links" issue if a required link is genuinely absent from BOTH lists. NEVER flag based on slug naming differences alone. Any page in DISCOVERED POLICY/CONTACT PAGES is already linked from the store — do not flag its link as missing.
 5. Password Protection: If is_password_protected is true, add ONE Medium severity issue in site_structure_and_seo: "Store is password-protected — disable this before going live so Google bots can crawl the store." Set auto_fixable=false, auto_fix_type=null. Do NOT attribute any other failures to password protection.
 
 FIELD RULES:
@@ -950,56 +969,13 @@ async function reconcileBasicResult(result: any, storeData: any, storeUrl: strin
     }
   }
 
-  // 5. Make footer issue presence match reality — inject if genuinely missing.
-  const allIssues = [
-    ...(result.site_structure_and_seo || []),
-    ...(result.merchant_center_compliance || []),
-    ...(result.customer_trust_and_policy || []),
-  ];
-  const hasFooterIssue = allIssues.some((i: any) => i.auto_fix_type === "footer_links");
-  if (missingFooter.length > 0 && !hasFooterIssue) {
-    if (!result.site_structure_and_seo) result.site_structure_and_seo = [];
-    result.site_structure_and_seo.unshift({
-      severity: "High",
-      issue_description: `Footer is missing ${missingFooter.length} required GMC link${missingFooter.length > 1 ? "s" : ""}: ${missingFooter.map(v => v.label).join(", ")}. These must be visible from every page.`,
-      suggested_fix: "Add all required policy and contact links to your store's footer navigation.",
-      detailed_fix_steps: [
-        "Go to Online Store → Navigation in Shopify Admin.",
-        "Add a new menu called 'Policy Links' with links to Privacy Policy, Refund Policy, Shipping Policy, Terms of Service, and Contact.",
-        "In Online Store → Themes → Customize → Footer, add a new 'Link list' block pointing to this menu, then Save.",
-      ],
-      auto_fixable: true,
-      auto_fix_type: "footer_links",
-      credit_cost: 3,
-    });
-  }
-
-  // 5b. Business contact details — inject a business_contact issue when the store
-  //     shows NO site-wide contact details (footer) and no contact page email/phone.
-  //     This makes "missing business/contact details in the footer" a Basic-scan
-  //     finding (GMC "Insufficient Contact Information").
-  const hasBusinessContactIssue = allIssues.some((i: any) => i.auto_fix_type === "business_contact");
-  if (!businessContactSatisfied && !hasBusinessContactIssue) {
-    if (!result.merchant_center_compliance) result.merchant_center_compliance = [];
-    const missingBits = [
-      !footerHasAddress ? "business address" : null,
-      !(footerHasEmail || pageHasEmail) ? "support email" : null,
-      !(footerHasPhone || pageHasPhone) ? "phone number" : null,
-    ].filter(Boolean);
-    result.merchant_center_compliance.unshift({
-      severity: "High",
-      issue_description: `Your store does not display business contact details (${missingBits.join(", ")}) in the footer or contact page. Google Merchant Center requires a reachable business identity — missing contact information is a common cause of account suspension.`,
-      suggested_fix: "Add your business address, support email, and phone number — ideally visible in the footer on every page.",
-      detailed_fix_steps: [
-        "In Shopify Admin, go to Settings → Store details and confirm your business address, email, and phone are set.",
-        "Create or update your Contact page (Online Store → Pages) to list your support email, phone, and physical/business address.",
-        "Add these contact details to your footer: Online Store → Themes → Customize → Footer → add a Text block with your address, email, and phone, then Save.",
-      ],
-      auto_fixable: true,
-      auto_fix_type: "business_contact",
-      credit_cost: 2,
-    });
-  }
+  // NOTE: this pass is SUPPRESSION-ONLY. Steps 1–4 remove findings the live store
+  // proves are already satisfied; it never INJECTS a finding from a deterministic
+  // rule. Detecting what is genuinely missing is the AI's job — it is given the
+  // complete footer links, the discovered policy/contact pages, and the
+  // contact_channels_found signal, and it handles the real-world variety of store
+  // layouts far better than brittle keyword rules. This is what stops code from
+  // manufacturing false positives on compliant stores with unconventional naming.
 
   // 6. Recompute summary counts/risk from the reconciled lists.
   recomputeBasicSummary(result, storeData);
