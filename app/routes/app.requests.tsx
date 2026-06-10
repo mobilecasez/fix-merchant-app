@@ -259,6 +259,7 @@ export default function FeatureRequests() {
   const [description, setDescription] = useState("");
   const [similar, setSimilar] = useState<ReqItem[] | null>(null);
   const [formError, setFormError] = useState("");
+  const [view, setView] = useState<"top" | "roadmap">("top");
   const lastHandled = useRef<any>(null);
 
   // Rating banner state (matches the Protect & Grow card style)
@@ -406,23 +407,52 @@ export default function FeatureRequests() {
             )}
           </div>
 
-          {/* The board */}
-          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", margin: "4px 2px 10px" }}>
-            <h2 style={{ margin: 0, fontSize: "16px", fontWeight: 700, color: "#212121" }}>
-              Most requested {requests.length > 0 ? `(${requests.length})` : ""}
-            </h2>
-            <span style={{ fontSize: "12px", color: "#6b7280" }}>Sorted by votes</span>
+          {/* View toggle */}
+          <div style={{ display: "flex", gap: "8px", margin: "4px 2px 14px" }}>
+            <button type="button" onClick={() => setView("top")} style={tabStyle(view === "top")}>🔥 Most Requested</button>
+            <button type="button" onClick={() => setView("roadmap")} style={tabStyle(view === "roadmap")}>🗺️ Roadmap</button>
           </div>
 
           {requests.length === 0 ? (
             <div className="intro-card" style={{ textAlign: "center" }}>
               <p className="intro-paragraph" style={{ margin: 0 }}>No requests yet — be the first to suggest a feature above! 🚀</p>
             </div>
+          ) : view === "top" ? (
+            (() => {
+              const active = (requests as ReqItem[]).filter((r) => r.status !== "done" && r.status !== "declined");
+              if (active.length === 0) {
+                return (
+                  <div className="intro-card" style={{ textAlign: "center" }}>
+                    <p className="intro-paragraph" style={{ margin: 0 }}>Nothing open right now — check the Roadmap to see what's shipped. ✅</p>
+                  </div>
+                );
+              }
+              return (
+                <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                  {active.map((r) => <RequestCard key={r.id} item={r} isOwner={isAccountOwner} />)}
+                </div>
+              );
+            })()
           ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-              {requests.map((r) => (
-                <RequestCard key={r.id} item={r as ReqItem} isOwner={isAccountOwner} />
-              ))}
+            <div style={{ display: "flex", flexDirection: "column", gap: "22px" }}>
+              {([
+                { status: "in_progress", icon: "🚧", label: "In progress" },
+                { status: "planned", icon: "📋", label: "Planned" },
+                { status: "done", icon: "✅", label: "Shipped" },
+              ] as const).map((group) => {
+                const items = (requests as ReqItem[]).filter((r) => r.status === group.status);
+                if (items.length === 0) return null;
+                return (
+                  <div key={group.status}>
+                    <h2 style={{ margin: "0 0 10px 2px", fontSize: "15px", fontWeight: 700, color: "#212121" }}>
+                      {group.icon} {group.label} <span style={{ color: "#9ca3af", fontWeight: 600 }}>({items.length})</span>
+                    </h2>
+                    <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                      {items.map((r) => <RequestCard key={r.id} item={r} isOwner={isAccountOwner} />)}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )}
 
@@ -444,6 +474,13 @@ const ghostBtn: React.CSSProperties = {
   background: "none", color: "#6b7280", border: "1px solid #e5e7eb", borderRadius: "8px",
   padding: "10px 16px", fontSize: "13px", fontWeight: 600, cursor: "pointer",
 };
+const tabStyle = (active: boolean): React.CSSProperties => ({
+  border: `1.5px solid ${active ? "#1a4a5a" : "#e5e7eb"}`,
+  background: active ? "#1a4a5a" : "#fff",
+  color: active ? "#fff" : "#374151",
+  borderRadius: "999px", padding: "8px 16px", fontSize: "13px", fontWeight: 700,
+  cursor: "pointer", fontFamily: "inherit",
+});
 
 export function ErrorBoundary() {
   const error = useRouteError();
