@@ -27,8 +27,16 @@ Alternative (exactly at the 62 limit — use only if the counter allows): `Fix G
 
 ## 4. App details (500 chars — verify counter on paste)
 
+Recommended (483 chars — leads with the wedge + keywords, includes AI import):
+
 ```
-Google approves stores, not just feeds. ShopFlix AI scans your storefront the way Google's review does — policies, contact info, product data, images & trust signals — then fixes issues in one click: it creates policy pages, footer links & contact details directly in your store. Suspended? It diagnoses the likely cause, builds a prioritized fix checklist & drafts your reinstatement appeal. Always-on monitoring re-checks your store & alerts you before small issues become suspensions.
+Google approves stores, not just feeds. ShopFlix AI scans your storefront the way Google's review does — policies, contact info, product data, images & trust signals — then fixes issues in one click. Suspended? It diagnoses the cause, builds a fix checklist, and drafts your reinstatement appeal. Plus: import products from Amazon, eBay & AliExpress with AI-written SEO descriptions and categories, ready to sell. Always-on monitoring alerts you before issues become suspensions.
+```
+
+Alternative (490 chars — import-first):
+
+```
+Import products from Amazon, eBay, AliExpress & any URL in a few clicks — ShopFlix AI auto-writes SEO descriptions, assigns categories, and makes each listing Google Merchant Center-ready. It also scans your storefront like Google's review does — policies, contact info, product data, images & trust signals — and fixes issues in one click. Suspended? It diagnoses the cause, builds a fix checklist, and drafts your reinstatement appeal. Always-on monitoring catches new issues early.
 ```
 
 ## 5. Feature bullets (≤ 80 chars each)
@@ -51,6 +59,22 @@ google shopping fix
 ```
 
 Rationale: "misrepresentation" has **7** competing apps; "suspension" ~15, all under 40 reviews; "google merchant center" (959 results) is the volume term where no page-1 app positions on compliance. Deliberately NOT using "google shopping feed" (2,853 apps, incumbents with 4,000+ reviews).
+
+## 6b. Web search content (Google SEO for the listing page)
+
+These fields control how the apps.shopify.com listing appears in GOOGLE results — the 2am crisis search, not App Store search.
+
+**Title tag (≤60 chars):**
+```
+Fix Google Merchant Center Suspension & Misrepresentation
+```
+*(57 chars — matches both top crisis families. Alternate, 56: `Google Merchant Center Suspension Fix for Shopify Stores`)*
+
+**Meta description (~155 chars):**
+```
+Suspended or products disapproved? ShopFlix AI scans your Shopify store like Google does, fixes GMC issues in one click & drafts your reinstatement appeal.
+```
+*(155 chars — opens with the reader's situation; covers suspended + disapproved-products clusters. Alternate, 151: `Fix Google Merchant Center suspension & misrepresentation on Shopify. AI scans your store like Google's review, one-click fixes & appeal letter drafts.`)*
 
 ## 7. Integrations list (≤ 6)
 

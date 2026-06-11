@@ -24,6 +24,88 @@ import {
   getEffectiveProductLimit
 } from "../utils/billing.server";
 
+// What one credit buys across the app — shown as a transparency card above the
+// plans. Keep in sync with SCAN_CREDITS (api.store-scan), FIX_CREDIT_COSTS
+// (auto-fix), suspension-recovery (10), image-fixer (10 + 2/fix), monitor (2).
+const CREDIT_MENU: Array<{ icon: string; label: string; cost: string }> = [
+  { icon: "📦", label: "AI product import (Amazon, eBay, AliExpress & more)", cost: "1 credit / product" },
+  { icon: "⚡", label: "One-click AI auto-fix (policies, footer links, contact info…)", cost: "1–5 credits / fix" },
+  { icon: "🔍", label: "Basic compliance scan — first one FREE for every store", cost: "10 credits" },
+  { icon: "🛟", label: "Suspension Recovery — diagnosis + appeal letter", cost: "10 credits" },
+  { icon: "🖼️", label: "AI Image Fixer — white background, no watermarks", cost: "10 scan + 2 / image" },
+  { icon: "🔬", label: "Advanced scan — GTINs, pricing, product feed", cost: "20 credits" },
+  { icon: "🛡️", label: "Deep scan — full suspension-risk audit", cost: "30 credits" },
+  { icon: "🔔", label: "Always-on monitoring check", cost: "2 credits / check" },
+  { icon: "🧩", label: "JSON-LD structured data for rich results", cost: "Free" },
+];
+
+// Per-plan highlights ("best items") keyed by plan name; generic fallback below.
+const PLAN_DETAILS: Record<string, { tagline: string; features: string[] }> = {
+  "Free Plan": {
+    tagline: "See your store the way Google sees it — free.",
+    features: [
+      "First Basic compliance scan FREE (a 10-credit value)",
+      "2 credits / month for AI imports or quick fixes",
+      "Free JSON-LD structured data for rich results",
+    ],
+  },
+  "Starter": {
+    tagline: "New stores getting Google-ready.",
+    features: [
+      "Up to 20 AI product imports per month",
+      "GMC compliance scans + one-click AI auto-fixes",
+      "Suspension Recovery: diagnosis + appeal letter draft",
+      "Example month: 1 Basic scan + 10 auto-fixes — or 20 imports",
+    ],
+  },
+  "Basic": {
+    tagline: "Growing catalogs that need a clean, compliant feed.",
+    features: [
+      "Up to 50 AI product imports per month",
+      "Basic + Advanced scans (product feed, GTINs, pricing)",
+      "AI Image Fixer for Google-rejected photos",
+      "Always-on monitoring with email alerts",
+      "Example month: both scans + ~20 auto-fixes",
+    ],
+  },
+  "Professional": {
+    tagline: "Serious about GMC compliance & suspension recovery.",
+    features: [
+      "Up to 100 AI product imports per month",
+      "Full scan suite incl. Deep suspension-risk audit",
+      "Suspension Recovery with AI appeal letter",
+      "AI Image Fixer + always-on monitoring",
+      "Example month: all 3 scans + recovery + 30 fixes or imports",
+    ],
+  },
+  "Advanced": {
+    tagline: "Recovery and protection at scale.",
+    features: [
+      "Up to 150 AI product imports per month",
+      "Everything in Professional with 50% more headroom",
+      "Image-fix sessions for your whole catalog",
+      "Weekly monitoring without counting credits",
+      "Example month: full suite + recovery + 25 image fixes + weekly checks",
+    ],
+  },
+  "Enterprise": {
+    tagline: "High-volume stores & agencies.",
+    features: [
+      "Up to 999 AI product imports per month",
+      "Run every scan, fix and import without counting",
+      "Recover and protect multiple large catalogs",
+      "Monitoring, image fixes & recovery at volume",
+    ],
+  },
+};
+
+const GENERIC_PLAN_FEATURES = [
+  "AI product imports from 11 major platforms",
+  "GMC compliance scans + one-click AI auto-fixes",
+  "Suspension Recovery with AI appeal letter",
+  "AI Image Fixer & always-on monitoring",
+];
+
 export const loader: LoaderFunction = async ({ request }) => {
   const { session } = await authenticate.admin(request);// Get all active plans
   const plans = await prisma.subscriptionPlan.findMany({
@@ -291,7 +373,7 @@ export default function ChooseSubscription() {
                     Current Plan: <strong>{currentSubscription.plan.name}</strong>
                   </Text>
                   <Text as="p" tone="subdued">
-                    Products used this month: {currentSubscription.productsUsed} / {currentSubscription.plan.productLimit}
+                    Credits used this month: {currentSubscription.productsUsed} / {currentSubscription.plan.productLimit}
                   </Text>
                   <Text as="p" tone="subdued">
                     You can upgrade or downgrade at any time.
@@ -304,7 +386,7 @@ export default function ChooseSubscription() {
           {pendingDowngrade && currentSubscription && (() => {
             const effectiveLimit = currentEffectiveLimit ?? currentSubscription.plan.productLimit;
             const remaining = effectiveLimit - currentSubscription.productsUsed;
-            const pluralImports = (n: number) => n === 1 ? "import" : "imports";
+            const pluralCredits = (n: number) => n === 1 ? "credit" : "credits";
             return (
               <Layout.Section>
                 <Banner
@@ -315,13 +397,13 @@ export default function ChooseSubscription() {
                   <BlockStack gap="300">
                     <Text as="p">
                       You have <strong>{remaining}</strong> unused{" "}
-                      {pluralImports(remaining)} remaining in your current billing period.
+                      {pluralCredits(remaining)} remaining in your current billing period.
                       These credits will <strong>carry over</strong> to your new plan — you won't lose them.
                     </Text>
                     <Text as="p">
                       Starting from your <strong>next billing cycle</strong>, you'll be on the{" "}
                       <strong>{pendingDowngrade.plan.name}</strong> with{" "}
-                      <strong>{pendingDowngrade.plan.productLimit} {pluralImports(pendingDowngrade.plan.productLimit)}</strong>{" "}
+                      <strong>{pendingDowngrade.plan.productLimit} {pluralCredits(pendingDowngrade.plan.productLimit)}</strong>{" "}
                       per month.
                     </Text>
                     <InlineStack gap="200">
@@ -350,11 +432,35 @@ export default function ChooseSubscription() {
 
 
           <Layout.Section>
+            <Card>
+              <BlockStack gap="300">
+                <Text as="h3" variant="headingMd">
+                  💳 One credit pool. Every feature.
+                </Text>
+                <Text as="p" tone="subdued">
+                  Every plan unlocks the full app — imports, scans, auto-fixes, image fixes,
+                  suspension recovery and monitoring. Plans differ only in how many credits you
+                  get each month. Here's what credits buy:
+                </Text>
+                <BlockStack gap="150">
+                  {CREDIT_MENU.map((item) => (
+                    <InlineStack key={item.label} align="space-between" blockAlign="center" wrap={false} gap="200">
+                      <Text as="p" variant="bodySm">{item.icon} {item.label}</Text>
+                      <Text as="p" variant="bodySm" tone="subdued" alignment="end">{item.cost}</Text>
+                    </InlineStack>
+                  ))}
+                </BlockStack>
+              </BlockStack>
+            </Card>
+          </Layout.Section>
+
+          <Layout.Section>
             <BlockStack gap="400">
               {plans.map((plan: any) => {
                 const isCurrentPlan = currentSubscription?.planId === plan.id;
                 const isFreeplan = plan.price === 0;
-                
+                const details = PLAN_DETAILS[plan.name];
+
                 return (
                   <Card key={plan.id}>
                     <BlockStack gap="400">
@@ -377,6 +483,11 @@ export default function ChooseSubscription() {
                               {" "}/month
                             </Text>
                           </Text>
+                          {details?.tagline && (
+                            <Text as="p" tone="subdued" variant="bodySm">
+                              {details.tagline}
+                            </Text>
+                          )}
                         </BlockStack>
                       </InlineStack>
 
@@ -386,40 +497,17 @@ export default function ChooseSubscription() {
                         <InlineStack gap="200" blockAlign="start">
                           <Text as="span" tone="success">✓</Text>
                           <Text as="p">
-                            <strong>{plan.productLimit} products</strong> per month
-                          </Text>
-                        </InlineStack>
-                        
-                        <InlineStack gap="200" blockAlign="start">
-                          <Text as="span" tone="success">✓</Text>
-                          <Text as="p">
-                            Import from 11 major e-commerce platforms
-                          </Text>
-                        </InlineStack>
-                        
-                        <InlineStack gap="200" blockAlign="start">
-                          <Text as="span" tone="success">✓</Text>
-                          <Text as="p">
-                            AI-powered product descriptions
-                          </Text>
-                        </InlineStack>
-                        
-                        <InlineStack gap="200" blockAlign="start">
-                          <Text as="span" tone="success">✓</Text>
-                          <Text as="p">
-                            Automated image importing
+                            <strong>{plan.productLimit} credits</strong> per month — use them on
+                            imports, scans & fixes
                           </Text>
                         </InlineStack>
 
-                        {plan.description && (
-                          <Box paddingBlockStart="200">
-                            <Text as="p" tone="subdued">
-                              {plan.description}
-                            </Text>
-                          </Box>
-                        )}
-
-
+                        {(details?.features || GENERIC_PLAN_FEATURES).map((feature) => (
+                          <InlineStack key={feature} gap="200" blockAlign="start">
+                            <Text as="span" tone="success">✓</Text>
+                            <Text as="p">{feature}</Text>
+                          </InlineStack>
+                        ))}
                       </BlockStack>
 
                       <InlineStack gap="200">
@@ -456,13 +544,15 @@ export default function ChooseSubscription() {
                   Need help choosing?
                 </Text>
                 <Text as="p" tone="subdued">
-                  Start with the Free Plan to test all features with 2 product imports per month. 
-                  When you need more, upgrade to a paid plan based on your monthly import needs. 
-                  You can upgrade or downgrade at any time.
+                  Start free: every store gets its first Basic compliance scan FREE, plus 2 credits
+                  to try AI imports and fixes. Getting your store Google-ready? Starter covers a
+                  scan plus the fixes it finds. Suspended or at risk? Professional covers the full
+                  scan suite and Suspension Recovery in one month.
                 </Text>
                 <Text as="p" tone="subdued">
-                  All plans include full access to our features: multi-platform import, 
-                  AI-powered descriptions, and automated image importing.
+                  Every plan unlocks every feature — AI product import, compliance scans, one-click
+                  auto-fixes, the AI Image Fixer, Suspension Recovery and always-on monitoring.
+                  Plans differ only in monthly credits, and you can upgrade or downgrade anytime.
                 </Text>
               </BlockStack>
             </Card>
