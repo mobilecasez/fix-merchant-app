@@ -108,6 +108,51 @@ model FeatureRequest {
   @@index([status])
 }
 
+// ── Public website (shopflixai.com) — store scans, leads, passwordless auth ──
+// A scan of a public store URL run from the marketing site. Dedup is by
+// storeDomain: one free Basic scan per store, then login + payment required.
+model WebScan {
+  id          String   @id @default(cuid())
+  storeDomain String   // normalized host (dedup key), e.g. "mystore.com"
+  storeUrl    String   // full normalized https URL scanned
+  ip          String?  // logged for abuse detection
+  userAgent   String?
+  score       Int      @default(0)
+  riskLevel   String   @default("Unknown") // High | Medium | Low
+  totalIssues Int      @default(0)
+  highCount   Int      @default(0)
+  preview     Json?    // free-preview issues (no fix text)
+  fullResult  Json?    // full mapped issues incl. fixes — gated behind payment
+  paidTier    String?  // basic | advanced | deep once purchased
+  email       String?  // captured at login/checkout
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([storeDomain])
+  @@index([ip])
+  @@index([email])
+}
+
+model WebUser {
+  id        String    @id @default(cuid())
+  email     String    @unique
+  createdAt DateTime  @default(now())
+  lastLogin DateTime?
+}
+
+// One-time login codes (passwordless). Code is stored HASHED, never plaintext.
+model WebOtp {
+  id        String   @id @default(cuid())
+  email     String
+  codeHash  String
+  expiresAt DateTime
+  attempts  Int      @default(0)
+  consumed  Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([email])
+}
+
 model FeatureRequestVote {
   id        String         @id @default(cuid())
   requestId String
