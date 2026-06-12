@@ -77,7 +77,7 @@ const creditIconChip: React.CSSProperties = {
 };
 const creditSectionLabel: React.CSSProperties = {
   fontSize: "11px", fontWeight: 700, letterSpacing: "0.6px", textTransform: "uppercase",
-  color: "#8c9196", margin: "14px 0 2px",
+  color: "#8c9196", margin: "10px 0 0",
 };
 
 // Per-plan highlights ("best items") keyed by plan name; generic fallback below.
@@ -397,6 +397,7 @@ export default function ChooseSubscription() {
         fullWidth
         backAction={{ content: "Dashboard", url: "/app" }}
       >
+        <div style={{ maxWidth: "1040px", margin: "0 auto", width: "100%" }}>
         <Layout>
           {fetcher.data && 'error' in fetcher.data && fetcher.data.error && (
             <Layout.Section>
@@ -484,8 +485,8 @@ export default function ChooseSubscription() {
                 </Text>
                 <div style={{
                   display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))",
-                  gap: "4px 28px",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(430px, 1fr))",
+                  gap: "0 36px",
                 }}>
                   {CREDIT_MENU.map((group) => (
                     <div key={group.section}>
@@ -494,8 +495,8 @@ export default function ChooseSubscription() {
                         <div
                           key={item.label}
                           style={{
-                            display: "flex", alignItems: "center", gap: "12px",
-                            padding: "10px 0",
+                            display: "flex", alignItems: "center", gap: "11px",
+                            padding: "7px 0",
                             borderBottom: idx < group.items.length - 1 ? "1px solid #f1f2f4" : "none",
                           }}
                         >
@@ -520,7 +521,7 @@ export default function ChooseSubscription() {
           <Layout.Section>
             <div style={{
               display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+              gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
               gap: "16px",
               alignItems: "stretch",
             }}>
@@ -627,6 +628,7 @@ export default function ChooseSubscription() {
             </Card>
           </Layout.Section>
         </Layout>
+        </div>
       </Page>
     </Frame>
   );
