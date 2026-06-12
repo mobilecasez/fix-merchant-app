@@ -779,7 +779,7 @@ function ScoreRing({ score, size = 150 }) {
 }
 
 /* ============ RESULTS (free preview) ============ */
-function ResultsScreen({ storeUrl, onUnlock, onRescan, data }) {
+function ResultsScreen({ storeUrl, onUnlock, onRescan, data, toast }) {
   // WIRING: render the live scan from /api/web-scan; loading + error states first.
   if (!data) {
     return (
@@ -810,6 +810,40 @@ function ResultsScreen({ storeUrl, onUnlock, onRescan, data }) {
   const risk = data.riskLevel || (score < 60 ? 'High' : score < 80 ? 'Medium' : 'Low');
   const riskClass = risk === 'High' ? 'sev-high' : risk === 'Medium' ? 'sev-medium' : 'sev-low';
   const clean = totalIssues === 0;
+
+  const scrollToPlans = () => { const el = document.getElementById('unlock'); if (el) el.scrollIntoView({ behavior: 'smooth' }); };
+
+  // Download the report: only the 2 free issues if not paid; all issues + fixes if paid.
+  const downloadReport = async () => {
+    try {
+      let issues = freePreview; let withFixes = false;
+      if (data.paid && data.scanId) {
+        const full = await fetch('/api/web-report?scanId=' + encodeURIComponent(data.scanId)).then((r) => r.json()).catch(() => null);
+        if (full && full.ok && Array.isArray(full.issues)) { issues = full.issues; withFixes = true; }
+      }
+      const mod = await import('jspdf');
+      const JsPDF = mod.jsPDF || mod.default;
+      const doc = new JsPDF({ unit: 'pt', format: 'a4' });
+      const M = 40; const W = doc.internal.pageSize.getWidth(); const H = doc.internal.pageSize.getHeight(); let y = 56;
+      const line = (txt, size, color, bold, gap) => {
+        doc.setFont('helvetica', bold ? 'bold' : 'normal'); doc.setFontSize(size); doc.setTextColor(color || '#111111');
+        doc.splitTextToSize(String(txt), W - M * 2).forEach((w) => { if (y > H - 50) { doc.addPage(); y = 56; } doc.text(w, M, y); y += size + 4; });
+        y += gap || 0;
+      };
+      line('ShopFlix AI — GMC Compliance Report', 18, '#0f172a', true, 3);
+      line(storeUrl, 11, '#2563eb', false, 2);
+      line('Compliance score: ' + score + '/100   ·   Risk: ' + risk, 11, '#475569', false, 4);
+      if (!withFixes) line('Free preview — ' + issues.length + ' of ' + totalIssues + ' issues. Unlock the full report for all issues + fix instructions.', 9.5, '#b45309', false, 10);
+      else line(issues.length + ' issues — full report with fixes', 12, '#0f172a', true, 8);
+      issues.forEach((iss, i) => {
+        line((i + 1) + '.  [' + iss.sev + ']  ' + iss.title, 11.5, iss.sev === 'High' ? '#b91c1c' : iss.sev === 'Medium' ? '#b45309' : '#475569', true, 1);
+        if (iss.why) line('Why it matters: ' + iss.why, 9.5, '#475569', false, withFixes ? 1 : 8);
+        if (withFixes && iss.fix) line('How to fix: ' + iss.fix, 9.5, '#166534', false, 8);
+      });
+      doc.save('shopflix-' + (storeUrl || 'store').replace(/[^a-z0-9]/gi, '-') + (withFixes ? '-report' : '-preview') + '.pdf');
+    } catch (e) { toast && toast('Could not generate the PDF. Please try again.'); }
+  };
+
   return (
     <div data-screen-label="Scan results (free preview)">
       <div style={{ borderBottom: '1px solid var(--line)', background: 'var(--bg2)' }}>
@@ -851,7 +885,12 @@ function ResultsScreen({ storeUrl, onUnlock, onRescan, data }) {
         {/* free issues */}
         <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: '16px', flexWrap: 'wrap', gap: '8px' }}>
           <h2 style={{ fontSize: '20px', fontWeight: 700 }}>{clean ? 'No store-level issues in your free preview' : 'Your free preview — ' + freePreview.length + ' of ' + totalIssues + ' issues'}</h2>
-          <span className="mono" style={{ fontSize: '12px', color: 'var(--faint)' }}>sorted by severity</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+            <span className="mono" style={{ fontSize: '12px', color: 'var(--faint)' }}>sorted by severity</span>
+            <button className="btn btn-ghost btn-sm" onClick={downloadReport}>
+              <Icons.download size={14} /> Download {data.paid ? 'full report' : 'preview'}
+            </button>
+          </div>
         </div>
         {freePreview.map((iss, i) => (
           <div key={i} className="issue">
@@ -885,7 +924,10 @@ function ResultsScreen({ storeUrl, onUnlock, onRescan, data }) {
                 <Icons.lock size={24} />
               </div>
               <h3 style={{ fontSize: '22px', fontWeight: 700 }}>{lockedCount} more issues found</h3>
-              <p style={{ color: 'var(--muted)', fontSize: '14.5px', marginTop: '6px' }}>Including {Math.max(0, highCount - freePreview.filter((i) => i.sev === 'High').length)} more high-severity issues. Unlock the full report with fixes for every one.</p>
+              <p style={{ color: 'var(--muted)', fontSize: '14.5px', marginTop: '6px', maxWidth: '420px' }}>Including {Math.max(0, highCount - freePreview.filter((i) => i.sev === 'High').length)} more high-severity issues. Please select a plan below to get the fully unlocked detailed report with step-by-step fixes for every one.</p>
+              <button className="btn btn-amber" style={{ marginTop: '18px' }} onClick={scrollToPlans}>
+                <Icons.lock size={14} /> Select a plan to unlock
+              </button>
             </div>
           </div>
         </div>
@@ -1371,10 +1413,10 @@ function App() {
       <Nav route={route} onHome={() => go('landing')} onRecover={promptRecover} />
       {route === 'landing' ? <Landing t={t} onScan={startScan} onSelectPlan={landingPlanSelect} /> : null}
       {route === 'scanning' ? <ScanningScreen storeUrl={storeUrl} fast={t.fastScan} ready={!!scan} onDone={() => go('results')} /> : null}
-      {route === 'results' ? <ResultsScreen storeUrl={storeUrl} onUnlock={unlockPlan} onRescan={rescan} data={scan} /> : null}
+      {route === 'results' ? <ResultsScreen storeUrl={storeUrl} onUnlock={unlockPlan} onRescan={rescan} data={scan} toast={toast} /> : null}
       {route === 'checkout' ? <CheckoutScreen plan={plan} storeUrl={storeUrl} email={email || ''} scanId={scan && scan.scanId} onPaid={(tok) => { setRecoveryToken(tok || null); go('report'); }} onBack={() => go('results')} /> : null}
       {route === 'report' ? <FullReport plan={plan} storeUrl={storeUrl} scanId={scan && scan.scanId} recoveryToken={recoveryToken} onUpgrade={upgradeFromReport} onRescan={rescan} toast={toast} /> : null}
-      {route === 'landing' || route === 'report' ? <Footer /> : null}
+      {route === 'landing' || route === 'report' || route === 'results' ? <Footer /> : null}
 
       {pendingPlan && !email ? <AuthModal plan={pendingPlan} onClose={() => setAuthFor(null)} onAuthed={handleAuthed} /> : null}
       {toastMsg ? <div className="toast">{toastMsg}</div> : null}
