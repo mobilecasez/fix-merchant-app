@@ -484,12 +484,12 @@ export default function ChooseSubscription() {
                   receive each month — spend them on whatever your store needs:
                 </Text>
                 <div style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(430px, 1fr))",
-                  gap: "0 36px",
+                  columns: "260px 2",
+                  columnGap: "40px",
+                  marginTop: "4px",
                 }}>
                   {CREDIT_MENU.map((group) => (
-                    <div key={group.section}>
+                    <div key={group.section} style={{ breakInside: "avoid", WebkitColumnBreakInside: "avoid", marginBottom: "2px" }}>
                       <p style={creditSectionLabel}>{group.section}</p>
                       {group.items.map((item, idx) => (
                         <div
