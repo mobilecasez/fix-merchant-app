@@ -987,17 +987,45 @@ function AuthModal({ plan, onClose, onAuthed }) {
 
 /* ============ CHECKOUT ============ */
 function fmtCard(v) { return v.replace(/\D/g, '').slice(0, 16).replace(/(\d{4})(?=\d)/g, '$1 '); }
-function CheckoutScreen({ plan, storeUrl, email, onPaid, onBack }) {
-  const [card, setCard] = useStateF('');
-  const [exp, setExp] = useStateF('');
-  const [cvc, setCvc] = useStateF('');
-  const [name, setName] = useStateF('');
+function loadRazorpay() {
+  return new Promise((resolve) => {
+    if (window.Razorpay) return resolve(true);
+    const s = document.createElement('script');
+    s.src = 'https://checkout.razorpay.com/v1/checkout.js';
+    s.onload = () => resolve(true); s.onerror = () => resolve(false);
+    document.body.appendChild(s);
+  });
+}
+function CheckoutScreen({ plan, storeUrl, email, scanId, onPaid, onBack }) {
+  // WIRING: Razorpay one-time payment via /api/web-pay (create -> checkout -> verify).
   const [busy, setBusy] = useStateF(false);
-  const ready = card.replace(/\s/g, '').length === 16 && exp.length >= 4 && cvc.length >= 3 && name.length > 2;
-  const pay = () => {
-    if (!ready) return;
-    setBusy(true);
-    setTimeout(onPaid, 1600);
+  const [err, setErr] = useStateF('');
+  const [soon, setSoon] = useStateF('');
+  const pay = async () => {
+    setBusy(true); setErr(''); setSoon('');
+    try {
+      const order = await fetch('/api/web-pay', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ intent: 'create', planId: plan.id, scanId }) }).then((r) => r.json());
+      if (!order || !order.ok) {
+        if (order && order.configured === false) { setSoon(order.error); setBusy(false); return; }
+        setErr((order && order.error) || 'Could not start checkout.'); setBusy(false); return;
+      }
+      const ok = await loadRazorpay();
+      if (!ok) { setErr('Could not load the payment window. Please retry.'); setBusy(false); return; }
+      const rzp = new window.Razorpay({
+        key: order.keyId, order_id: order.orderId, amount: order.amount, currency: order.currency,
+        name: 'ShopFlix AI', description: order.planName + ' report — ' + storeUrl,
+        prefill: { email: order.email || email },
+        theme: { color: '#41c6ee' },
+        modal: { ondismiss: () => setBusy(false) },
+        handler: (resp) => {
+          fetch('/api/web-pay', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ intent: 'verify', planId: plan.id, scanId, razorpay_order_id: resp.razorpay_order_id, razorpay_payment_id: resp.razorpay_payment_id, razorpay_signature: resp.razorpay_signature }) })
+            .then((r) => r.json())
+            .then((v) => { setBusy(false); if (v && v.ok) onPaid(); else setErr((v && v.error) || 'Payment could not be verified.'); })
+            .catch(() => { setBusy(false); setErr('Verification failed. If charged, contact support.'); });
+        },
+      });
+      rzp.open();
+    } catch (e) { setErr('Something went wrong starting checkout.'); setBusy(false); }
   };
   return (
     <div data-screen-label="Checkout" style={{ position: 'relative', overflow: 'hidden', minHeight: 'calc(100vh - 66px)' }}>
@@ -1011,30 +1039,29 @@ function CheckoutScreen({ plan, storeUrl, email, onPaid, onBack }) {
         </div>
         <div className="grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 360px', gap: '28px', alignItems: 'start' }}>
           <div className="card">
-            <h2 style={{ fontSize: '20px', fontWeight: 700, marginBottom: '22px' }}>Payment details</h2>
-            <div className="field">
-              <label>Name on card</label>
-              <input placeholder="Jane Merchant" value={name} onChange={(e) => setName(e.target.value)} />
+            <h2 style={{ fontSize: '20px', fontWeight: 700, marginBottom: '8px' }}>Secure checkout</h2>
+            <p style={{ color: 'var(--muted)', fontSize: '14px', marginBottom: '22px' }}>
+              You'll pay securely via Razorpay (cards, UPI, netbanking & wallets). Your report unlocks instantly after payment.
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '20px' }}>
+              {['Full fix instructions for every issue', 'Compliance score & severity breakdown', 'Downloadable report', 'One-time payment \u2014 no subscription'].map((f) => (
+                <div key={f} style={{ display: 'flex', gap: '10px', alignItems: 'center', fontSize: '14px', color: 'var(--muted)' }}>
+                  <Icons.check size={15} color="var(--green)" sw={2.6} /> {f}
+                </div>
+              ))}
             </div>
-            <div className="field">
-              <label>Card number</label>
-              <input className="mono" placeholder="4242 4242 4242 4242" value={card} onChange={(e) => setCard(fmtCard(e.target.value))} />
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
-              <div className="field">
-                <label>Expiry</label>
-                <input className="mono" placeholder="MM/YY" value={exp} onChange={(e) => setExp(e.target.value.replace(/[^\d/]/g, '').slice(0, 5))} />
-              </div>
-              <div className="field">
-                <label>CVC</label>
-                <input className="mono" placeholder="123" value={cvc} onChange={(e) => setCvc(e.target.value.replace(/\D/g, '').slice(0, 4))} />
-              </div>
-            </div>
-            <button className="btn btn-primary btn-block btn-lg" onClick={pay} disabled={!ready || busy} style={{ marginTop: '10px' }}>
-              {busy ? 'Processing payment\u2026' : 'Pay $' + plan.price + ' & unlock report'}
+            <button className="btn btn-primary btn-block btn-lg" onClick={pay} disabled={busy} style={{ marginTop: '4px' }}>
+              {busy ? 'Opening secure checkout\u2026' : 'Pay $' + plan.price + ' & unlock report'}
             </button>
+            {err ? <p style={{ color: 'var(--red)', fontSize: '13px', textAlign: 'center', marginTop: '12px' }}>{err}</p> : null}
+            {soon ? (
+              <div style={{ marginTop: '14px', padding: '14px', borderRadius: '10px', background: 'rgba(232,155,60,0.1)', border: '1px solid rgba(232,155,60,0.3)' }}>
+                <p style={{ color: 'var(--amber)', fontSize: '13px', textAlign: 'center', margin: 0 }}>{soon}</p>
+                <a className="btn btn-amber btn-sm btn-block" href="https://apps.shopify.com/shopflix-ai" target="_blank" rel="noopener" style={{ marginTop: '10px' }}>Install the Shopify app</a>
+              </div>
+            ) : null}
             <p className="mono" style={{ fontSize: '11.5px', color: 'var(--faint)', textAlign: 'center', marginTop: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '7px' }}>
-              <Icons.lock size={12} /> Demo checkout &mdash; no real charge. Secure 256-bit encryption.
+              <Icons.lock size={12} /> Secured by Razorpay \u00b7 256-bit encryption
             </p>
           </div>
           <div>
@@ -1065,9 +1092,24 @@ function CheckoutScreen({ plan, storeUrl, email, onPaid, onBack }) {
 
 /* ============ FULL REPORT ============ */
 const TIER_ORDER = { basic: 0, advanced: 1, deep: 2 };
-function FullReport({ plan, storeUrl, onUpgrade, onRescan, toast }) {
+function FullReport({ plan, storeUrl, scanId, onUpgrade, onRescan, toast }) {
   const ownedTier = TIER_ORDER[plan.id];
   const [open, setOpen] = useStateF(null);
+  const [rep, setRep] = useStateF(null); // WIRING: real report from /api/web-report
+  useEffectF(() => {
+    if (!scanId) return;
+    fetch('/api/web-report?scanId=' + encodeURIComponent(scanId))
+      .then((r) => r.json())
+      .then((d) => { if (d && d.ok) setRep(d); })
+      .catch(() => {});
+  }, [scanId]);
+  const repScore = (rep && rep.score != null) ? rep.score : SCAN_SCORE;
+  let cats = SCAN_CATEGORIES;
+  if (rep && Array.isArray(rep.issues) && rep.issues.length) {
+    const byCat = {};
+    rep.issues.forEach((i) => { (byCat[i.cat] = byCat[i.cat] || []).push(i); });
+    cats = Object.keys(byCat).map((name, idx) => ({ id: 'rc' + idx, name, icon: 'doc', tier: 'basic', issues: byCat[name] }));
+  }
   return (
     <div data-screen-label="Full unlocked report">
       <div style={{ borderBottom: '1px solid var(--line)', background: 'var(--bg2)' }}>
@@ -1092,7 +1134,7 @@ function FullReport({ plan, storeUrl, onUpgrade, onRescan, toast }) {
 
       <div className="wrap" style={{ padding: '40px 32px 90px' }}>
         <div className="card" style={{ display: 'flex', gap: '36px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '40px' }}>
-          <ScoreRing score={SCAN_SCORE} size={120} />
+          <ScoreRing score={repScore} size={120} />
           <div style={{ flex: 1, minWidth: '240px' }}>
             <span className="sev sev-high" style={{ fontSize: '12px', padding: '5px 12px' }}>High suspension risk</span>
             <p style={{ color: 'var(--muted)', fontSize: '14.5px', marginTop: '10px', maxWidth: '520px' }}>
@@ -1104,7 +1146,7 @@ function FullReport({ plan, storeUrl, onUpgrade, onRescan, toast }) {
           </a>
         </div>
 
-        {SCAN_CATEGORIES.map((cat) => {
+        {cats.map((cat) => {
           const owned = TIER_ORDER[cat.tier] <= ownedTier;
           const I = Icons[cat.icon];
           const upgradePlan = PLANS.find((p) => p.id === cat.tier);
@@ -1258,8 +1300,8 @@ function App() {
       {route === 'landing' ? <Landing t={t} onScan={startScan} onSelectPlan={landingPlanSelect} /> : null}
       {route === 'scanning' ? <ScanningScreen storeUrl={storeUrl} fast={t.fastScan} onDone={() => go('results')} /> : null}
       {route === 'results' ? <ResultsScreen storeUrl={storeUrl} onUnlock={unlockPlan} onRescan={rescan} data={scan} /> : null}
-      {route === 'checkout' ? <CheckoutScreen plan={plan} storeUrl={storeUrl} email={email || 'merchant@gmail.com'} onPaid={() => go('report')} onBack={() => go('results')} /> : null}
-      {route === 'report' ? <FullReport plan={plan} storeUrl={storeUrl} onUpgrade={upgradeFromReport} onRescan={rescan} toast={toast} /> : null}
+      {route === 'checkout' ? <CheckoutScreen plan={plan} storeUrl={storeUrl} email={email || ''} scanId={scan && scan.scanId} onPaid={() => go('report')} onBack={() => go('results')} /> : null}
+      {route === 'report' ? <FullReport plan={plan} storeUrl={storeUrl} scanId={scan && scan.scanId} onUpgrade={upgradeFromReport} onRescan={rescan} toast={toast} /> : null}
       {route === 'landing' || route === 'report' ? <Footer /> : null}
 
       {pendingPlan && !email ? <AuthModal plan={pendingPlan} onClose={() => setAuthFor(null)} onAuthed={handleAuthed} /> : null}
