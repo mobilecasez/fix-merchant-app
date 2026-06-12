@@ -1366,9 +1366,20 @@ function App() {
       .then((r) => r.json())
       .then((d) => {
         setScan(d || { ok: false, error: 'Scan failed. Please try again.' });
-        // Already paid for by this signed-in visitor → restore their plan so the
-        // scanning screen finishes into the full report instead of the preview.
-        if (d && d.ok && d.owned) setPlanId(d.paidTier || 'basic');
+        if (d && d.ok && d.alreadyScanned) {
+          // This store was scanned before — serve the stored result straight from
+          // the database instead of replaying the (multi-second) scan animation.
+          if (d.owned) {
+            setPlanId(d.paidTier || 'basic');
+            go('report');
+            toast('Opening your saved report — no need to re-scan.');
+          } else {
+            go('results');
+            toast('Showing your saved scan for this store.');
+          }
+        }
+        // Otherwise it's a genuine first-time scan: let ScanningScreen play out and
+        // route to results once the live scan resolves.
       })
       .catch(() => setScan({ ok: false, error: 'Network error. Please try again.' }));
   };
