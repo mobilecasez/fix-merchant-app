@@ -26,3 +26,6 @@ database.sqlite
 # Local-only (not part of the app)
 .claude/
 update-mcasenova.js
+
+# Website design source/assets (kept locally, not needed at runtime)
+ShopFlix AI Website/
