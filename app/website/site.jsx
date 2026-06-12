@@ -900,47 +900,86 @@ const { useState: useStateF, useEffect: useEffectF } = React;
 
 /* ============ AUTH MODAL ============ */
 function AuthModal({ plan, onClose, onAuthed }) {
-  const [mode, setMode] = useStateF('signup');
+  // WIRING: passwordless email one-time code via /api/web-auth.
+  const [step, setStep] = useStateF('email'); // 'email' | 'code'
   const [email, setEmail] = useStateF('');
-  const [pw, setPw] = useStateF('');
+  const [code, setCode] = useStateF('');
   const [busy, setBusy] = useStateF(false);
-  const submit = (via) => {
-    if (via === 'form' && (!email.includes('@') || pw.length < 4)) return;
-    setBusy(true);
-    setTimeout(() => onAuthed(via === 'form' ? email : 'merchant@gmail.com'), 900);
+  const [err, setErr] = useStateF('');
+  const [note, setNote] = useStateF('');
+
+  const post = (intent, extra) =>
+    fetch('/api/web-auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ intent, email, ...extra }) }).then((r) => r.json());
+
+  const sendCode = () => {
+    if (!email.includes('@')) { setErr('Please enter a valid email.'); return; }
+    setBusy(true); setErr('');
+    post('request').then((d) => {
+      setBusy(false);
+      if (d && d.ok) { setStep('code'); setNote('We emailed a 6-digit code to ' + email + '.'); }
+      else setErr((d && d.error) || 'Could not send code. Try again.');
+    }).catch(() => { setBusy(false); setErr('Network error. Try again.'); });
   };
+  const verify = () => {
+    if (code.replace(/\D/g, '').length !== 6) { setErr('Enter the 6-digit code.'); return; }
+    setBusy(true); setErr('');
+    post('verify', { code }).then((d) => {
+      setBusy(false);
+      if (d && d.ok) onAuthed(d.email || email);
+      else setErr((d && d.error) || 'Incorrect code.');
+    }).catch(() => { setBusy(false); setErr('Network error. Try again.'); });
+  };
+
   return (
     <div className="overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="modal" data-screen-label="Login / signup modal">
+      <div className="modal" data-screen-label="Login modal">
         <button className="modal-x" onClick={onClose} aria-label="Close">&times;</button>
         <div style={{ textAlign: 'center', marginBottom: '24px' }}>
           <img src={(window.__resources || {}).logoImg || "assets/logo.png"} alt="" style={{ width: '44px', height: '44px', borderRadius: '12px', margin: '0 auto 14px' }} />
-          <h2 style={{ fontSize: '21px', fontWeight: 700 }}>{mode === 'signup' ? 'Create your account' : 'Welcome back'}</h2>
+          <h2 style={{ fontSize: '21px', fontWeight: 700 }}>{step === 'email' ? 'Sign in to unlock' : 'Enter your code'}</h2>
           <p style={{ color: 'var(--muted)', fontSize: '14px', marginTop: '6px' }}>
-            To unlock the <b style={{ color: 'var(--text)' }}>{plan.name}</b> report for ${plan.price}
+            {step === 'email'
+              ? <>To unlock the <b style={{ color: 'var(--text)' }}>{plan.name}</b> report for ${plan.price}</>
+              : note}
           </p>
         </div>
-        <button className="btn btn-ghost btn-block" onClick={() => submit('google')} disabled={busy} style={{ marginBottom: '10px' }}>
-          <span className="mono" style={{ fontWeight: 700, color: 'var(--accent)' }}>G</span>&nbsp;Continue with Google
-        </button>
-        <div className="divider">or with email</div>
-        <div className="field">
-          <label>Email</label>
-          <input type="email" placeholder="you@store.com" value={email} onChange={(e) => setEmail(e.target.value)} />
-        </div>
-        <div className="field">
-          <label>Password</label>
-          <input type="password" placeholder={mode === 'signup' ? 'Create a password' : 'Your password'} value={pw} onChange={(e) => setPw(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') submit('form'); }} />
-        </div>
-        <button className="btn btn-primary btn-block" onClick={() => submit('form')} disabled={busy || !email.includes('@') || pw.length < 4} style={{ marginTop: '6px' }}>
-          {busy ? 'One moment\u2026' : mode === 'signup' ? 'Create account & continue' : 'Log in & continue'}
-        </button>
-        <p style={{ textAlign: 'center', fontSize: '13px', color: 'var(--muted)', marginTop: '18px' }}>
-          {mode === 'signup' ? 'Already have an account? ' : 'New to ShopFlix? '}
-          <a href="#switch" style={{ color: 'var(--accent)' }} onClick={(e) => { e.preventDefault(); setMode(mode === 'signup' ? 'login' : 'signup'); }}>
-            {mode === 'signup' ? 'Log in' : 'Sign up'}
-          </a>
-        </p>
+
+        {step === 'email' ? (
+          <React.Fragment>
+            <div className="field">
+              <label>Email</label>
+              <input type="email" placeholder="you@store.com" value={email} autoFocus
+                onChange={(e) => { setEmail(e.target.value); if (err) setErr(''); }}
+                onKeyDown={(e) => { if (e.key === 'Enter') sendCode(); }} />
+            </div>
+            {err ? <p style={{ color: 'var(--red)', fontSize: '13px', margin: '-4px 0 10px' }}>{err}</p> : null}
+            <button className="btn btn-primary btn-block" onClick={sendCode} disabled={busy || !email.includes('@')}>
+              {busy ? 'Sending\u2026' : 'Email me a code'}
+            </button>
+            <p style={{ textAlign: 'center', fontSize: '12px', color: 'var(--faint)', marginTop: '16px' }}>
+              No password needed. We'll email you a one-time code.
+            </p>
+          </React.Fragment>
+        ) : (
+          <React.Fragment>
+            <div className="field">
+              <label>6-digit code</label>
+              <input className="mono" inputMode="numeric" placeholder="\u2022\u2022\u2022\u2022\u2022\u2022" value={code} autoFocus
+                style={{ letterSpacing: '6px', fontSize: '18px', textAlign: 'center' }}
+                onChange={(e) => { setCode(e.target.value.replace(/\D/g, '').slice(0, 6)); if (err) setErr(''); }}
+                onKeyDown={(e) => { if (e.key === 'Enter') verify(); }} />
+            </div>
+            {err ? <p style={{ color: 'var(--red)', fontSize: '13px', margin: '-4px 0 10px' }}>{err}</p> : null}
+            <button className="btn btn-primary btn-block" onClick={verify} disabled={busy || code.length !== 6}>
+              {busy ? 'Verifying\u2026' : 'Verify & continue'}
+            </button>
+            <p style={{ textAlign: 'center', fontSize: '13px', color: 'var(--muted)', marginTop: '16px' }}>
+              <a href="#resend" style={{ color: 'var(--accent)' }} onClick={(e) => { e.preventDefault(); sendCode(); }}>Resend code</a>
+              {'  \u00b7  '}
+              <a href="#back" style={{ color: 'var(--accent)' }} onClick={(e) => { e.preventDefault(); setStep('email'); setErr(''); }}>Change email</a>
+            </p>
+          </React.Fragment>
+        )}
       </div>
     </div>
   );
