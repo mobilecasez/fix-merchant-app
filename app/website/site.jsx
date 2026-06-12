@@ -122,7 +122,7 @@ function ScanBox({ onScan, big, placeholder, autoFocus }) {
 }
 
 /* ---------- nav ---------- */
-function Nav({ route, onHome }) {
+function Nav({ route, onHome, onRecover }) {
   const onLanding = route === 'landing';
   return (
     <nav className="nav">
@@ -139,6 +139,7 @@ function Nav({ route, onHome }) {
               <a href="#plans">Pricing</a>
               <a href="#sample">Sample report</a>
               <a href="#app">Shopify app</a>
+              <a href="#recover" onClick={(e) => { e.preventDefault(); onRecover && onRecover(); }}>Recover report</a>
             </React.Fragment> :
 
           <a href="#top" onClick={(e) => {e.preventDefault();onHome();}} style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
@@ -667,19 +668,22 @@ const SCAN_SCORE = 54;
 const sevRank = { High: 0, Medium: 1, Low: 2 };
 
 /* ============ SCANNING SCREEN ============ */
+// What the live Basic scan actually does \u2014 neutral "in progress" steps only.
+// No pre-judged verdicts: the real result comes from /api/web-scan.
 const SCAN_STEPS = [
-  { label: 'Fetching homepage', log: ['GET https://{URL}/ \u2026 200 OK (212ms)', 'Parsing storefront HTML \u2026 7 pages discovered'] },
-  { label: 'Checking policy pages', log: ['\u2713 /policies/privacy-policy found', '\u2715 refund policy not linked in footer', '\u26a0 shipping policy: no delivery timeframes'] },
-  { label: 'Verifying contact & trust signals', log: ['\u2713 contact page found', '\u2715 no physical business address detected', '\u26a0 only 1 direct contact method visible'] },
-  { label: 'Crawling navigation & links', log: ['Checked 64 links \u2026 2 broken', '\u26a0 /collections/summer-sale \u2192 404'] },
-  { label: 'Sampling product data & images', log: ['Sampled 25 products \u2026', '\u26a0 GTIN coverage looks low', '\u26a0 watermark patterns detected on images'] },
-  { label: 'Scoring against GMC policies', log: ['Running 38 policy checks \u2026', 'Compiling report \u2026'] },
+  { label: 'Fetching your storefront', log: ['Connecting to {URL} \u2026', 'Loading homepage & key pages \u2026'] },
+  { label: 'Checking policy pages', log: ['Looking for Privacy Policy \u2026', 'Looking for Refund / Return Policy \u2026', 'Looking for Shipping Policy \u2026', 'Looking for Terms of Service \u2026'] },
+  { label: 'Verifying contact & business info', log: ['Opening the Contact page \u2026', 'Looking for business address, email & phone \u2026'] },
+  { label: 'Crawling navigation & footer', log: ['Reading footer & nav links \u2026', 'Checking required policy links \u2026'] },
+  { label: 'Reviewing trust & SEO signals', log: ['Inspecting structured data & meta tags \u2026', 'Checking storefront crawlability \u2026'] },
+  { label: 'Scoring against Google Merchant Center policies', log: ['Compiling findings \u2026', 'Calculating your compliance score \u2026'] },
 ];
-function ScanningScreen({ storeUrl, fast, onDone }) {
+function ScanningScreen({ storeUrl, fast, ready, onDone }) {
   const [step, setStep] = useStateS(0);
   const [lines, setLines] = useStateS([]);
+  const [waiting, setWaiting] = useStateS(false);
   const bodyRef = useRefS(null);
-  const speed = fast ? 220 : 750;
+  const speed = fast ? 200 : 620;
   useEffectS(() => {
     let cancelled = false;
     const flat = [];
@@ -694,14 +698,20 @@ function ScanningScreen({ storeUrl, fast, onDone }) {
         i += 1;
         setTimeout(tick, speed);
       } else {
-        setTimeout(() => { if (!cancelled) onDone(); }, fast ? 300 : 900);
+        setWaiting(true); // animation done \u2014 now wait for the real scan to finish
       }
     };
-    const t0 = setTimeout(tick, 400);
+    const t0 = setTimeout(tick, 350);
     return () => { cancelled = true; clearTimeout(t0); };
   }, []);
-  const pct = Math.min(100, Math.round((step / SCAN_STEPS.length) * 100));
-  const lineClass = (l) => l.startsWith('\u2713') ? 't-ok' : l.startsWith('\u2715') ? 't-bad' : l.startsWith('\u26a0') ? 't-warn' : 't-dim';
+  // Finish only once the real /api/web-scan call has resolved (ready) AND the
+  // walkthrough has played out \u2014 so the timing reflects the actual scan.
+  useEffectS(() => {
+    if (waiting && ready) { const tt = setTimeout(onDone, fast ? 150 : 450); return () => clearTimeout(tt); }
+  }, [waiting, ready]);
+  const allShown = step >= SCAN_STEPS.length;
+  const pct = ready && waiting ? 100 : Math.min(94, Math.round((step / SCAN_STEPS.length) * 100));
+  const lineClass = () => 't-dim';
   return (
     <div data-screen-label="Scanning" style={{ position: 'relative', overflow: 'hidden', minHeight: 'calc(100vh - 66px)' }}>
       <div className="grid-bg"></div>
@@ -718,14 +728,19 @@ function ScanningScreen({ storeUrl, fast, onDone }) {
         <div className="progress" style={{ marginBottom: '28px' }}><i style={{ width: pct + '%' }}></i></div>
         <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr', gap: '20px' }} className="grid-2">
           <div className="card" style={{ padding: '20px' }}>
-            {SCAN_STEPS.map((s, i) => (
-              <div key={i} style={{ display: 'flex', gap: '10px', alignItems: 'center', padding: '7px 0', fontSize: '13.5px', color: i < step ? 'var(--green)' : i === step ? 'var(--text)' : 'var(--faint)' }}>
-                {i < step ? <Icons.check size={14} color="var(--green)" sw={2.6} /> :
-                  i === step ? <span className="cursor" style={{ width: '7px', height: '13px' }}></span> :
+            {SCAN_STEPS.map((s, i) => {
+              const isLast = i === SCAN_STEPS.length - 1;
+              const spinning = i === step || (waiting && !ready && isLast);
+              const done = i < step && !(waiting && !ready && isLast);
+              return (
+              <div key={i} style={{ display: 'flex', gap: '10px', alignItems: 'center', padding: '7px 0', fontSize: '13.5px', color: done ? 'var(--green)' : spinning ? 'var(--text)' : 'var(--faint)' }}>
+                {done ? <Icons.check size={14} color="var(--green)" sw={2.6} /> :
+                  spinning ? <span className="cursor" style={{ width: '7px', height: '13px' }}></span> :
                   <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: 'var(--line-strong)', display: 'inline-block', margin: '0 3.5px' }}></span>}
                 {s.label}
               </div>
-            ))}
+              );
+            })}
           </div>
           <div className="term">
             <div className="term-bar">
@@ -733,7 +748,8 @@ function ScanningScreen({ storeUrl, fast, onDone }) {
               <span className="t-title">live scan log</span>
             </div>
             <div className="term-body" ref={bodyRef} style={{ height: '280px', overflow: 'hidden', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
-              {lines.slice(-11).map((l, i) => <div key={i} className={lineClass(l)}>{l}</div>)}
+              {lines.slice(-10).map((l, i) => <div key={i} className={lineClass(l)}>&rsaquo; {l}</div>)}
+              {waiting && !ready ? <div className="t-dim">&rsaquo; Finalizing report &hellip;</div> : null}
               <span className="cursor"></span>
             </div>
           </div>
@@ -1020,7 +1036,7 @@ function CheckoutScreen({ plan, storeUrl, email, scanId, onPaid, onBack }) {
         handler: (resp) => {
           fetch('/api/web-pay', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ intent: 'verify', planId: plan.id, scanId, razorpay_order_id: resp.razorpay_order_id, razorpay_payment_id: resp.razorpay_payment_id, razorpay_signature: resp.razorpay_signature }) })
             .then((r) => r.json())
-            .then((v) => { setBusy(false); if (v && v.ok) onPaid(); else setErr((v && v.error) || 'Payment could not be verified.'); })
+            .then((v) => { setBusy(false); if (v && v.ok) onPaid(v.recoveryToken); else setErr((v && v.error) || 'Payment could not be verified.'); })
             .catch(() => { setBusy(false); setErr('Verification failed. If charged, contact support.'); });
         },
       });
@@ -1092,7 +1108,7 @@ function CheckoutScreen({ plan, storeUrl, email, scanId, onPaid, onBack }) {
 
 /* ============ FULL REPORT ============ */
 const TIER_ORDER = { basic: 0, advanced: 1, deep: 2 };
-function FullReport({ plan, storeUrl, scanId, onUpgrade, onRescan, toast }) {
+function FullReport({ plan, storeUrl, scanId, recoveryToken, onUpgrade, onRescan, toast }) {
   const ownedTier = TIER_ORDER[plan.id];
   const [open, setOpen] = useStateF(null);
   const [rep, setRep] = useStateF(null); // WIRING: real report from /api/web-report
@@ -1110,6 +1126,30 @@ function FullReport({ plan, storeUrl, scanId, onUpgrade, onRescan, toast }) {
     rep.issues.forEach((i) => { (byCat[i.cat] = byCat[i.cat] || []).push(i); });
     cats = Object.keys(byCat).map((name, idx) => ({ id: 'rc' + idx, name, icon: 'doc', tier: 'basic', issues: byCat[name] }));
   }
+  const downloadPdf = async () => {
+    try {
+      const mod = await import('jspdf');
+      const JsPDF = mod.jsPDF || mod.default;
+      const doc = new JsPDF({ unit: 'pt', format: 'a4' });
+      const M = 40; const W = doc.internal.pageSize.getWidth(); const H = doc.internal.pageSize.getHeight(); let y = 56;
+      const line = (txt, size, color, bold, gap) => {
+        doc.setFont('helvetica', bold ? 'bold' : 'normal'); doc.setFontSize(size); doc.setTextColor(color || '#111111');
+        doc.splitTextToSize(String(txt), W - M * 2).forEach((w) => { if (y > H - 50) { doc.addPage(); y = 56; } doc.text(w, M, y); y += size + 4; });
+        y += gap || 0;
+      };
+      line('ShopFlix AI — GMC Compliance Report', 18, '#0f172a', true, 3);
+      line(storeUrl, 11, '#2563eb', false, 2);
+      line('Compliance score: ' + repScore + '/100   ·   Risk: ' + ((rep && rep.riskLevel) || '—'), 11, '#475569', false, 12);
+      const issues = (rep && rep.issues) || [];
+      line(issues.length + ' issue' + (issues.length === 1 ? '' : 's') + ' found', 13, '#0f172a', true, 8);
+      issues.forEach((iss, i) => {
+        line((i + 1) + '.  [' + iss.sev + ']  ' + iss.title, 11.5, iss.sev === 'High' ? '#b91c1c' : iss.sev === 'Medium' ? '#b45309' : '#475569', true, 1);
+        if (iss.why) line('Why it matters: ' + iss.why, 9.5, '#475569', false, 1);
+        if (iss.fix) line('How to fix: ' + iss.fix, 9.5, '#166534', false, 8);
+      });
+      doc.save('shopflix-report-' + (storeUrl || 'store').replace(/[^a-z0-9]/gi, '-') + '.pdf');
+    } catch (e) { toast('Could not generate the PDF. Please try again.'); }
+  };
   return (
     <div data-screen-label="Full unlocked report">
       <div style={{ borderBottom: '1px solid var(--line)', background: 'var(--bg2)' }}>
@@ -1124,8 +1164,7 @@ function FullReport({ plan, storeUrl, scanId, onUpgrade, onRescan, toast }) {
               </h1>
             </div>
             <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-              <button className="btn btn-ghost btn-sm" onClick={() => toast('Report PDF download started (demo)')}><Icons.download size={14} /> PDF</button>
-              <button className="btn btn-ghost btn-sm" onClick={() => toast('Report emailed to your inbox (demo)')}><Icons.mail size={14} /> Email report</button>
+              <button className="btn btn-ghost btn-sm" onClick={downloadPdf}><Icons.download size={14} /> Download PDF</button>
               <button className="btn btn-ghost btn-sm" onClick={onRescan}><Icons.search size={14} /> New scan</button>
             </div>
           </div>
@@ -1133,6 +1172,23 @@ function FullReport({ plan, storeUrl, scanId, onUpgrade, onRescan, toast }) {
       </div>
 
       <div className="wrap" style={{ padding: '40px 32px 90px' }}>
+        {recoveryToken ? (
+          <div className="card" style={{ marginBottom: '24px', border: '1px solid rgba(232,155,60,0.4)', background: 'rgba(232,155,60,0.08)' }}>
+            <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+              <span style={{ color: 'var(--amber)', flexShrink: 0 }}><Icons.lock size={18} /></span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <h3 style={{ fontSize: '15px', fontWeight: 700, marginBottom: '4px' }}>Save your recovery key</h3>
+                <p style={{ color: 'var(--muted)', fontSize: '13px', marginBottom: '12px' }}>
+                  Keep this safe — it's shown only once. If your scan ever needs re-running, use it to re-open this paid report with no second payment ("Recover report" in the top menu).
+                </p>
+                <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+                  <code className="mono" style={{ background: 'var(--bg)', border: '1px solid var(--line)', borderRadius: '8px', padding: '9px 13px', fontSize: '14px', userSelect: 'all' }}>{recoveryToken}</code>
+                  <button className="btn btn-ghost btn-sm" onClick={() => { try { navigator.clipboard.writeText(recoveryToken); toast('Recovery key copied'); } catch (e) { toast('Copy it manually'); } }}>Copy</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : null}
         <div className="card" style={{ display: 'flex', gap: '36px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '40px' }}>
           <ScoreRing score={repScore} size={120} />
           <div style={{ flex: 1, minWidth: '240px' }}>
@@ -1239,6 +1295,7 @@ function App() {
   const [authFor, setAuthFor] = useStateA(null); // plan id pending auth
   const [toastMsg, setToastMsg] = useStateA(null);
   const [scan, setScan] = useStateA(null); // WIRING: live result from /api/web-scan
+  const [recoveryToken, setRecoveryToken] = useStateA(null); // shown once after payment
 
   const go = useCallbackA((r) => {
     setRoute(r); LS.set('route', r);
@@ -1293,15 +1350,30 @@ function App() {
 
   const rescan = () => { go('landing'); };
 
+  // WIRING: redeem a post-payment recovery key to re-run + re-open a paid report.
+  const recoverReport = (token) => {
+    if (!token) return;
+    fetch('/api/web-recover', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: token.trim() }) })
+      .then((r) => r.json())
+      .then((d) => {
+        if (d && d.ok) {
+          setStoreUrl(d.storeUrl); setScan({ ok: true, scanId: d.scanId, storeUrl: d.storeUrl });
+          setPlanId(d.planId || 'basic'); go('report'); toast('Report recovered — re-running your scan.');
+        } else { toast((d && d.error) || 'Invalid recovery key.'); }
+      })
+      .catch(() => toast('Network error. Please try again.'));
+  };
+  const promptRecover = () => { const k = typeof window !== 'undefined' ? window.prompt('Enter your recovery key (from your payment confirmation):') : null; if (k) recoverReport(k); };
+
   return (
     <div style={{ '--accent': t.accent }} className={t.gridTexture ? '' : 'no-grid'}>
       <a id="top"></a>
-      <Nav route={route} onHome={() => go('landing')} />
+      <Nav route={route} onHome={() => go('landing')} onRecover={promptRecover} />
       {route === 'landing' ? <Landing t={t} onScan={startScan} onSelectPlan={landingPlanSelect} /> : null}
-      {route === 'scanning' ? <ScanningScreen storeUrl={storeUrl} fast={t.fastScan} onDone={() => go('results')} /> : null}
+      {route === 'scanning' ? <ScanningScreen storeUrl={storeUrl} fast={t.fastScan} ready={!!scan} onDone={() => go('results')} /> : null}
       {route === 'results' ? <ResultsScreen storeUrl={storeUrl} onUnlock={unlockPlan} onRescan={rescan} data={scan} /> : null}
-      {route === 'checkout' ? <CheckoutScreen plan={plan} storeUrl={storeUrl} email={email || ''} scanId={scan && scan.scanId} onPaid={() => go('report')} onBack={() => go('results')} /> : null}
-      {route === 'report' ? <FullReport plan={plan} storeUrl={storeUrl} scanId={scan && scan.scanId} onUpgrade={upgradeFromReport} onRescan={rescan} toast={toast} /> : null}
+      {route === 'checkout' ? <CheckoutScreen plan={plan} storeUrl={storeUrl} email={email || ''} scanId={scan && scan.scanId} onPaid={(tok) => { setRecoveryToken(tok || null); go('report'); }} onBack={() => go('results')} /> : null}
+      {route === 'report' ? <FullReport plan={plan} storeUrl={storeUrl} scanId={scan && scan.scanId} recoveryToken={recoveryToken} onUpgrade={upgradeFromReport} onRescan={rescan} toast={toast} /> : null}
       {route === 'landing' || route === 'report' ? <Footer /> : null}
 
       {pendingPlan && !email ? <AuthModal plan={pendingPlan} onClose={() => setAuthFor(null)} onAuthed={handleAuthed} /> : null}

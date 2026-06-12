@@ -7,6 +7,13 @@ import { getWebEmail } from "../utils/web-session.server";
 const PLAN_PRICE_CENTS: Record<string, number> = { basic: 399, advanced: 599, deep: 999 };
 const PLAN_NAME: Record<string, string> = { basic: "Basic Scan", advanced: "Advanced Scan", deep: "Deep Scan" };
 
+const RECOVERY_SECRET = process.env.WEB_SESSION_SECRET || process.env.SHOPIFY_API_SECRET || "shopflix-recovery-dev";
+// Keyed hash of the recovery token. Irreversible: a DB breach exposes only this
+// hash, which cannot be turned back into a usable token (attacker also lacks the secret).
+export function recoveryHashOf(token: string): string {
+  return crypto.createHmac("sha256", RECOVERY_SECRET).update(token).digest("hex");
+}
+
 export async function action({ request }: ActionFunctionArgs) {
   if (request.method !== "POST") return json({ ok: false, error: "Method not allowed" }, { status: 405 });
 
@@ -73,12 +80,15 @@ export async function action({ request }: ActionFunctionArgs) {
       return json({ ok: false, error: "Payment could not be verified." }, { status: 400 });
     }
 
+    // Issue a one-time recovery token so the buyer can re-run the scan later
+    // (e.g. if it failed) without paying again. We store only its HMAC hash.
+    const recoveryToken = `SFX-${crypto.randomBytes(15).toString("base64url")}`;
     await prisma.webScan.update({
       where: { id: scanId },
-      data: { paidTier: planId, email },
+      data: { paidTier: planId, email, recoveryHash: recoveryHashOf(recoveryToken) },
     }).catch((e) => console.error("[web-pay] mark paid failed:", e));
 
-    return json({ ok: true });
+    return json({ ok: true, recoveryToken });
   }
 
   return json({ ok: false, error: "Unknown action." }, { status: 400 });

@@ -125,19 +125,22 @@ model WebScan {
   fullResult  Json?    // full mapped issues incl. fixes — gated behind payment
   paidTier    String?  // basic | advanced | deep once purchased
   email       String?  // captured at login/checkout
+  recoveryHash String? // HMAC-SHA256 of the post-payment recovery token (never the token itself)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   @@index([storeDomain])
   @@index([ip])
   @@index([email])
+  @@index([recoveryHash])
 }
 
 model WebUser {
-  id        String    @id @default(cuid())
-  email     String    @unique
-  createdAt DateTime  @default(now())
-  lastLogin DateTime?
+  id           String    @id @default(cuid())
+  email        String    @unique
+  passwordHash String?   // scrypt salt:hash — never plaintext
+  createdAt    DateTime  @default(now())
+  lastLogin    DateTime?
 }
 
 // One-time login codes (passwordless). Code is stored HASHED, never plaintext.

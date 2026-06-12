@@ -53,6 +53,7 @@
     "fuse.js": "^7.1.0",
     "isbot": "^5.1.0",
     "jsdom": "^26.1.0",
+    "jspdf": "^2.5.2",
     "marked": "^16.1.2",
     "node-html-parser": "^7.0.2",
     "nodemailer": "^7.0.5",
