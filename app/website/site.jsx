@@ -557,18 +557,171 @@ function AppUpsell({ style }) {
   );
 }
 
-// Append the promo block to a generated PDF. `line` is the caller's text helper
-// (which advances its own `y`); we then add a clickable install link at `linkY()`.
-function pdfAppendPromo(doc, line, M, H, linkY, bumpY) {
-  line(' ', 8, '#ffffff', false, 2);
-  line(APP_PITCH, 13, '#0f172a', true, 2);
-  line('The ShopFlix AI Shopify app fixes these issues for you — right inside your Shopify admin:', 9.5, '#475569', false, 4);
-  APP_FEATURES.forEach((f) => line('•  ' + f.t + ' — ' + f.b, 9.5, '#475569', false, 1));
-  let y = linkY();
-  if (y > H - 50) { doc.addPage(); bumpY(56); y = linkY(); }
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor('#b45309');
-  doc.textWithLink('→ Install on Shopify: ' + APP_INSTALL_URL, M, y, { url: APP_INSTALL_URL });
-  bumpY(y + 18);
+// Build a clean, card-styled PDF of a scan report (header band, summary card,
+// one card per issue with a severity pill + why/fix sections, and a ShopFlix app
+// promo block at the very end). Returns the jsPDF doc; caller saves it.
+async function buildReportPdf(opts) {
+  const { storeUrl = '', score = 0, risk = 'Medium', totalIssues = 0, withFixes = false } = opts;
+  const issues = Array.isArray(opts.issues) ? opts.issues : [];
+  const highCount = opts.highCount != null ? opts.highCount : issues.filter((i) => i.sev === 'High').length;
+
+  const mod = await import('jspdf');
+  const JsPDF = mod.jsPDF || mod.default;
+  const doc = new JsPDF({ unit: 'pt', format: 'a4', compress: true });
+  const W = doc.internal.pageSize.getWidth();
+  const H = doc.internal.pageSize.getHeight();
+  const M = 42;
+  const CW = W - M * 2;
+  let y = M;
+
+  const C = {
+    dark: '#0f172a', text: '#1e293b', muted: '#64748b', faint: '#94a3b8',
+    line: '#e2e8f0', white: '#ffffff', cyan: '#67e8f9', headSub: '#9fb6cc',
+    high: '#b91c1c', highBg: '#fef2f2', highBd: '#fecaca',
+    med: '#b45309', medBg: '#fffbeb', medBd: '#fde68a',
+    low: '#475569', lowBg: '#f1f5f9', lowBd: '#e2e8f0',
+    green: '#15803d', amberFg: '#9a3412', amberBg: '#fff7ed', amberBd: '#fed7aa',
+  };
+  const T = (txt, x, yy, o) => doc.text(String(txt), x, yy, { baseline: 'top', ...(o || {}) });
+  const setF = (size, color, bold) => { doc.setFont('helvetica', bold ? 'bold' : 'normal'); doc.setFontSize(size); doc.setTextColor(color); };
+  const meas = (txt, size, maxW) => { doc.setFontSize(size); return doc.splitTextToSize(String(txt || ''), maxW); };
+  const ensure = (h) => { if (y + h > H - M) { doc.addPage(); y = M; } };
+  const sevC = (s) => s === 'High' ? { fg: C.high, bg: C.highBg, bd: C.highBd } : s === 'Medium' ? { fg: C.med, bg: C.medBg, bd: C.medBd } : { fg: C.low, bg: C.lowBg, bd: C.lowBd };
+  const riskFg = risk === 'High' ? C.high : risk === 'Medium' ? C.med : C.green;
+
+  // ── Header band ──
+  doc.setFillColor(C.dark); doc.rect(0, 0, W, 96, 'F');
+  setF(19, C.white, true); T('ShopFlix AI', M, 22);
+  setF(10.5, C.headSub, false); T('Google Merchant Center Compliance Report', M, 48);
+  setF(10, C.cyan, false); T(storeUrl, M, 66);
+  let dateStr = '';
+  try { dateStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }); } catch (e) {}
+  setF(9, C.headSub, false); T(dateStr, W - M, 22, { align: 'right' });
+  y = 120;
+
+  // ── Summary card ──
+  {
+    const h = 96;
+    ensure(h);
+    const top = y;
+    doc.setFillColor(C.white); doc.setDrawColor(C.line); doc.setLineWidth(0.9);
+    doc.roundedRect(M, top, CW, h, 9, 9, 'FD');
+    setF(38, riskFg, true); T(String(score), M + 22, top + 18);
+    const sw = doc.getTextWidth(String(score));
+    setF(13, C.faint, false); T('/100', M + 22 + sw + 5, top + 42);
+    const rl = (risk + ' suspension risk').toUpperCase();
+    const rsv = sevC(risk);
+    setF(8.5, rsv.fg, true);
+    const rpw = doc.getTextWidth(rl) + 18;
+    doc.setFillColor(rsv.bg); doc.setDrawColor(rsv.bd); doc.setLineWidth(0.8);
+    doc.roundedRect(M + 22, top + 62, rpw, 17, 8.5, 8.5, 'FD');
+    setF(8.5, rsv.fg, true); T(rl, M + 22 + 9, top + 67);
+    const drawStat = (label, value, rightX) => {
+      setF(22, C.dark, true); T(value, rightX, top + 22, { align: 'right' });
+      setF(7.5, C.muted, true); T(label, rightX, top + 52, { align: 'right' });
+    };
+    drawStat('ISSUES FOUND', String(totalIssues), M + CW - 22 - 130);
+    drawStat('HIGH SEVERITY', String(highCount), M + CW - 22);
+    y = top + h + 18;
+  }
+
+  // ── Preview note (free download only) ──
+  if (!withFixes) {
+    const note = 'Free preview — showing ' + issues.length + ' of ' + totalIssues + ' issue' + (totalIssues === 1 ? '' : 's') + '. Unlock the full report for every issue plus step-by-step fix instructions.';
+    const nl = meas(note, 9.5, CW);
+    ensure(nl.length * 12 + 10);
+    setF(9.5, C.amberFg, false);
+    nl.forEach((ln) => { T(ln, M, y); y += 12; });
+    y += 10;
+  }
+
+  // ── Section heading ──
+  ensure(24);
+  setF(13.5, C.dark, true);
+  T(issues.length === 0 ? 'Issues' : (withFixes ? issues.length + ' issues — full report with fixes' : 'Top issues found'), M, y);
+  y += 24;
+
+  // ── Issue cards ──
+  if (issues.length === 0) {
+    const h = 70; ensure(h); const top = y;
+    doc.setFillColor('#f0fdf4'); doc.setDrawColor('#bbf7d0'); doc.setLineWidth(0.9);
+    doc.roundedRect(M, top, CW, h, 9, 9, 'FD');
+    setF(13, C.green, true); T('No store-level issues found', M + 16, top + 16);
+    setF(9.5, C.muted, false); T('Your storefront passes the Basic Google Merchant Center compliance checks.', M + 16, top + 38);
+    y = top + h + 16;
+  }
+  issues.forEach((iss, idx) => {
+    const padX = 16, padTop = 14;
+    const innerW = CW - padX * 2;
+    const titleLines = meas((idx + 1) + '.  ' + (iss.title || 'Compliance issue'), 11.5, innerW);
+    const whyLines = iss.why ? meas(iss.why, 9.5, innerW) : [];
+    const fixLines = (withFixes && iss.fix) ? meas(iss.fix, 9.5, innerW) : [];
+    const TH = 14, BH = 12.5;
+    let h = padTop + 17 /*pill row*/ + 10 + titleLines.length * TH;
+    if (whyLines.length) h += 8 + 11 + whyLines.length * BH;
+    if (fixLines.length) h += 10 + 11 + fixLines.length * BH;
+    h += 14; // bottom pad
+    ensure(h);
+    const top = y;
+    const sc = sevC(iss.sev);
+    doc.setFillColor(C.white); doc.setDrawColor(C.line); doc.setLineWidth(0.9);
+    doc.roundedRect(M, top, CW, h, 8, 8, 'FD');
+    // left severity accent bar
+    doc.setFillColor(sc.fg); doc.rect(M, top + 8, 3.5, h - 16, 'F');
+    let cy = top + padTop;
+    // severity pill
+    setF(8, sc.fg, true);
+    const pill = (iss.sev || 'Medium').toUpperCase();
+    const pw = doc.getTextWidth(pill) + 16;
+    doc.setFillColor(sc.bg); doc.setDrawColor(sc.bd); doc.setLineWidth(0.7);
+    doc.roundedRect(M + padX, cy, pw, 15, 7.5, 7.5, 'FD');
+    setF(8, sc.fg, true); T(pill, M + padX + 8, cy + 4);
+    // category tag (right)
+    if (iss.cat) { setF(8, C.faint, false); T(iss.cat, M + CW - padX, cy + 4, { align: 'right' }); }
+    cy += 17 + 10;
+    // title
+    setF(11.5, C.dark, true); titleLines.forEach((ln) => { T(ln, M + padX, cy); cy += TH; });
+    // why
+    if (whyLines.length) {
+      cy += 8; setF(7.5, C.muted, true); T('WHY IT MATTERS', M + padX, cy); cy += 11;
+      setF(9.5, C.text, false); whyLines.forEach((ln) => { T(ln, M + padX, cy); cy += BH; });
+    }
+    // fix
+    if (fixLines.length) {
+      cy += 10; setF(7.5, C.green, true); T('HOW TO FIX IT', M + padX, cy); cy += 11;
+      setF(9.5, C.text, false); fixLines.forEach((ln) => { T(ln, M + padX, cy); cy += BH; });
+    }
+    y = top + h + 12;
+  });
+
+  // ── ShopFlix app promo card (end of report) ──
+  {
+    y += 6;
+    const padX = 16;
+    const innerW = CW - padX * 2;
+    const pitchLines = meas(APP_PITCH, 15, innerW);
+    const subLines = meas('Your report tells you what’s wrong. The ShopFlix AI app — right inside your Shopify admin — fixes it for you and keeps watching so it never happens again.', 9.5, innerW);
+    const featLines = APP_FEATURES.map((f) => meas('•  ' + f.t + ' — ' + f.b, 9.5, innerW));
+    let ch = 16 + pitchLines.length * 19 + 6 + subLines.length * 12.5 + 12;
+    featLines.forEach((l) => { ch += l.length * 12.5 + 3; });
+    ch += 12 + 16 + 14; // link line + bottom pad
+    ensure(ch);
+    const top = y;
+    doc.setFillColor(C.amberBg); doc.setDrawColor(C.amberBd); doc.setLineWidth(1);
+    doc.roundedRect(M, top, CW, ch, 9, 9, 'FD');
+    let cy = top + 16;
+    setF(15, C.amberFg, true); pitchLines.forEach((ln) => { T(ln, M + padX, cy); cy += 19; });
+    cy += 6; setF(9.5, C.muted, false); subLines.forEach((ln) => { T(ln, M + padX, cy); cy += 12.5; });
+    cy += 12;
+    APP_FEATURES.forEach((f, i) => { setF(9.5, C.text, false); featLines[i].forEach((ln) => { T(ln, M + padX, cy); cy += 12.5; }); cy += 3; });
+    cy += 6;
+    setF(11, C.amberFg, true);
+    // NOTE: jsPDF's built-in Helvetica is WinAnsi-encoded — "→" (U+2192) renders as
+    // garbage and corrupts the line. "»" (U+00BB) is in WinAnsi and renders cleanly.
+    doc.textWithLink('»  Install on Shopify: ' + APP_INSTALL_URL, M + padX, cy + 9, { url: APP_INSTALL_URL });
+  }
+
+  return doc;
 }
 
 function AppPromo() {
@@ -902,7 +1055,7 @@ function ResultsScreen({ storeUrl, onUnlock, onRescan, data, toast }) {
 
   const scrollToPlans = () => { const el = document.getElementById('unlock'); if (el) el.scrollIntoView({ behavior: 'smooth' }); };
 
-  // Download the report: only the 2 free issues if not paid; all issues + fixes if paid.
+  // Download the report: only the free preview issues if not paid; all issues + fixes if paid.
   const downloadReport = async () => {
     try {
       let issues = freePreview; let withFixes = false;
@@ -910,26 +1063,7 @@ function ResultsScreen({ storeUrl, onUnlock, onRescan, data, toast }) {
         const full = await fetch('/api/web-report?scanId=' + encodeURIComponent(data.scanId)).then((r) => r.json()).catch(() => null);
         if (full && full.ok && Array.isArray(full.issues)) { issues = full.issues; withFixes = true; }
       }
-      const mod = await import('jspdf');
-      const JsPDF = mod.jsPDF || mod.default;
-      const doc = new JsPDF({ unit: 'pt', format: 'a4' });
-      const M = 40; const W = doc.internal.pageSize.getWidth(); const H = doc.internal.pageSize.getHeight(); let y = 56;
-      const line = (txt, size, color, bold, gap) => {
-        doc.setFont('helvetica', bold ? 'bold' : 'normal'); doc.setFontSize(size); doc.setTextColor(color || '#111111');
-        doc.splitTextToSize(String(txt), W - M * 2).forEach((w) => { if (y > H - 50) { doc.addPage(); y = 56; } doc.text(w, M, y); y += size + 4; });
-        y += gap || 0;
-      };
-      line('ShopFlix AI — GMC Compliance Report', 18, '#0f172a', true, 3);
-      line(storeUrl, 11, '#2563eb', false, 2);
-      line('Compliance score: ' + score + '/100   ·   Risk: ' + risk, 11, '#475569', false, 4);
-      if (!withFixes) line('Free preview — ' + issues.length + ' of ' + totalIssues + ' issues. Unlock the full report for all issues + fix instructions.', 9.5, '#b45309', false, 10);
-      else line(issues.length + ' issues — full report with fixes', 12, '#0f172a', true, 8);
-      issues.forEach((iss, i) => {
-        line((i + 1) + '.  [' + iss.sev + ']  ' + iss.title, 11.5, iss.sev === 'High' ? '#b91c1c' : iss.sev === 'Medium' ? '#b45309' : '#475569', true, 1);
-        if (iss.why) line('Why it matters: ' + iss.why, 9.5, '#475569', false, withFixes ? 1 : 8);
-        if (withFixes && iss.fix) line('How to fix: ' + iss.fix, 9.5, '#166534', false, 8);
-      });
-      pdfAppendPromo(doc, line, M, H, () => y, (v) => { y = v; });
+      const doc = await buildReportPdf({ storeUrl, score, risk, totalIssues, highCount, issues, withFixes });
       doc.save('shopflix-' + (storeUrl || 'store').replace(/[^a-z0-9]/gi, '-') + (withFixes ? '-report' : '-preview') + '.pdf');
     } catch (e) { toast && toast('Could not generate the PDF. Please try again.'); }
   };
@@ -1252,26 +1386,8 @@ function FullReport({ plan, storeUrl, scanId, recoveryToken, onUpgrade, onRescan
   }
   const downloadPdf = async () => {
     try {
-      const mod = await import('jspdf');
-      const JsPDF = mod.jsPDF || mod.default;
-      const doc = new JsPDF({ unit: 'pt', format: 'a4' });
-      const M = 40; const W = doc.internal.pageSize.getWidth(); const H = doc.internal.pageSize.getHeight(); let y = 56;
-      const line = (txt, size, color, bold, gap) => {
-        doc.setFont('helvetica', bold ? 'bold' : 'normal'); doc.setFontSize(size); doc.setTextColor(color || '#111111');
-        doc.splitTextToSize(String(txt), W - M * 2).forEach((w) => { if (y > H - 50) { doc.addPage(); y = 56; } doc.text(w, M, y); y += size + 4; });
-        y += gap || 0;
-      };
-      line('ShopFlix AI — GMC Compliance Report', 18, '#0f172a', true, 3);
-      line(storeUrl, 11, '#2563eb', false, 2);
-      line('Compliance score: ' + repScore + '/100   ·   Risk: ' + ((rep && rep.riskLevel) || '—'), 11, '#475569', false, 12);
       const issues = (rep && rep.issues) || [];
-      line(issues.length + ' issue' + (issues.length === 1 ? '' : 's') + ' found', 13, '#0f172a', true, 8);
-      issues.forEach((iss, i) => {
-        line((i + 1) + '.  [' + iss.sev + ']  ' + iss.title, 11.5, iss.sev === 'High' ? '#b91c1c' : iss.sev === 'Medium' ? '#b45309' : '#475569', true, 1);
-        if (iss.why) line('Why it matters: ' + iss.why, 9.5, '#475569', false, 1);
-        if (iss.fix) line('How to fix: ' + iss.fix, 9.5, '#166534', false, 8);
-      });
-      pdfAppendPromo(doc, line, M, H, () => y, (v) => { y = v; });
+      const doc = await buildReportPdf({ storeUrl, score: repScore, risk: repRisk, totalIssues: issues.length, highCount: repHigh, issues, withFixes: true });
       doc.save('shopflix-report-' + (storeUrl || 'store').replace(/[^a-z0-9]/gi, '-') + '.pdf');
     } catch (e) { toast('Could not generate the PDF. Please try again.'); }
   };
