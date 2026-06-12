@@ -392,9 +392,9 @@ export default function ChooseSubscription() {
 
   return (
     <Frame>
-      <Page 
+      <Page
         title="Plans & Billing"
-        narrowWidth
+        fullWidth
         backAction={{ content: "Dashboard", url: "/app" }}
       >
         <Layout>
@@ -482,7 +482,11 @@ export default function ChooseSubscription() {
                   Every plan unlocks the full app. Plans differ only in how many credits you
                   receive each month — spend them on whatever your store needs:
                 </Text>
-                <div>
+                <div style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))",
+                  gap: "4px 28px",
+                }}>
                   {CREDIT_MENU.map((group) => (
                     <div key={group.section}>
                       <p style={creditSectionLabel}>{group.section}</p>
@@ -514,89 +518,92 @@ export default function ChooseSubscription() {
           </Layout.Section>
 
           <Layout.Section>
-            <BlockStack gap="400">
+            <div style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+              gap: "16px",
+              alignItems: "stretch",
+            }}>
               {plans.map((plan: any) => {
                 const isCurrentPlan = currentSubscription?.planId === plan.id;
                 const isFreeplan = plan.price === 0;
                 const details = PLAN_DETAILS[plan.name];
 
                 return (
-                  <Card key={plan.id}>
-                    <BlockStack gap="400">
-                      <InlineStack align="space-between" blockAlign="center">
-                        <BlockStack gap="100">
-                          <InlineStack gap="200" blockAlign="center">
-                            <Text as="h2" variant="headingLg">
-                              {plan.name}
-                            </Text>
-                            {isCurrentPlan && (
-                              <Badge tone="success">Current Plan</Badge>
-                            )}
-                            {isFreeplan && (
-                              <Badge tone="info">Free Forever</Badge>
-                            )}
-                          </InlineStack>
-                          <Text as="p" variant="headingXl" tone="base">
-                            ${plan.price.toFixed(2)}
-                            <Text as="span" variant="bodyMd" tone="subdued">
-                              {" "}/month
-                            </Text>
-                          </Text>
-                          {details?.tagline && (
-                            <Text as="p" tone="subdued" variant="bodySm">
-                              {details.tagline}
-                            </Text>
+                  <div
+                    key={plan.id}
+                    style={{
+                      display: "flex", flexDirection: "column", height: "100%",
+                      background: "#fff", borderRadius: "14px", padding: "20px",
+                      border: isCurrentPlan ? "2px solid #1a4a5a" : "1px solid #e3e5e8",
+                      boxShadow: isCurrentPlan ? "0 4px 14px rgba(26,74,90,0.14)" : "0 1px 3px rgba(16,24,40,0.05)",
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                      <Text as="h2" variant="headingMd">{plan.name}</Text>
+                      {isCurrentPlan && <Badge tone="success">Current Plan</Badge>}
+                      {isFreeplan && <Badge tone="info">Free Forever</Badge>}
+                    </div>
+
+                    <div style={{ margin: "8px 0 2px" }}>
+                      <span style={{ fontSize: "26px", fontWeight: 800, color: "#1a1a1a" }}>
+                        ${plan.price.toFixed(2)}
+                      </span>
+                      <span style={{ fontSize: "13px", color: "#6d7175" }}> /month</span>
+                    </div>
+                    {details?.tagline && (
+                      <p style={{ margin: "0 0 4px", fontSize: "12.5px", color: "#6d7175", lineHeight: 1.45 }}>
+                        {details.tagline}
+                      </p>
+                    )}
+
+                    <div style={{ borderTop: "1px solid #f1f2f4", margin: "12px 0" }} />
+
+                    <div style={{ display: "flex", flexDirection: "column", gap: "9px" }}>
+                      <div style={{ display: "flex", gap: "8px", alignItems: "flex-start" }}>
+                        <span style={{ color: "#108043", fontWeight: 700, lineHeight: "19px" }}>✓</span>
+                        <span style={{ fontSize: "13px", color: "#202223", lineHeight: 1.5 }}>
+                          {isFreeplan ? (
+                            <><strong>{plan.productLimit} one-time credits</strong> — try the app, no renewal needed</>
+                          ) : (
+                            <><strong>{plan.productLimit} credits</strong> per month — use them on imports, scans & fixes</>
                           )}
-                        </BlockStack>
-                      </InlineStack>
+                        </span>
+                      </div>
 
-                      <Divider />
+                      {(details?.features || GENERIC_PLAN_FEATURES).map((feature) => (
+                        <div key={feature} style={{ display: "flex", gap: "8px", alignItems: "flex-start" }}>
+                          <span style={{ color: "#108043", fontWeight: 700, lineHeight: "19px" }}>✓</span>
+                          <span style={{ fontSize: "13px", color: "#42474c", lineHeight: 1.5 }}>{feature}</span>
+                        </div>
+                      ))}
+                    </div>
 
-                      <BlockStack gap="300">
-                        <InlineStack gap="200" blockAlign="start">
-                          <Text as="span" tone="success">✓</Text>
-                          <Text as="p">
-                            {isFreeplan ? (
-                              <><strong>{plan.productLimit} one-time credits</strong> — try the app, no renewal needed</>
-                            ) : (
-                              <><strong>{plan.productLimit} credits</strong> per month — use them on imports, scans & fixes</>
-                            )}
-                          </Text>
-                        </InlineStack>
-
-                        {(details?.features || GENERIC_PLAN_FEATURES).map((feature) => (
-                          <InlineStack key={feature} gap="200" blockAlign="start">
-                            <Text as="span" tone="success">✓</Text>
-                            <Text as="p">{feature}</Text>
-                          </InlineStack>
-                        ))}
-                      </BlockStack>
-
-                      <InlineStack gap="200">
-                        <Button
-                          variant={isCurrentPlan ? "secondary" : "primary"}
-                          size="large"
-                          onClick={() => handleSelectPlan(plan.id, 
-                            currentSubscription && !isCurrentPlan ? 'change' : 'purchase'
-                          )}
-                          loading={isLoading && selectedPlanId === plan.id && selectedAction !== 'trial'}
-                          disabled={isCurrentPlan || isLoading}
-                        >
-                          {isCurrentPlan 
-                            ? "Current Plan" 
-                            : currentSubscription?.status === "active" && !isCurrentPlan
-                              ? (plan.price > currentSubscription.plan.price ? "Upgrade" : "Downgrade")
-                              : isFreeplan
-                                ? "Select Free Plan"
-                                : "Choose Plan"
-                          }
-                        </Button>
-                      </InlineStack>
-                    </BlockStack>
-                  </Card>
+                    <div style={{ marginTop: "auto", paddingTop: "18px" }}>
+                      <Button
+                        variant={isCurrentPlan ? "secondary" : "primary"}
+                        size="large"
+                        fullWidth
+                        onClick={() => handleSelectPlan(plan.id,
+                          currentSubscription && !isCurrentPlan ? 'change' : 'purchase'
+                        )}
+                        loading={isLoading && selectedPlanId === plan.id && selectedAction !== 'trial'}
+                        disabled={isCurrentPlan || isLoading}
+                      >
+                        {isCurrentPlan
+                          ? "Current Plan"
+                          : currentSubscription?.status === "active" && !isCurrentPlan
+                            ? (plan.price > currentSubscription.plan.price ? "Upgrade" : "Downgrade")
+                            : isFreeplan
+                              ? "Select Free Plan"
+                              : "Choose Plan"
+                        }
+                      </Button>
+                    </div>
+                  </div>
                 );
               })}
-            </BlockStack>
+            </div>
           </Layout.Section>
 
           <Layout.Section>
