@@ -122,7 +122,7 @@ function ScanBox({ onScan, big, placeholder, autoFocus }) {
 }
 
 /* ---------- nav ---------- */
-function Nav({ route, onHome, onRecover }) {
+function Nav({ route, email, onHome, onSignIn }) {
   const onLanding = route === 'landing';
   return (
     <nav className="nav">
@@ -139,7 +139,9 @@ function Nav({ route, onHome, onRecover }) {
               <a href="#plans">Pricing</a>
               <a href="#sample">Sample report</a>
               <a href="#app">Shopify app</a>
-              <a href="#recover" onClick={(e) => { e.preventDefault(); onRecover && onRecover(); }}>Recover report</a>
+              {email
+                ? <span title={email} style={{ color: 'var(--muted)', fontSize: '13px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}><Icons.check size={13} /> Signed in</span>
+                : <a href="#signin" onClick={(e) => { e.preventDefault(); onSignIn && onSignIn(); }}>Sign in</a>}
             </React.Fragment> :
 
           <a href="#top" onClick={(e) => {e.preventDefault();onHome();}} style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
@@ -958,86 +960,69 @@ const { useState: useStateF, useEffect: useEffectF } = React;
 
 /* ============ AUTH MODAL ============ */
 function AuthModal({ plan, onClose, onAuthed }) {
-  // WIRING: passwordless email one-time code via /api/web-auth.
-  const [step, setStep] = useStateF('email'); // 'email' | 'code'
+  // WIRING: email + password via /api/web-auth (intents: signup | login).
+  const [mode, setMode] = useStateF(plan ? 'signup' : 'login'); // new buyers sign up; returning users log in
   const [email, setEmail] = useStateF('');
-  const [code, setCode] = useStateF('');
+  const [password, setPassword] = useStateF('');
   const [busy, setBusy] = useStateF(false);
   const [err, setErr] = useStateF('');
-  const [note, setNote] = useStateF('');
 
-  const post = (intent, extra) =>
-    fetch('/api/web-auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ intent, email, ...extra }) }).then((r) => r.json());
-
-  const sendCode = () => {
-    if (!email.includes('@')) { setErr('Please enter a valid email.'); return; }
+  const submit = () => {
+    const em = email.trim().toLowerCase();
+    if (!em.includes('@')) { setErr('Please enter a valid email.'); return; }
+    if (password.length < 6) { setErr('Password must be at least 6 characters.'); return; }
     setBusy(true); setErr('');
-    post('request').then((d) => {
-      setBusy(false);
-      if (d && d.ok) { setStep('code'); setNote('We emailed a 6-digit code to ' + email + '.'); }
-      else setErr((d && d.error) || 'Could not send code. Try again.');
-    }).catch(() => { setBusy(false); setErr('Network error. Try again.'); });
-  };
-  const verify = () => {
-    if (code.replace(/\D/g, '').length !== 6) { setErr('Enter the 6-digit code.'); return; }
-    setBusy(true); setErr('');
-    post('verify', { code }).then((d) => {
-      setBusy(false);
-      if (d && d.ok) onAuthed(d.email || email);
-      else setErr((d && d.error) || 'Incorrect code.');
-    }).catch(() => { setBusy(false); setErr('Network error. Try again.'); });
+    fetch('/api/web-auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ intent: mode, email: em, password }) })
+      .then((r) => r.json())
+      .then((d) => {
+        setBusy(false);
+        if (d && d.ok) onAuthed(d.email || em);
+        else setErr((d && d.error) || 'Could not sign in. Please try again.');
+      })
+      .catch(() => { setBusy(false); setErr('Network error. Try again.'); });
   };
 
+  const isSignup = mode === 'signup';
   return (
     <div className="overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="modal" data-screen-label="Login modal">
         <button className="modal-x" onClick={onClose} aria-label="Close">&times;</button>
         <div style={{ textAlign: 'center', marginBottom: '24px' }}>
           <img src={(window.__resources || {}).logoImg || "assets/logo.png"} alt="" style={{ width: '44px', height: '44px', borderRadius: '12px', margin: '0 auto 14px' }} />
-          <h2 style={{ fontSize: '21px', fontWeight: 700 }}>{step === 'email' ? 'Sign in to unlock' : 'Enter your code'}</h2>
+          <h2 style={{ fontSize: '21px', fontWeight: 700 }}>{isSignup ? 'Create your account' : 'Sign in'}</h2>
           <p style={{ color: 'var(--muted)', fontSize: '14px', marginTop: '6px' }}>
-            {step === 'email'
+            {plan
               ? <>To unlock the <b style={{ color: 'var(--text)' }}>{plan.name}</b> report for ${plan.price}</>
-              : note}
+              : 'Sign in to reopen a report you already paid for.'}
           </p>
         </div>
 
-        {step === 'email' ? (
-          <React.Fragment>
-            <div className="field">
-              <label>Email</label>
-              <input type="email" placeholder="you@store.com" value={email} autoFocus
-                onChange={(e) => { setEmail(e.target.value); if (err) setErr(''); }}
-                onKeyDown={(e) => { if (e.key === 'Enter') sendCode(); }} />
-            </div>
-            {err ? <p style={{ color: 'var(--red)', fontSize: '13px', margin: '-4px 0 10px' }}>{err}</p> : null}
-            <button className="btn btn-primary btn-block" onClick={sendCode} disabled={busy || !email.includes('@')}>
-              {busy ? 'Sending\u2026' : 'Email me a code'}
-            </button>
-            <p style={{ textAlign: 'center', fontSize: '12px', color: 'var(--faint)', marginTop: '16px' }}>
-              No password needed. We'll email you a one-time code.
-            </p>
-          </React.Fragment>
-        ) : (
-          <React.Fragment>
-            <div className="field">
-              <label>6-digit code</label>
-              <input className="mono" inputMode="numeric" placeholder="\u2022\u2022\u2022\u2022\u2022\u2022" value={code} autoFocus
-                style={{ letterSpacing: '6px', fontSize: '18px', textAlign: 'center' }}
-                onChange={(e) => { setCode(e.target.value.replace(/\D/g, '').slice(0, 6)); if (err) setErr(''); }}
-                onKeyDown={(e) => { if (e.key === 'Enter') verify(); }} />
-            </div>
-            {err ? <p style={{ color: 'var(--red)', fontSize: '13px', margin: '-4px 0 10px' }}>{err}</p> : null}
-            <button className="btn btn-primary btn-block" onClick={verify} disabled={busy || code.length !== 6}>
-              {busy ? 'Verifying\u2026' : 'Verify & continue'}
-            </button>
-            <p style={{ textAlign: 'center', fontSize: '13px', color: 'var(--muted)', marginTop: '16px' }}>
-              <a href="#resend" style={{ color: 'var(--accent)' }} onClick={(e) => { e.preventDefault(); sendCode(); }}>Resend code</a>
-              {'  \u00b7  '}
-              <a href="#back" style={{ color: 'var(--accent)' }} onClick={(e) => { e.preventDefault(); setStep('email'); setErr(''); }}>Change email</a>
-            </p>
-          </React.Fragment>
-        )}
+        <div className="field">
+          <label>Email</label>
+          <input type="email" placeholder="you@store.com" value={email} autoFocus autoComplete="email"
+            onChange={(e) => { setEmail(e.target.value); if (err) setErr(''); }}
+            onKeyDown={(e) => { if (e.key === 'Enter') submit(); }} />
+        </div>
+        <div className="field">
+          <label>Password</label>
+          <input type="password" placeholder={isSignup ? 'Choose a password (min 6 chars)' : 'Your password'} value={password}
+            autoComplete={isSignup ? 'new-password' : 'current-password'}
+            onChange={(e) => { setPassword(e.target.value); if (err) setErr(''); }}
+            onKeyDown={(e) => { if (e.key === 'Enter') submit(); }} />
+        </div>
+        {err ? <p style={{ color: 'var(--red)', fontSize: '13px', margin: '-4px 0 10px' }}>{err}</p> : null}
+        <button className="btn btn-primary btn-block" onClick={submit} disabled={busy || !email.includes('@') || password.length < 6}>
+          {busy ? 'Please wait\u2026' : (isSignup ? 'Create account & continue' : 'Sign in')}
+        </button>
+        <p style={{ textAlign: 'center', fontSize: '13px', color: 'var(--muted)', marginTop: '16px' }}>
+          {isSignup ? 'Already have an account? ' : "Don't have an account? "}
+          <a href="#toggle" style={{ color: 'var(--accent)' }} onClick={(e) => { e.preventDefault(); setMode(isSignup ? 'login' : 'signup'); setErr(''); }}>
+            {isSignup ? 'Log in' : 'Create one'}
+          </a>
+        </p>
+        <p style={{ textAlign: 'center', fontSize: '11.5px', color: 'var(--faint)', marginTop: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+          <Icons.lock size={12} /> Your password is encrypted \u00b7 never stored in plain text
+        </p>
       </div>
     </div>
   );
@@ -1215,18 +1200,14 @@ function FullReport({ plan, storeUrl, scanId, recoveryToken, onUpgrade, onRescan
 
       <div className="wrap" style={{ padding: '40px 32px 90px' }}>
         {recoveryToken ? (
-          <div className="card" style={{ marginBottom: '24px', border: '1px solid rgba(232,155,60,0.4)', background: 'rgba(232,155,60,0.08)' }}>
+          <div className="card" style={{ marginBottom: '24px', border: '1px solid rgba(65,198,238,0.35)', background: 'rgba(65,198,238,0.07)' }}>
             <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
-              <span style={{ color: 'var(--amber)', flexShrink: 0 }}><Icons.lock size={18} /></span>
+              <span style={{ color: 'var(--accent)', flexShrink: 0 }}><Icons.check size={18} /></span>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <h3 style={{ fontSize: '15px', fontWeight: 700, marginBottom: '4px' }}>Save your recovery key</h3>
-                <p style={{ color: 'var(--muted)', fontSize: '13px', marginBottom: '12px' }}>
-                  Keep this safe — it's shown only once. If your scan ever needs re-running, use it to re-open this paid report with no second payment ("Recover report" in the top menu).
+                <h3 style={{ fontSize: '15px', fontWeight: 700, marginBottom: '4px' }}>Your report is saved</h3>
+                <p style={{ color: 'var(--muted)', fontSize: '13px', margin: 0 }}>
+                  This paid report is stored against <strong style={{ color: 'var(--text)' }}>{storeUrl}</strong>. To reopen it anytime, just sign in with this email and enter your store URL again — no second payment, nothing to remember. Razorpay has emailed your receipt.
                 </p>
-                <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
-                  <code className="mono" style={{ background: 'var(--bg)', border: '1px solid var(--line)', borderRadius: '8px', padding: '9px 13px', fontSize: '14px', userSelect: 'all' }}>{recoveryToken}</code>
-                  <button className="btn btn-ghost btn-sm" onClick={() => { try { navigator.clipboard.writeText(recoveryToken); toast('Recovery key copied'); } catch (e) { toast('Copy it manually'); } }}>Copy</button>
-                </div>
               </div>
             </div>
           </div>
@@ -1335,9 +1316,13 @@ function App() {
   const [planId, setPlanId] = useStateA(() => LS.get('plan', null));
   const [email, setEmail] = useStateA(() => LS.get('email', null));
   const [authFor, setAuthFor] = useStateA(null); // plan id pending auth
+  const [signIn, setSignIn] = useStateA(false); // standalone sign-in (returning buyer, no plan)
   const [toastMsg, setToastMsg] = useStateA(null);
-  const [scan, setScan] = useStateA(null); // WIRING: live result from /api/web-scan
+  // Restore the last scan result from storage so a page refresh on the
+  // results/report screen shows the saved report instead of hanging forever.
+  const [scan, setScan] = useStateA(() => LS.get('scan', null)); // live result from /api/web-scan
   const [recoveryToken, setRecoveryToken] = useStateA(null); // shown once after payment
+  const restored = useRef(false);
 
   const go = useCallbackA((r) => {
     setRoute(r); LS.set('route', r);
@@ -1347,14 +1332,44 @@ function App() {
   useEffectA(() => { LS.set('url', storeUrl); }, [storeUrl]);
   useEffectA(() => { LS.set('plan', planId); }, [planId]);
   useEffectA(() => { LS.set('email', email); }, [email]);
+  // Persist only a usable result; never cache an error/loading state.
+  useEffectA(() => { if (scan && scan.ok) LS.set('scan', scan); }, [scan]);
+
+  // On first mount, if we landed on a screen that needs scan data but have none
+  // (e.g. the user refreshed mid-scan, or storage was cleared), re-resolve it
+  // from the database by store URL — no AI re-scan, it's already saved.
+  useEffectA(() => {
+    if (restored.current) return;
+    restored.current = true;
+    const needsScan = route === 'scanning' || route === 'results' || route === 'checkout' || route === 'report';
+    if (!needsScan) return;
+    if (scan && scan.ok) { if (route === 'scanning') go('results'); return; }
+    const url = LS.get('url', '');
+    if (!url) { go('landing'); return; }
+    fetch('/api/web-scan', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url }) })
+      .then((r) => r.json())
+      .then((d) => {
+        if (d && d.ok) {
+          setScan(d);
+          if (d.owned) { setPlanId(d.paidTier || 'basic'); go('report'); }
+          else if (route === 'scanning' || route === 'checkout' || route === 'report') go('results');
+        } else { go('landing'); }
+      })
+      .catch(() => go('landing'));
+  }, []); // eslint-disable-line
 
   const toast = (msg) => { setToastMsg(msg); setTimeout(() => setToastMsg(null), 2600); };
 
   const startScan = (url) => {
-    setStoreUrl(url); setScan(null); go('scanning');
+    setStoreUrl(url); setScan(null); LS.set('scan', null); go('scanning');
     fetch('/api/web-scan', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url }) })
       .then((r) => r.json())
-      .then((d) => setScan(d || { ok: false, error: 'Scan failed. Please try again.' }))
+      .then((d) => {
+        setScan(d || { ok: false, error: 'Scan failed. Please try again.' });
+        // Already paid for by this signed-in visitor → restore their plan so the
+        // scanning screen finishes into the full report instead of the preview.
+        if (d && d.ok && d.owned) setPlanId(d.paidTier || 'basic');
+      })
       .catch(() => setScan({ ok: false, error: 'Network error. Please try again.' }));
   };
   const plan = PLANS.find((p) => p.id === planId) || PLANS[0];
@@ -1380,9 +1395,28 @@ function App() {
 
   const handleAuthed = (em) => {
     setEmail(em);
-    setPlanId(authFor);
-    setAuthFor(null);
-    go('checkout');
+    const planPending = authFor;
+    setAuthFor(null); setSignIn(false);
+    if (planPending) {
+      // Came from "unlock a plan" → continue to checkout.
+      setPlanId(planPending);
+      go('checkout');
+      return;
+    }
+    // Standalone sign-in → if the current store URL is one they already paid for,
+    // reopen the saved report straight from the database.
+    const url = LS.get('url', '');
+    if (!url) { toast('Signed in'); return; }
+    fetch('/api/web-scan', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url }) })
+      .then((r) => r.json())
+      .then((d) => {
+        if (d && d.ok) {
+          setScan(d);
+          if (d.owned) { setPlanId(d.paidTier || 'basic'); go('report'); toast('Welcome back — opening your saved report.'); }
+          else { toast('Signed in'); }
+        } else { toast('Signed in'); }
+      })
+      .catch(() => toast('Signed in'));
   };
 
   const upgradeFromReport = (tierId) => {
@@ -1392,33 +1426,22 @@ function App() {
 
   const rescan = () => { go('landing'); };
 
-  // WIRING: redeem a post-payment recovery key to re-run + re-open a paid report.
-  const recoverReport = (token) => {
-    if (!token) return;
-    fetch('/api/web-recover', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: token.trim() }) })
-      .then((r) => r.json())
-      .then((d) => {
-        if (d && d.ok) {
-          setStoreUrl(d.storeUrl); setScan({ ok: true, scanId: d.scanId, storeUrl: d.storeUrl });
-          setPlanId(d.planId || 'basic'); go('report'); toast('Report recovered — re-running your scan.');
-        } else { toast((d && d.error) || 'Invalid recovery key.'); }
-      })
-      .catch(() => toast('Network error. Please try again.'));
-  };
-  const promptRecover = () => { const k = typeof window !== 'undefined' ? window.prompt('Enter your recovery key (from your payment confirmation):') : null; if (k) recoverReport(k); };
+  const openSignIn = () => { setAuthFor(null); setSignIn(true); };
 
   return (
-    <div style={{ '--accent': t.accent }} className={t.gridTexture ? '' : 'no-grid'}>
+    <div style={{ '--accent': t.accent, minHeight: '100vh', display: 'flex', flexDirection: 'column' }} className={t.gridTexture ? '' : 'no-grid'}>
       <a id="top"></a>
-      <Nav route={route} onHome={() => go('landing')} onRecover={promptRecover} />
-      {route === 'landing' ? <Landing t={t} onScan={startScan} onSelectPlan={landingPlanSelect} /> : null}
-      {route === 'scanning' ? <ScanningScreen storeUrl={storeUrl} fast={t.fastScan} ready={!!scan} onDone={() => go('results')} /> : null}
-      {route === 'results' ? <ResultsScreen storeUrl={storeUrl} onUnlock={unlockPlan} onRescan={rescan} data={scan} toast={toast} /> : null}
-      {route === 'checkout' ? <CheckoutScreen plan={plan} storeUrl={storeUrl} email={email || ''} scanId={scan && scan.scanId} onPaid={(tok) => { setRecoveryToken(tok || null); go('report'); }} onBack={() => go('results')} /> : null}
-      {route === 'report' ? <FullReport plan={plan} storeUrl={storeUrl} scanId={scan && scan.scanId} recoveryToken={recoveryToken} onUpgrade={upgradeFromReport} onRescan={rescan} toast={toast} /> : null}
+      <Nav route={route} email={email} onHome={() => go('landing')} onSignIn={openSignIn} />
+      <div style={{ flex: '1 0 auto', display: 'flex', flexDirection: 'column' }}>
+        {route === 'landing' ? <Landing t={t} onScan={startScan} onSelectPlan={landingPlanSelect} /> : null}
+        {route === 'scanning' ? <ScanningScreen storeUrl={storeUrl} fast={t.fastScan} ready={!!scan} onDone={() => go(scan && scan.owned ? 'report' : 'results')} /> : null}
+        {route === 'results' ? <ResultsScreen storeUrl={storeUrl} onUnlock={unlockPlan} onRescan={rescan} data={scan} toast={toast} /> : null}
+        {route === 'checkout' ? <CheckoutScreen plan={plan} storeUrl={storeUrl} email={email || ''} scanId={scan && scan.scanId} onPaid={(tok) => { setRecoveryToken(tok || null); go('report'); }} onBack={() => go('results')} /> : null}
+        {route === 'report' ? <FullReport plan={plan} storeUrl={storeUrl} scanId={scan && scan.scanId} recoveryToken={recoveryToken} onUpgrade={upgradeFromReport} onRescan={rescan} toast={toast} /> : null}
+      </div>
       {route === 'landing' || route === 'report' || route === 'results' ? <Footer /> : null}
 
-      {pendingPlan && !email ? <AuthModal plan={pendingPlan} onClose={() => setAuthFor(null)} onAuthed={handleAuthed} /> : null}
+      {(pendingPlan || signIn) && !email ? <AuthModal plan={pendingPlan || null} onClose={() => { setAuthFor(null); setSignIn(false); }} onAuthed={handleAuthed} /> : null}
       {toastMsg ? <div className="toast">{toastMsg}</div> : null}
     </div>
   );

@@ -2,6 +2,7 @@ import { json, type ActionFunctionArgs, type LoaderFunctionArgs } from "@remix-r
 import prisma from "../db.server";
 import { runMonitoringScan } from "../utils/store-scanner.server";
 import { normalizeStoreUrl, mapBasicResult, toPreview } from "../utils/web-scan.server";
+import { getWebEmail } from "../utils/web-session.server";
 
 const PREVIEW_COUNT = 2; // free issues shown in the preview; the rest are locked
 const IP_HOURLY_LIMIT = 12; // soft abuse cap per IP per hour
@@ -32,6 +33,7 @@ export async function action({ request }: ActionFunctionArgs) {
   const { url, domain } = norm;
   const ip = clientIp(request);
   const userAgent = (request.headers.get("user-agent") || "").slice(0, 300);
+  const sessionEmail = await getWebEmail(request); // null if not signed in
 
   try {
     // Soft per-IP rate limit.
@@ -49,6 +51,10 @@ export async function action({ request }: ActionFunctionArgs) {
     });
     if (existing) {
       const prev = (((existing.preview as any[]) || []).slice(0, PREVIEW_COUNT));
+      // "owned": this store was paid for AND the current visitor is signed in as
+      // the buyer. They get their full report straight from the DB — no re-scan,
+      // no re-payment, no recovery key needed.
+      const owned = !!existing.paidTier && !!sessionEmail && existing.email === sessionEmail;
       return json({
         ok: true,
         alreadyScanned: true,
@@ -64,6 +70,8 @@ export async function action({ request }: ActionFunctionArgs) {
         freePreview: prev,
         lockedCount: Math.max(0, existing.totalIssues - prev.length),
         paid: !!existing.paidTier,
+        paidTier: existing.paidTier || null,
+        owned,
       });
     }
 
