@@ -802,7 +802,7 @@ function ResultsScreen({ storeUrl, onUnlock, onRescan, data }) {
   }
   const score = data.score != null ? data.score : SCAN_SCORE;
   const totalIssues = data.totalIssues != null ? data.totalIssues : TOTAL_ISSUES;
-  const freePreview = data.freePreview || FREE_PREVIEW;
+  const freePreview = Array.isArray(data.freePreview) ? data.freePreview : []; // real preview only — never the mock
   const highCount = data.highCount != null ? data.highCount : ALL_ISSUES.filter((i) => i.sev === 'High').length;
   const lockedCount = data.lockedCount != null ? data.lockedCount : (totalIssues - freePreview.length);
   const pagesScanned = data.pagesScanned != null ? data.pagesScanned : 7;
