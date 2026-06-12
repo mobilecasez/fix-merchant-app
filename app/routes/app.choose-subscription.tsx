@@ -25,19 +25,60 @@ import {
 } from "../utils/billing.server";
 
 // What one credit buys across the app — shown as a transparency card above the
-// plans. Keep in sync with SCAN_CREDITS (api.store-scan), FIX_CREDIT_COSTS
-// (auto-fix), suspension-recovery (10), image-fixer (10 + 2/fix), monitor (2).
-const CREDIT_MENU: Array<{ icon: string; label: string; cost: string }> = [
-  { icon: "📦", label: "AI product import (Amazon, eBay, AliExpress & more)", cost: "1 credit / product" },
-  { icon: "⚡", label: "One-click AI auto-fix (policies, footer links, contact info…)", cost: "1–5 credits / fix" },
-  { icon: "🔍", label: "Basic compliance scan — first one FREE for every store", cost: "10 credits" },
-  { icon: "🛟", label: "Suspension Recovery — diagnosis + appeal letter", cost: "10 credits" },
-  { icon: "🖼️", label: "AI Image Fixer — white background, no watermarks", cost: "10 scan + 2 / image" },
-  { icon: "🔬", label: "Advanced scan — GTINs, pricing, product feed", cost: "20 credits" },
-  { icon: "🛡️", label: "Deep scan — full suspension-risk audit", cost: "30 credits" },
-  { icon: "🔔", label: "Always-on monitoring check", cost: "2 credits / check" },
-  { icon: "🧩", label: "JSON-LD structured data for rich results", cost: "Free" },
+// plans, grouped by the merchant journey (import → scan → fix → protect).
+// Keep in sync with SCAN_CREDITS (api.store-scan), FIX_CREDIT_COSTS (auto-fix),
+// suspension-recovery (10), image-fixer (10 + 2/fix), monitor (2).
+const CREDIT_MENU: Array<{
+  section: string;
+  items: Array<{ icon: string; label: string; sub: string; cost: string; free?: boolean; note?: string }>;
+}> = [
+  {
+    section: "Import",
+    items: [
+      { icon: "📦", label: "AI Product Import", sub: "Amazon, eBay, AliExpress & 11 major platforms", cost: "1 credit / product" },
+    ],
+  },
+  {
+    section: "Scan & diagnose",
+    items: [
+      { icon: "🔍", label: "Basic Scan", sub: "Store fundamentals & legal compliance", cost: "10 credits", note: "First scan free" },
+      { icon: "🔬", label: "Advanced Scan", sub: "Product feed — GTINs, pricing, descriptions", cost: "20 credits" },
+      { icon: "🛡️", label: "Deep Scan", sub: "Full suspension-risk audit", cost: "30 credits" },
+    ],
+  },
+  {
+    section: "Fix & recover",
+    items: [
+      { icon: "⚡", label: "AI Auto-Fix", sub: "Policy pages, footer links, contact info & more", cost: "1–5 credits / fix" },
+      { icon: "🖼️", label: "AI Image Fixer", sub: "Clean white backgrounds, watermark removal", cost: "10 + 2 / image" },
+      { icon: "🛟", label: "Suspension Recovery", sub: "Diagnosis, fix plan & reinstatement appeal letter", cost: "10 credits" },
+    ],
+  },
+  {
+    section: "Protect",
+    items: [
+      { icon: "🔔", label: "Always-On Monitoring", sub: "Scheduled re-checks with email alerts", cost: "2 credits / check" },
+      { icon: "🧩", label: "Structured Data (JSON-LD)", sub: "Rich-results theme block, one-click enable", cost: "Free", free: true },
+    ],
+  },
 ];
+
+const creditPill = (free?: boolean): React.CSSProperties => ({
+  fontSize: "12px", fontWeight: 600, whiteSpace: "nowrap",
+  padding: "3px 10px", borderRadius: "999px",
+  background: free ? "#f0fdf4" : "#f4f5f7",
+  color: free ? "#166534" : "#374151",
+  border: `1px solid ${free ? "#86efac" : "#e3e5e8"}`,
+});
+const creditIconChip: React.CSSProperties = {
+  width: "32px", height: "32px", borderRadius: "8px", background: "#f4f6f8",
+  display: "flex", alignItems: "center", justifyContent: "center",
+  fontSize: "16px", flexShrink: 0,
+};
+const creditSectionLabel: React.CSSProperties = {
+  fontSize: "11px", fontWeight: 700, letterSpacing: "0.6px", textTransform: "uppercase",
+  color: "#8c9196", margin: "14px 0 2px",
+};
 
 // Per-plan highlights ("best items") keyed by plan name; generic fallback below.
 const PLAN_DETAILS: Record<string, { tagline: string; features: string[] }> = {
@@ -45,7 +86,7 @@ const PLAN_DETAILS: Record<string, { tagline: string; features: string[] }> = {
     tagline: "See your store the way Google sees it — free.",
     features: [
       "First Basic compliance scan FREE (a 10-credit value)",
-      "2 credits / month for AI imports or quick fixes",
+      "2 one-time credits to try AI imports or quick fixes",
       "Free JSON-LD structured data for rich results",
     ],
   },
@@ -433,23 +474,41 @@ export default function ChooseSubscription() {
 
           <Layout.Section>
             <Card>
-              <BlockStack gap="300">
+              <BlockStack gap="200">
                 <Text as="h3" variant="headingMd">
-                  💳 One credit pool. Every feature.
+                  One credit pool. Every feature.
                 </Text>
                 <Text as="p" tone="subdued">
-                  Every plan unlocks the full app — imports, scans, auto-fixes, image fixes,
-                  suspension recovery and monitoring. Plans differ only in how many credits you
-                  get each month. Here's what credits buy:
+                  Every plan unlocks the full app. Plans differ only in how many credits you
+                  receive each month — spend them on whatever your store needs:
                 </Text>
-                <BlockStack gap="150">
-                  {CREDIT_MENU.map((item) => (
-                    <InlineStack key={item.label} align="space-between" blockAlign="center" wrap={false} gap="200">
-                      <Text as="p" variant="bodySm">{item.icon} {item.label}</Text>
-                      <Text as="p" variant="bodySm" tone="subdued" alignment="end">{item.cost}</Text>
-                    </InlineStack>
+                <div>
+                  {CREDIT_MENU.map((group) => (
+                    <div key={group.section}>
+                      <p style={creditSectionLabel}>{group.section}</p>
+                      {group.items.map((item, idx) => (
+                        <div
+                          key={item.label}
+                          style={{
+                            display: "flex", alignItems: "center", gap: "12px",
+                            padding: "10px 0",
+                            borderBottom: idx < group.items.length - 1 ? "1px solid #f1f2f4" : "none",
+                          }}
+                        >
+                          <div style={creditIconChip}>{item.icon}</div>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                              <span style={{ fontSize: "13.5px", fontWeight: 600, color: "#202223" }}>{item.label}</span>
+                              {item.note && <span style={creditPill(true)}>{item.note}</span>}
+                            </div>
+                            <span style={{ fontSize: "12px", color: "#6d7175" }}>{item.sub}</span>
+                          </div>
+                          <span style={creditPill(item.free)}>{item.cost}</span>
+                        </div>
+                      ))}
+                    </div>
                   ))}
-                </BlockStack>
+                </div>
               </BlockStack>
             </Card>
           </Layout.Section>
@@ -497,8 +556,11 @@ export default function ChooseSubscription() {
                         <InlineStack gap="200" blockAlign="start">
                           <Text as="span" tone="success">✓</Text>
                           <Text as="p">
-                            <strong>{plan.productLimit} credits</strong> per month — use them on
-                            imports, scans & fixes
+                            {isFreeplan ? (
+                              <><strong>{plan.productLimit} one-time credits</strong> — try the app, no renewal needed</>
+                            ) : (
+                              <><strong>{plan.productLimit} credits</strong> per month — use them on imports, scans & fixes</>
+                            )}
                           </Text>
                         </InlineStack>
 
@@ -544,9 +606,9 @@ export default function ChooseSubscription() {
                   Need help choosing?
                 </Text>
                 <Text as="p" tone="subdued">
-                  Start free: every store gets its first Basic compliance scan FREE, plus 2 credits
-                  to try AI imports and fixes. Getting your store Google-ready? Starter covers a
-                  scan plus the fixes it finds. Suspended or at risk? Professional covers the full
+                  Start free: every store gets its first Basic compliance scan FREE, plus 2 one-time
+                  credits to try AI imports and fixes. Getting your store Google-ready? Starter covers
+                  a scan plus the fixes it finds. Suspended or at risk? Professional covers the full
                   scan suite and Suspension Recovery in one month.
                 </Text>
                 <Text as="p" tone="subdued">

@@ -31,7 +31,7 @@ async function main() {
   // Only the description is updated — price/limit edits made in Manage Plans
   // are never overwritten.
   const PLAN_DESCRIPTIONS = {
-    'Free Plan': 'Free forever — first Basic store scan FREE + 2 credits/month for AI imports & fixes',
+    'Free Plan': 'Free forever — first Basic store scan FREE + 2 one-time credits for AI imports & fixes',
     'Starter': '$4.99/month — 20 credits for AI imports, compliance scans & one-click fixes',
     'Basic': '$9.99/month — 50 credits: Basic + Advanced scans, auto-fixes, image fixer & monitoring',
     'Professional': '$17.99/month — 100 credits: full scan suite, Suspension Recovery + appeal letters',
@@ -68,7 +68,7 @@ async function main() {
     where: { name: 'Free Plan' }
   });
   
-  const FREE_PLAN_DESC = 'Free forever — first Basic store scan FREE + 2 credits/month for AI imports & fixes';
+  const FREE_PLAN_DESC = 'Free forever — first Basic store scan FREE + 2 one-time credits for AI imports & fixes';
 
   if (!freePlanRecord) {
     freePlanRecord = await prisma.subscriptionPlan.create({
