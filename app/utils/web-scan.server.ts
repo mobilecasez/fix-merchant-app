@@ -5,6 +5,54 @@
  * expects: issues of { sev, title, why, fix, cat } plus a 0-100 score.
  */
 
+import dns from "node:dns/promises";
+import net from "node:net";
+
+// Reject loopback / private / link-local / reserved IPs (SSRF guard).
+function isPrivateIp(ip: string): boolean {
+  if (net.isIPv4(ip)) {
+    const p = ip.split(".").map(Number);
+    const [a, b] = p;
+    if (a === 10 || a === 127 || a === 0) return true;
+    if (a === 169 && b === 254) return true;       // link-local / cloud metadata (169.254.169.254)
+    if (a === 172 && b >= 16 && b <= 31) return true;
+    if (a === 192 && b === 168) return true;
+    if (a === 100 && b >= 64 && b <= 127) return true; // CGNAT
+    if (a >= 224) return true;                       // multicast / reserved
+    return false;
+  }
+  const v = ip.toLowerCase();
+  if (v === "::1" || v === "::" || v === "0:0:0:0:0:0:0:1") return true;
+  if (v.startsWith("fe80") || v.startsWith("fc") || v.startsWith("fd")) return true; // link-local / ULA
+  const mapped = v.match(/::ffff:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/); // IPv4-mapped
+  if (mapped) return isPrivateIp(mapped[1]);
+  return false;
+}
+
+const BLOCKED_HOST_SUFFIX = /\.(internal|local|lan|localhost|home|corp|intranet)$/i;
+
+/**
+ * Resolve a hostname and confirm every address is public-routable. Defends the
+ * server-side scan fetch against SSRF (internal hostnames, or attacker-registered
+ * domains whose A/AAAA records point at private/metadata IPs). Returns false to reject.
+ * NOTE: does not pin the IP, so it is not full DNS-rebinding protection — but it blocks
+ * the common SSRF vectors before any fetch is made.
+ */
+export async function assertPublicHost(domain: string): Promise<boolean> {
+  if (!domain) return false;
+  if (domain === "localhost" || BLOCKED_HOST_SUFFIX.test(domain)) return false;
+  // Reject a bare IP literal supplied as the host (normalizeStoreUrl already blocks
+  // most, but be defensive in case it's called directly).
+  if (net.isIP(domain)) return !isPrivateIp(domain);
+  try {
+    const addrs = await dns.lookup(domain, { all: true });
+    if (!addrs.length) return false;
+    return addrs.every((a) => !isPrivateIp(a.address));
+  } catch {
+    return false;
+  }
+}
+
 export interface WebIssue {
   sev: "High" | "Medium" | "Low";
   title: string;

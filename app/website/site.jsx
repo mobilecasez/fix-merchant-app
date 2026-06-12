@@ -490,11 +490,89 @@ function SampleReport() {
 
 }
 
-function AppPromo() {
-  const feats = [
+// ── Shared "fix it in one click" promo (scanning screen, results, report, PDF) ──
+const APP_INSTALL_URL = 'https://apps.shopify.com/shopflix-ai';
+const APP_PITCH = "Don’t just find issues. Fix them in one click.";
+const APP_FEATURES = [
   { icon: 'bolt', t: 'One-click AI fixes', b: 'Missing policy pages, footer links and contact info — generated and published for you.' },
-  { icon: 'shield', t: 'Suspension recovery', b: 'Diagnosis, fix checklist and a drafted reinstatement appeal letter.' },
-  { icon: 'cart', t: 'AI product import', b: 'Paste a product URL from Amazon, eBay or AliExpress — get a complete, SEO-ready Shopify product.' }];
+  { icon: 'shield', t: 'Suspension recovery', b: 'Diagnosis, fix checklist and a drafted Google reinstatement appeal letter.' },
+  { icon: 'cart', t: 'AI product import', b: 'Paste a product URL from Amazon, eBay or AliExpress — get a complete, SEO-ready Shopify product.' },
+];
+const PROMO_LINES = [
+  "Don’t just find issues — fix them in one click.",
+  "ShopFlix AI lives in your Shopify admin and publishes the missing policy pages for you.",
+  "It even drafts your Google reinstatement appeal letter automatically.",
+  "Then it keeps watching, so a suspension never catches you off guard again.",
+];
+
+// Live typing/erasing headline that cycles through PROMO_LINES.
+function PromoTypewriter({ lines = PROMO_LINES }) {
+  const [li, setLi] = useState(0);
+  const [txt, setTxt] = useState('');
+  const [phase, setPhase] = useState('type'); // type | hold | erase
+  useEffect(() => {
+    const full = lines[li % lines.length];
+    let to;
+    if (phase === 'type') {
+      if (txt.length < full.length) to = setTimeout(() => setTxt(full.slice(0, txt.length + 1)), 34);
+      else to = setTimeout(() => setPhase('hold'), 30);
+    } else if (phase === 'hold') {
+      to = setTimeout(() => setPhase('erase'), 1800);
+    } else {
+      if (txt.length > 0) to = setTimeout(() => setTxt(full.slice(0, txt.length - 1)), 14);
+      else { setLi((v) => (v + 1) % lines.length); setPhase('type'); }
+    }
+    return () => clearTimeout(to);
+  }, [txt, phase, li, lines]);
+  return (
+    <span>{txt}<span className="cursor" style={{ display: 'inline-block', width: '2px', height: '0.95em', verticalAlign: 'text-bottom', marginLeft: '2px' }}></span></span>
+  );
+}
+
+// Reusable promotional card shown on the results + full-report screens.
+function AppUpsell({ style }) {
+  return (
+    <div className="card" style={{ border: '1px solid rgba(232,155,60,0.35)', background: 'linear-gradient(135deg, rgba(232,155,60,0.10), rgba(232,155,60,0.02))', ...style }}>
+      <div className="kicker" style={{ color: 'var(--amber)' }}>The ShopFlix Shopify app</div>
+      <h2 style={{ fontSize: '22px', fontWeight: 700, marginTop: '8px', minHeight: '30px', letterSpacing: '-0.01em' }}><PromoTypewriter /></h2>
+      <p style={{ color: 'var(--muted)', fontSize: '14px', marginTop: '8px', maxWidth: '640px' }}>
+        Your report tells you what&rsquo;s wrong. The ShopFlix app &mdash; right inside your Shopify admin &mdash; fixes it for you and keeps watching so it never happens again.
+      </p>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px', margin: '22px 0' }}>
+        {APP_FEATURES.map((f) => {
+          const I = Icons[f.icon];
+          return (
+            <div key={f.t} style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+              <div style={{ width: '34px', height: '34px', borderRadius: '9px', background: 'rgba(232,155,60,0.12)', border: '1px solid rgba(232,155,60,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--amber)', flexShrink: 0 }}><I size={16} /></div>
+              <div><div style={{ fontWeight: 600, fontSize: '14.5px' }}>{f.t}</div><div style={{ color: 'var(--muted)', fontSize: '13px', marginTop: '2px' }}>{f.b}</div></div>
+            </div>
+          );
+        })}
+      </div>
+      <a className="btn btn-amber btn-lg" href={APP_INSTALL_URL} target="_blank" rel="noopener">
+        <Icons.bolt size={15} /> Install on Shopify &mdash; fix it in one click <Icons.arrow size={14} sw={2.2} />
+      </a>
+      <span className="mono" style={{ display: 'block', fontSize: '12px', color: 'var(--faint)', marginTop: '12px' }}>From $4.99/month &middot; 7-day free trial</span>
+    </div>
+  );
+}
+
+// Append the promo block to a generated PDF. `line` is the caller's text helper
+// (which advances its own `y`); we then add a clickable install link at `linkY()`.
+function pdfAppendPromo(doc, line, M, H, linkY, bumpY) {
+  line(' ', 8, '#ffffff', false, 2);
+  line(APP_PITCH, 13, '#0f172a', true, 2);
+  line('The ShopFlix AI Shopify app fixes these issues for you — right inside your Shopify admin:', 9.5, '#475569', false, 4);
+  APP_FEATURES.forEach((f) => line('•  ' + f.t + ' — ' + f.b, 9.5, '#475569', false, 1));
+  let y = linkY();
+  if (y > H - 50) { doc.addPage(); bumpY(56); y = linkY(); }
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor('#b45309');
+  doc.textWithLink('→ Install on Shopify: ' + APP_INSTALL_URL, M, y, { url: APP_INSTALL_URL });
+  bumpY(y + 18);
+}
+
+function AppPromo() {
+  const feats = APP_FEATURES;
 
   return (
     <section className="section" id="app">
@@ -756,6 +834,15 @@ function ScanningScreen({ storeUrl, fast, ready, onDone }) {
             </div>
           </div>
         </div>
+        <div className="card" style={{ marginTop: '28px', display: 'flex', gap: '20px', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', border: '1px solid rgba(232,155,60,0.3)', background: 'rgba(232,155,60,0.06)' }}>
+          <div style={{ flex: 1, minWidth: '260px' }}>
+            <div className="kicker" style={{ color: 'var(--amber)', marginBottom: '7px' }}>While we scan your store&hellip;</div>
+            <div style={{ fontSize: '17px', fontWeight: 600, lineHeight: 1.4, minHeight: '24px' }}><PromoTypewriter /></div>
+          </div>
+          <a className="btn btn-amber" href={APP_INSTALL_URL} target="_blank" rel="noopener" style={{ flexShrink: 0 }}>
+            <Icons.bolt size={15} /> Install Shopify app
+          </a>
+        </div>
       </div>
     </div>
   );
@@ -842,6 +929,7 @@ function ResultsScreen({ storeUrl, onUnlock, onRescan, data, toast }) {
         if (iss.why) line('Why it matters: ' + iss.why, 9.5, '#475569', false, withFixes ? 1 : 8);
         if (withFixes && iss.fix) line('How to fix: ' + iss.fix, 9.5, '#166534', false, 8);
       });
+      pdfAppendPromo(doc, line, M, H, () => y, (v) => { y = v; });
       doc.save('shopflix-' + (storeUrl || 'store').replace(/[^a-z0-9]/gi, '-') + (withFixes ? '-report' : '-preview') + '.pdf');
     } catch (e) { toast && toast('Could not generate the PDF. Please try again.'); }
   };
@@ -934,6 +1022,9 @@ function ResultsScreen({ storeUrl, onUnlock, onRescan, data, toast }) {
           </div>
         </div>
         ) : null}
+
+        {/* promote the one-click fix app — always visible after results */}
+        <AppUpsell style={{ marginTop: '44px' }} />
 
         {/* unlock plans */}
         <div id="unlock" style={{ marginTop: '56px' }}>
@@ -1146,8 +1237,14 @@ function FullReport({ plan, storeUrl, scanId, recoveryToken, onUpgrade, onRescan
       .then((d) => { if (d && d.ok) setRep(d); })
       .catch(() => {});
   }, [scanId]);
-  const repScore = (rep && rep.score != null) ? rep.score : SCAN_SCORE;
-  let cats = SCAN_CATEGORIES;
+  const loading = !rep;
+  const repScore = (rep && rep.score != null) ? rep.score : 0;
+  const repRisk = (rep && rep.riskLevel) || (repScore < 60 ? 'High' : repScore < 80 ? 'Medium' : 'Low');
+  const repRiskClass = repRisk === 'High' ? 'sev-high' : repRisk === 'Medium' ? 'sev-medium' : 'sev-low';
+  const repHigh = (rep && rep.highCount) || 0;
+  // Build categories ONLY from the real report. Never fall back to the mock
+  // SCAN_CATEGORIES here — that catalog is for the marketing/landing surfaces only.
+  let cats = [];
   if (rep && Array.isArray(rep.issues) && rep.issues.length) {
     const byCat = {};
     rep.issues.forEach((i) => { (byCat[i.cat] = byCat[i.cat] || []).push(i); });
@@ -1174,6 +1271,7 @@ function FullReport({ plan, storeUrl, scanId, recoveryToken, onUpgrade, onRescan
         if (iss.why) line('Why it matters: ' + iss.why, 9.5, '#475569', false, 1);
         if (iss.fix) line('How to fix: ' + iss.fix, 9.5, '#166534', false, 8);
       });
+      pdfAppendPromo(doc, line, M, H, () => y, (v) => { y = v; });
       doc.save('shopflix-report-' + (storeUrl || 'store').replace(/[^a-z0-9]/gi, '-') + '.pdf');
     } catch (e) { toast('Could not generate the PDF. Please try again.'); }
   };
@@ -1212,18 +1310,37 @@ function FullReport({ plan, storeUrl, scanId, recoveryToken, onUpgrade, onRescan
             </div>
           </div>
         ) : null}
+        {loading ? (
+          <div style={{ padding: '70px 0', textAlign: 'center' }}>
+            <div className="radar" style={{ width: '70px', height: '70px', margin: '0 auto 18px' }}><div className="radar-sweep"></div></div>
+            <p style={{ color: 'var(--muted)' }}>Loading your full report&hellip;</p>
+          </div>
+        ) : (
+        <React.Fragment>
         <div className="card" style={{ display: 'flex', gap: '36px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '40px' }}>
           <ScoreRing score={repScore} size={120} />
           <div style={{ flex: 1, minWidth: '240px' }}>
-            <span className="sev sev-high" style={{ fontSize: '12px', padding: '5px 12px' }}>High suspension risk</span>
+            <span className={'sev ' + repRiskClass} style={{ fontSize: '12px', padding: '5px 12px' }}>{repRisk} suspension risk</span>
             <p style={{ color: 'var(--muted)', fontSize: '14.5px', marginTop: '10px', maxWidth: '520px' }}>
-              Fix the high-severity issues first — they&rsquo;re the ones Google&rsquo;s automated review treats as suspension triggers. Re-scan after fixing to watch your score climb.
+              {repHigh > 0
+                ? <>Fix the high-severity issues first &mdash; they&rsquo;re the ones Google&rsquo;s automated review treats as suspension triggers. Re-scan after fixing to watch your score climb.</>
+                : cats.length === 0
+                  ? <>Your storefront passes the Basic Google Merchant Center compliance checks &mdash; no blocking store-level issues found. Re-scan anytime to stay ahead of policy changes.</>
+                  : <>Work through the issues below and re-scan after fixing to watch your compliance score climb.</>}
             </p>
           </div>
-          <a className="btn btn-amber" href="https://apps.shopify.com/shopflix-ai" target="_blank" rel="noopener">
+          <a className="btn btn-amber" href={APP_INSTALL_URL} target="_blank" rel="noopener">
             <Icons.bolt size={15} /> Auto-fix with the Shopify app
           </a>
         </div>
+
+        {cats.length === 0 ? (
+          <div className="card" style={{ textAlign: 'center', padding: '40px', marginBottom: '40px' }}>
+            <div style={{ width: '52px', height: '52px', borderRadius: '14px', background: 'rgba(52,211,153,0.14)', border: '1px solid rgba(52,211,153,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--green)', margin: '0 auto 16px' }}><Icons.check size={24} sw={2.4} /></div>
+            <h3 style={{ fontSize: '19px', fontWeight: 700 }}>No store-level issues found</h3>
+            <p style={{ color: 'var(--muted)', fontSize: '14px', maxWidth: '460px', margin: '8px auto 0' }}>Your storefront passes the Basic Google Merchant Center compliance checks. Keep the ShopFlix app installed to stay compliant as Google&rsquo;s policies change.</p>
+          </div>
+        ) : null}
 
         {cats.map((cat) => {
           const owned = TIER_ORDER[cat.tier] <= ownedTier;
@@ -1286,6 +1403,10 @@ function FullReport({ plan, storeUrl, scanId, recoveryToken, onUpgrade, onRescan
             </div>
           );
         })}
+
+        <AppUpsell style={{ marginTop: '8px' }} />
+        </React.Fragment>
+        )}
       </div>
     </div>
   );

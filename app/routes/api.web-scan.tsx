@@ -1,7 +1,7 @@
 import { json, type ActionFunctionArgs, type LoaderFunctionArgs } from "@remix-run/node";
 import prisma from "../db.server";
 import { runMonitoringScan } from "../utils/store-scanner.server";
-import { normalizeStoreUrl, mapBasicResult, toPreview } from "../utils/web-scan.server";
+import { normalizeStoreUrl, mapBasicResult, toPreview, assertPublicHost } from "../utils/web-scan.server";
 import { getWebEmail } from "../utils/web-session.server";
 
 const PREVIEW_COUNT = 2; // free issues shown in the preview; the rest are locked
@@ -75,6 +75,10 @@ export async function action({ request }: ActionFunctionArgs) {
       });
     }
 
+    // SSRF guard: confirm the host resolves to a public IP before any server-side fetch.
+    if (!(await assertPublicHost(domain))) {
+      return json({ ok: false, error: "That store URL could not be reached as a public store." }, { status: 400 });
+    }
     // Run the real Basic scan against the live storefront.
     const result = await runMonitoringScan(url);
     if (!result) {

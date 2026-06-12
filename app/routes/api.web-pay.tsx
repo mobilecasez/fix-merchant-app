@@ -65,7 +65,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
   // ── Verify the payment signature ───────────────────────────────────────────
   if (intent === "verify") {
-    if (!keySecret) return json({ ok: false, error: "Payments not configured." }, { status: 400 });
+    if (!keyId || !keySecret) return json({ ok: false, error: "Payments not configured." }, { status: 400 });
     const orderId = String(body?.razorpay_order_id || "");
     const paymentId = String(body?.razorpay_payment_id || "");
     const signature = String(body?.razorpay_signature || "");
@@ -80,12 +80,43 @@ export async function action({ request }: ActionFunctionArgs) {
       return json({ ok: false, error: "Payment could not be verified." }, { status: 400 });
     }
 
-    // Issue a one-time recovery token so the buyer can re-run the scan later
-    // (e.g. if it failed) without paying again. We store only its HMAC hash.
+    // The signature only proves the order/payment pair is authentic — it does NOT
+    // prove which scan/tier/amount was paid. Re-fetch the order from Razorpay and
+    // trust ONLY its server-side notes + amount + paid status. This prevents a
+    // client from claiming a higher tier than they paid for, or marking an
+    // arbitrary (e.g. someone else's) scan paid by passing a forged scanId/planId.
+    let order: any;
+    try {
+      const auth = Buffer.from(`${keyId}:${keySecret}`).toString("base64");
+      const res = await fetch(`https://api.razorpay.com/v1/orders/${encodeURIComponent(orderId)}`, {
+        headers: { Authorization: `Basic ${auth}` },
+      });
+      order = await res.json();
+      if (!res.ok || !order?.id) throw new Error("order fetch failed");
+    } catch (e) {
+      console.error("[web-pay] order fetch failed:", e);
+      return json({ ok: false, error: "Could not confirm your payment. Please contact support." }, { status: 502 });
+    }
+
+    const isPaid = order.status === "paid" || Number(order.amount_paid) === Number(order.amount);
+    if (!isPaid) return json({ ok: false, error: "Payment not completed." }, { status: 400 });
+
+    const paidScanId = String(order?.notes?.scanId || "");
+    const paidPlanId = String(order?.notes?.planId || "");
+    if (!paidScanId || !PLAN_PRICE_CENTS[paidPlanId]) {
+      return json({ ok: false, error: "Payment metadata invalid." }, { status: 400 });
+    }
+    if (Number(order.amount) !== PLAN_PRICE_CENTS[paidPlanId]) {
+      console.warn("[web-pay] amount mismatch", order.amount, "expected", PLAN_PRICE_CENTS[paidPlanId]);
+      return json({ ok: false, error: "Payment amount mismatch." }, { status: 400 });
+    }
+
+    // Issue a one-time recovery token (stored only as an HMAC hash). Mark paid using
+    // the authoritative scanId/planId from the order, never the client-supplied ones.
     const recoveryToken = `SFX-${crypto.randomBytes(15).toString("base64url")}`;
     await prisma.webScan.update({
-      where: { id: scanId },
-      data: { paidTier: planId, email, recoveryHash: recoveryHashOf(recoveryToken) },
+      where: { id: paidScanId },
+      data: { paidTier: paidPlanId, email, recoveryHash: recoveryHashOf(recoveryToken) },
     }).catch((e) => console.error("[web-pay] mark paid failed:", e));
 
     return json({ ok: true, recoveryToken });
