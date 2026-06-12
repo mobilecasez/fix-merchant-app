@@ -3,7 +3,7 @@ import prisma from "../db.server";
 import { runMonitoringScan } from "../utils/store-scanner.server";
 import { normalizeStoreUrl, mapBasicResult, toPreview } from "../utils/web-scan.server";
 
-const PREVIEW_COUNT = 4;
+const PREVIEW_COUNT = 2; // free issues shown in the preview; the rest are locked
 const IP_HOURLY_LIMIT = 12; // soft abuse cap per IP per hour
 
 function clientIp(request: Request): string {
@@ -48,6 +48,7 @@ export async function action({ request }: ActionFunctionArgs) {
       orderBy: { createdAt: "desc" },
     });
     if (existing) {
+      const prev = (((existing.preview as any[]) || []).slice(0, PREVIEW_COUNT));
       return json({
         ok: true,
         alreadyScanned: true,
@@ -60,8 +61,8 @@ export async function action({ request }: ActionFunctionArgs) {
         highCount: existing.highCount,
         pagesScanned: 7,
         checksRun: 38,
-        freePreview: existing.preview || [],
-        lockedCount: Math.max(0, existing.totalIssues - ((existing.preview as any[])?.length || 0)),
+        freePreview: prev,
+        lockedCount: Math.max(0, existing.totalIssues - prev.length),
         paid: !!existing.paidTier,
       });
     }

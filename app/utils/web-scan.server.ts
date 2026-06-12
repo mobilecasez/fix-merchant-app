@@ -103,6 +103,6 @@ export function mapBasicResult(result: any, storeUrl: string, storeDomain: strin
 }
 
 /** Free preview: the first N issues WITHOUT fix text (fixes are the paid value). */
-export function toPreview(mapped: WebScanMapped, n = 4) {
+export function toPreview(mapped: WebScanMapped, n = 2) {
   return mapped.issues.slice(0, n).map(({ sev, title, why, cat }) => ({ sev, title, why, cat }));
 }

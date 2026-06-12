@@ -31,7 +31,7 @@ export async function action({ request }: ActionFunctionArgs) {
         data: {
           score: mapped.score, riskLevel: mapped.riskLevel,
           totalIssues: mapped.totalIssues, highCount: mapped.highCount,
-          preview: toPreview(mapped, 4), fullResult: mapped.issues as any,
+          preview: toPreview(mapped, 2), fullResult: mapped.issues as any,
         },
       });
     }
