@@ -1,6 +1,6 @@
 import { json, type LoaderFunctionArgs, type ActionFunctionArgs } from "@remix-run/node";
 import prisma from "../db.server";
-import { Resend } from "resend";
+import nodemailer from "nodemailer";
 import { runMonitoringScan, extractBasicIssues } from "../utils/store-scanner.server";
 import {
   incrementProductUsage, getOrCreateSubscription, getProductsUsed, getEffectiveProductLimit,
@@ -72,9 +72,12 @@ async function runMonitorBatch(): Promise<any> {
   const monitors = await (prisma as any).storeMonitor.findMany({ where: { enabled: true } });
   const due = monitors.filter(isDue);
 
-  const resendKey = process.env.RESEND_API_KEY;
-  const fromDomain = process.env.RESEND_FROM_EMAIL || "onboarding@resend.dev";
-  const resend = resendKey ? new Resend(resendKey) : null;
+  // Send report emails via the same Zoho SMTP used elsewhere in the app.
+  const smtpUser = process.env.SMTP_USER;
+  const smtpPass = process.env.SMTP_PASS;
+  const mailer = (smtpUser && smtpPass)
+    ? nodemailer.createTransport({ host: "smtp.zoho.in", port: 465, secure: true, auth: { user: smtpUser, pass: smtpPass } })
+    : null;
 
   const summary: any[] = [];
 
@@ -114,13 +117,14 @@ async function runMonitorBatch(): Promise<any> {
       const newIssues = issues.filter(i => !baseSet.has(i.fp));
 
       // Email on: first run (welcome/summary) OR any new issue appeared.
-      const shouldEmail = resend && m.email && (firstRun || newIssues.length > 0);
+      const shouldEmail = mailer && m.email && (firstRun || newIssues.length > 0);
       if (shouldEmail) {
         const shopName = m.shop.replace(/\.myshopify\.com$/, "");
         const { subject, html } = buildEmail(shopName, m.storeUrl, newIssues, issues.length, firstRun);
-        await resend!.emails.send({
-          from: `ShopFlix AI <${fromDomain}>`,
-          to: [m.email],
+        // Zoho requires the From address to match the authenticated SMTP user.
+        await mailer!.sendMail({
+          from: `ShopFlix AI <${smtpUser}>`,
+          to: m.email,
           subject,
           html,
         }).catch((e: any) => console.error(`[monitor] email failed for ${m.shop}:`, e));
