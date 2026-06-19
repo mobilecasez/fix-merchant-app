@@ -124,33 +124,54 @@ function ScanBox({ onScan, big, placeholder, autoFocus }) {
 /* ---------- nav ---------- */
 function Nav({ route, email, onHome, onSignIn }) {
   const onLanding = route === 'landing';
+  const [open, setOpen] = useState(false);
+  // Close the mobile menu when resizing up to desktop.
+  useEffect(() => {
+    if (!open) return;
+    const onResize = () => { if (window.innerWidth > 860) setOpen(false); };
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [open]);
+  const close = () => setOpen(false);
+  const links = onLanding ? (
+    <React.Fragment>
+      <a href="#how" onClick={close}>How it works</a>
+      <a href="#checks" onClick={close}>What we check</a>
+      <a href="#plans" onClick={close}>Pricing</a>
+      <a href="#sample" onClick={close}>Sample report</a>
+      <a href="#app" onClick={close}>Shopify app</a>
+      {email
+        ? <span title={email} style={{ color: 'var(--muted)', fontSize: '13px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}><Icons.check size={13} /> Signed in</span>
+        : <a href="#signin" onClick={(e) => { e.preventDefault(); close(); onSignIn && onSignIn(); }}>Sign in</a>}
+    </React.Fragment>
+  ) : (
+    <a href="#top" onClick={(e) => { e.preventDefault(); close(); onHome(); }} style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
+      <Icons.back size={14} /> Back to home
+    </a>
+  );
   return (
     <nav className="nav">
       <div className="wrap nav-inner" style={{ fontSize: "16px" }}>
-        <a href="#top" className="brand" onClick={(e) => {e.preventDefault();onHome();}}>
+        <a href="#top" className="brand" onClick={(e) => {e.preventDefault();close();onHome();}}>
           <img src={(window.__resources || {}).logoImg || "assets/logo.png"} alt="ShopFlix AI logo" />
           <span style={{ fontSize: "18px" }}>ShopFlix<span className="ai"> AI</span></span>
         </a>
         <div className="nav-links">
-          {onLanding ?
-          <React.Fragment>
-              <a href="#how">How it works</a>
-              <a href="#checks">What we check</a>
-              <a href="#plans">Pricing</a>
-              <a href="#sample">Sample report</a>
-              <a href="#app">Shopify app</a>
-              {email
-                ? <span title={email} style={{ color: 'var(--muted)', fontSize: '13px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}><Icons.check size={13} /> Signed in</span>
-                : <a href="#signin" onClick={(e) => { e.preventDefault(); onSignIn && onSignIn(); }}>Sign in</a>}
-            </React.Fragment> :
-
-          <a href="#top" onClick={(e) => {e.preventDefault();onHome();}} style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
-              <Icons.back size={14} /> Back to home
-            </a>
-          }
-          <a className="btn btn-ghost btn-sm nav-cta" href="https://apps.shopify.com/shopflix-ai" target="_blank" rel="noopener">Install Shopify app</a>
+          {links}
+          <a className="btn btn-ghost btn-sm nav-cta nav-cta-desktop" href="https://apps.shopify.com/shopflix-ai" target="_blank" rel="noopener">Install Shopify app</a>
         </div>
+        <button type="button" className="nav-burger" aria-label={open ? 'Close menu' : 'Open menu'} aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+          <span className={'nav-burger-box' + (open ? ' is-open' : '')}><i></i><i></i><i></i></span>
+        </button>
       </div>
+      {open ? (
+        <div className="nav-mobile" id="nav-mobile-panel">
+          <div className="wrap nav-mobile-inner">
+            {links}
+            <a className="btn btn-ghost btn-sm nav-cta" href="https://apps.shopify.com/shopflix-ai" target="_blank" rel="noopener" onClick={close}>Install Shopify app</a>
+          </div>
+        </div>
+      ) : null}
     </nav>);
 
 }
@@ -257,7 +278,7 @@ function HeroRadar({ onScan }) {
         <div style={{ position: 'relative' }}>
           <div className="kicker">Free Shopify store scan</div>
           <h1 style={{ fontSize: '56px', fontWeight: 700, letterSpacing: '-0.03em', lineHeight: 1.08, maxWidth: '820px', margin: '0 auto', textWrap: 'balance' }}>
-            Is your store one scan away from a <span style={{ color: 'var(--red)' }}>Google suspension</span>?
+            Is your Shopify store one scan away from a <span style={{ color: 'var(--red)' }}>Google Merchant Center suspension</span>?
           </h1>
           <p className="sub" style={{ margin: '22px auto 38px', maxWidth: '600px', fontSize: '18px' }}>
             Enter your store URL and we&rsquo;ll check it against Google Merchant Center policies — the same things Google looks at before approving your products.
@@ -406,7 +427,7 @@ function WhatWeCheck() {
                   <span className="tag" style={{ color: tierColor[c.tier], borderColor: 'var(--line-strong)' }}>{c.tier} scan</span>
                 </div>
                 <h3 style={{ fontSize: '16.5px', fontWeight: 600 }}>{c.title}</h3>
-                <p style={{ color: 'var(--muted)', marginTop: '6px', fontSize: "6px" }}>{c.items}</p>
+                <p style={{ color: 'var(--muted)', marginTop: '8px', fontSize: "14px", lineHeight: 1.55 }}>{c.items}</p>
               </div>);
 
           })}
