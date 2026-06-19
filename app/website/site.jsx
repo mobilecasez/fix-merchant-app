@@ -570,7 +570,7 @@ function AppUpsell({ style }) {
           );
         })}
       </div>
-      <a className="btn btn-amber btn-lg" href={APP_INSTALL_URL} target="_blank" rel="noopener" style={{ width: '100%' }}>
+      <a className="btn btn-amber btn-lg" href={APP_INSTALL_URL} target="_blank" rel="noopener" style={{ width: '100%', whiteSpace: 'normal', lineHeight: 1.25, textAlign: 'center' }}>
         <Icons.bolt size={15} /> Install on Shopify &mdash; fix it in one click <Icons.arrow size={14} sw={2.2} />
       </a>
       <span className="mono" style={{ display: 'block', fontSize: '12px', color: 'var(--faint)', marginTop: '14px', marginBottom: '6px', textAlign: 'center' }}>From $4.99/month &middot; 7-day free trial</span>
