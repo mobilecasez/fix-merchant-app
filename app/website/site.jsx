@@ -168,7 +168,7 @@ function Nav({ route, email, onHome, onSignIn }) {
         <div className="nav-mobile" id="nav-mobile-panel">
           <div className="wrap nav-mobile-inner">
             {links}
-            <a className="btn btn-ghost btn-sm nav-cta" href="https://apps.shopify.com/shopflix-ai" target="_blank" rel="noopener" onClick={close}>Install Shopify app</a>
+            <a className="btn btn-amber btn-lg nav-cta" href="https://apps.shopify.com/shopflix-ai" target="_blank" rel="noopener" onClick={close}><Icons.bolt size={16} /> Install Shopify app</a>
           </div>
         </div>
       ) : null}
