@@ -570,10 +570,10 @@ function AppUpsell({ style }) {
           );
         })}
       </div>
-      <a className="btn btn-amber btn-lg" href={APP_INSTALL_URL} target="_blank" rel="noopener">
+      <a className="btn btn-amber btn-lg" href={APP_INSTALL_URL} target="_blank" rel="noopener" style={{ width: '100%' }}>
         <Icons.bolt size={15} /> Install on Shopify &mdash; fix it in one click <Icons.arrow size={14} sw={2.2} />
       </a>
-      <span className="mono" style={{ display: 'block', fontSize: '12px', color: 'var(--faint)', marginTop: '12px' }}>From $4.99/month &middot; 7-day free trial</span>
+      <span className="mono" style={{ display: 'block', fontSize: '12px', color: 'var(--faint)', marginTop: '14px', marginBottom: '6px', textAlign: 'center' }}>From $4.99/month &middot; 7-day free trial</span>
     </div>
   );
 }
@@ -1091,39 +1091,35 @@ function ResultsScreen({ storeUrl, onUnlock, onRescan, data, toast }) {
 
   return (
     <div data-screen-label="Scan results (free preview)">
-      <div style={{ borderBottom: '1px solid var(--line)', background: 'var(--bg2)' }}>
-        <div className="wrap" style={{ padding: '40px 32px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
-            <div>
-              <div className="kicker" style={{ marginBottom: '8px' }}>Free scan preview</div>
-              <h1 style={{ fontSize: '28px', fontWeight: 700, letterSpacing: '-0.02em' }}>
-                Scan report for <span className="mono" style={{ color: 'var(--accent)' }}>{storeUrl}</span>
-              </h1>
+      <div className="wrap" style={{ padding: '32px 32px 90px' }}>
+        {/* summary card with the report header integrated (store + score in one place) */}
+        <div className="card" style={{ marginBottom: '32px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '12px' }}>
+            <div style={{ minWidth: 0 }}>
+              <div className="mono" style={{ fontSize: '11.5px', letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--accent)', marginBottom: '6px' }}>{data.paid ? 'Full report' : 'Free scan preview'}</div>
+              <div style={{ fontSize: '20px', fontWeight: 700, letterSpacing: '-0.01em' }}>Scan report for <span className="mono" style={{ color: 'var(--accent)', wordBreak: 'break-all' }}>{storeUrl}</span></div>
             </div>
-            <button className="btn btn-ghost btn-sm" onClick={onRescan}><Icons.search size={14} /> Scan another store</button>
+            <button className="btn btn-ghost btn-sm" onClick={onRescan} style={{ flexShrink: 0 }}><Icons.search size={14} /> Scan another store</button>
           </div>
-        </div>
-      </div>
-
-      <div className="wrap" style={{ padding: '40px 32px 90px' }}>
-        {/* summary card */}
-        <div className="card" style={{ display: 'flex', gap: '40px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '36px' }}>
-          <ScoreRing score={score} />
-          <div style={{ flex: 1, minWidth: '220px' }}>
-            <span className={'sev ' + riskClass} style={{ fontSize: '12px', padding: '5px 12px' }}>{risk} suspension risk</span>
-            <p style={{ color: 'var(--muted)', fontSize: '15px', marginTop: '12px', maxWidth: '480px' }}>
-              {clean
-                ? 'No blocking store-level issues found — your storefront looks compliant with Google Merchant Center basics. Run an Advanced or Deep scan for product-feed and misrepresentation checks.'
-                : 'Your store has issues Google can treat as suspension triggers. The good news: every one of them is fixable, and most take under an hour.'}
-            </p>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, auto)', gap: '14px 40px' }}>
-            {[['Pages scanned', String(pagesScanned)], ['Checks run', String(checksRun)], ['Issues found', String(totalIssues)], ['High severity', String(highCount)]].map(([k, v]) => (
-              <div key={k}>
-                <div className="mono" style={{ fontSize: '11px', color: 'var(--faint)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{k}</div>
-                <div style={{ fontSize: '26px', fontWeight: 700 }}>{v}</div>
-              </div>
-            ))}
+          <div style={{ borderTop: '1px solid var(--line)', margin: '22px 0' }} />
+          <div style={{ display: 'flex', gap: '40px', alignItems: 'center', flexWrap: 'wrap' }}>
+            <ScoreRing score={score} />
+            <div style={{ flex: 1, minWidth: '220px' }}>
+              <span className={'sev ' + riskClass} style={{ fontSize: '12px', padding: '5px 12px' }}>{risk} suspension risk</span>
+              <p style={{ color: 'var(--muted)', fontSize: '15px', marginTop: '12px', maxWidth: '480px' }}>
+                {clean
+                  ? 'No blocking store-level issues found — your storefront looks compliant with Google Merchant Center basics. Run an Advanced or Deep scan for product-feed and misrepresentation checks.'
+                  : 'Your store has issues Google can treat as suspension triggers. The good news: every one of them is fixable, and most take under an hour.'}
+              </p>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, auto)', gap: '14px 40px' }}>
+              {[['Pages scanned', String(pagesScanned)], ['Checks run', String(checksRun)], ['Issues found', String(totalIssues)], ['High severity', String(highCount)]].map(([k, v]) => (
+                <div key={k}>
+                  <div className="mono" style={{ fontSize: '11px', color: 'var(--faint)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{k}</div>
+                  <div style={{ fontSize: '26px', fontWeight: 700 }}>{v}</div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
 
@@ -1148,9 +1144,8 @@ function ResultsScreen({ storeUrl, onUnlock, onRescan, data, toast }) {
           </div>
         ))}
 
-        {/* locked issues */}
-        {lockedCount > 0 ? (
-        <div style={{ position: 'relative', marginTop: '10px' }}>
+        {/* upsell — ALWAYS shown (even with 0/1/2 issues) to drive Deep Scan revenue */}
+        <div style={{ position: 'relative', marginTop: '14px' }}>
           <div aria-hidden="true">
             {ALL_ISSUES.filter((i) => !FREE_PREVIEW.includes(i)).slice(0, 5).map((iss, i) => (
               <div key={i} className="issue issue-locked">
@@ -1163,20 +1158,27 @@ function ResultsScreen({ storeUrl, onUnlock, onRescan, data, toast }) {
               </div>
             ))}
           </div>
-          <div style={{ position: 'absolute', inset: '-6px', background: 'linear-gradient(180deg, rgba(6,13,27,0.25), rgba(6,13,27,0.92) 70%)', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '14px' }}>
-            <div style={{ textAlign: 'center', padding: '24px' }}>
+          <div style={{ position: 'absolute', inset: '-6px', background: 'linear-gradient(180deg, rgba(6,13,27,0.30), rgba(6,13,27,0.93) 70%)', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '14px' }}>
+            <div style={{ textAlign: 'center', padding: '24px', maxWidth: '460px' }}>
               <div style={{ width: '52px', height: '52px', borderRadius: '14px', background: 'rgba(232,155,60,0.14)', border: '1px solid rgba(232,155,60,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--amber)', margin: '0 auto 16px' }}>
                 <Icons.lock size={24} />
               </div>
-              <h3 style={{ fontSize: '22px', fontWeight: 700 }}>{lockedCount} more issues found</h3>
-              <p style={{ color: 'var(--muted)', fontSize: '14.5px', marginTop: '6px', maxWidth: '420px' }}>Including {Math.max(0, highCount - freePreview.filter((i) => i.sev === 'High').length)} more high-severity issues. Please select a plan below to get the fully unlocked detailed report with step-by-step fixes for every one.</p>
+              <h3 style={{ fontSize: '22px', fontWeight: 700, lineHeight: 1.25 }}>
+                {lockedCount > 0
+                  ? lockedCount + ' more issue' + (lockedCount === 1 ? '' : 's') + ' to unlock'
+                  : 'Go deeper than the free scan'}
+              </h3>
+              <p style={{ color: 'var(--muted)', fontSize: '14.5px', marginTop: '8px' }}>
+                {lockedCount > 0
+                  ? 'Unlock the full report with step-by-step fixes for every issue — plus a Deep Scan of your product feed, images and misrepresentation signals that Google reviews.'
+                  : 'Your free preview looks light — but a Deep Scan checks your product feed (GTINs, pricing), images and misrepresentation signals that get products disapproved even when your storefront looks clean.'}
+              </p>
               <button className="btn btn-amber" style={{ marginTop: '18px' }} onClick={scrollToPlans}>
-                <Icons.lock size={14} /> Select a plan to unlock
+                <Icons.bolt size={14} /> Unlock the full report
               </button>
             </div>
           </div>
         </div>
-        ) : null}
 
         {/* promote the one-click fix app — always visible after results */}
         <AppUpsell style={{ marginTop: '44px' }} />

@@ -511,8 +511,9 @@ h1, h2, h3, h4, .h2 { overflow-wrap: break-word; }
   border-radius: 12px; padding: 18px 20px;
 }
 .issue + .issue { margin-top: 10px; }
-.issue h4 { font-size: 15.5px; font-weight: 600; line-height: 1.4; }
-.issue p { font-size: 14px; color: var(--muted); margin-top: 4px; line-height: 1.55; }
+.issue h4 { font-size: 15.5px; font-weight: 600; line-height: 1.4; overflow-wrap: anywhere; word-break: break-word; }
+.issue p { font-size: 14px; color: var(--muted); margin-top: 4px; line-height: 1.55; overflow-wrap: anywhere; word-break: break-word; }
+.issue .tag { flex-shrink: 0; }
 .issue-locked { filter: blur(6px); user-select: none; pointer-events: none; }
 
 /* ---------- score ring ---------- */
