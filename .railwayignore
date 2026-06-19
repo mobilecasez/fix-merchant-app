@@ -8,3 +8,9 @@ public/build
 update-mcasenova.js
 
 ShopFlix AI Website/
+
+# dev/source clutter — not used by the app build or runtime (keeps the upload small)
+Screenshots/
+Icons/
+WebSite/
+categories.txt
