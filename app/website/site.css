@@ -666,9 +666,8 @@ h1, h2, h3, h4, .h2 { overflow-wrap: break-word; }
   .scanbox[data-scanbox] .prompt { flex: 0 0 auto; }
   .scanbox[data-scanbox] input { flex: 1 1 0; min-width: 0; padding: 4px 0; }
   .scanbox[data-scanbox] .btn { order: 2; flex: 1 0 100%; width: 100%; justify-content: center; }
-  /* issue rows: drop the secondary category tag so the (often long) title/URL gets full width */
-  .issue { gap: 12px; padding: 16px; }
-  .issue .tag { display: none; }
+  /* issue rows: tighter padding on mobile (severity + tag share line 1, title/URL gets full width below) */
+  .issue { padding: 16px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .radar-sweep, .radar-dot, .cursor { animation: none; }

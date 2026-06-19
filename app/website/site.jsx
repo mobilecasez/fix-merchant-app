@@ -1134,13 +1134,13 @@ function ResultsScreen({ storeUrl, onUnlock, onRescan, data, toast }) {
           </div>
         </div>
         {freePreview.map((iss, i) => (
-          <div key={i} className="issue">
-            <span className={'sev sev-' + iss.sev.toLowerCase()}>{iss.sev}</span>
-            <div style={{ flex: 1 }}>
-              <h4>{iss.title}</h4>
-              <p>{iss.why}</p>
+          <div key={i} className="issue" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '9px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
+              <span className={'sev sev-' + iss.sev.toLowerCase()}>{iss.sev}</span>
+              <span className="tag" style={{ flexShrink: 0 }}>{iss.cat}</span>
             </div>
-            <span className="tag" style={{ flexShrink: 0 }}>{iss.cat}</span>
+            <h4 style={{ margin: 0 }}>{iss.title}</h4>
+            {iss.why ? <p style={{ marginTop: 0 }}>{iss.why}</p> : null}
           </div>
         ))}
 
@@ -1148,13 +1148,13 @@ function ResultsScreen({ storeUrl, onUnlock, onRescan, data, toast }) {
         <div style={{ position: 'relative', marginTop: '14px' }}>
           <div aria-hidden="true">
             {ALL_ISSUES.filter((i) => !FREE_PREVIEW.includes(i)).slice(0, 5).map((iss, i) => (
-              <div key={i} className="issue issue-locked">
-                <span className={'sev sev-' + iss.sev.toLowerCase()}>{iss.sev}</span>
-                <div style={{ flex: 1 }}>
-                  <h4>{iss.title}</h4>
-                  <p>{iss.why}</p>
+              <div key={i} className="issue issue-locked" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '9px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
+                  <span className={'sev sev-' + iss.sev.toLowerCase()}>{iss.sev}</span>
+                  <span className="tag">{iss.cat}</span>
                 </div>
-                <span className="tag">{iss.cat}</span>
+                <h4 style={{ margin: 0 }}>{iss.title}</h4>
+                <p style={{ marginTop: 0 }}>{iss.why}</p>
               </div>
             ))}
           </div>
