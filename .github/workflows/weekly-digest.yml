@@ -1,0 +1,23 @@
+name: Weekly Profit Digest
+
+# Emails each shop's saved AI Profit Report summary once a week (the endpoint skips shops with
+# the digest turned off, stale reports, or no shop email).
+#
+# Uses the SAME repo secrets as monitor-cron.yml:
+#   APP_URL      e.g. https://shopflixai-production.up.railway.app
+#   CRON_SECRET  must match CRON_SECRET set on Railway
+
+on:
+  schedule:
+    - cron: "30 3 * * 1" # Mondays 03:30 UTC ≈ 09:00 IST
+  workflow_dispatch: {} # allow manual "Run workflow" from the Actions tab
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger weekly digest
+        run: |
+          curl -fsS --max-time 300 -X POST \
+            -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" \
+            "${{ secrets.APP_URL }}/api/cron/weekly-digest"
