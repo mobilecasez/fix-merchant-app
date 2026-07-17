@@ -126,6 +126,11 @@ model WebScan {
   paidTier    String?  // basic | advanced | deep once purchased
   email       String?  // captured at login/checkout
   recoveryHash String? // HMAC-SHA256 of the post-payment recovery token (never the token itself)
+  // Post-payment deeper-scan (advanced/deep) lifecycle. Free basic scans are COMPLETE
+  // immediately; a paid tier flips to PROCESSING then COMPLETE when the background scan finishes.
+  scanStatus  String   @default("COMPLETE") // COMPLETE | PENDING | PROCESSING | FAILED
+  scanError   String?
+  productsScanned Int  @default(0) // # products explored on the last advanced/deep run (for the report summary)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -185,6 +190,161 @@ model ContactMessage {
   @@index([status])
 }
 
+// Public blog comments (shopflixai.com/blog/<slug>). Name + comment are shown
+// publicly; email is collected but NEVER displayed. `approved` gates visibility so
+// spam/abuse can be hidden by flipping it false. website is optional (nofollow ugc).
+model BlogComment {
+  id        String   @id @default(cuid())
+  slug      String // the post slug this comment belongs to
+  name      String
+  email     String // collected, NOT shown publicly
+  website   String? // optional; validated to http(s) before store
+  body      String
+  approved  Boolean  @default(true)
+  ip        String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  @@index([slug, approved, createdAt])
+}
+
+// ── Price Radar: competitive-price research + product traffic analytics ──
+// Researched competitive price for a variant, stored SEPARATELY from the live price.
+// Applying copies researchedPrice onto the Shopify variant; until then the live price is
+// untouched. One row per (shop, variantId) — re-researching overwrites it in place.
+model ProductPriceResearch {
+  id              String    @id @default(cuid())
+  shop            String
+  productId       String // gid://shopify/Product/...
+  variantId       String // gid://shopify/ProductVariant/...
+  productTitle    String
+  imageUrl        String?
+  currentPrice    Float // live price captured at research time
+  originalPrice   Float? // the product's price the FIRST time we touched it (never overwritten)
+  priceHistory    Json? // log of applied price changes: [{ price, from, at }] (most recent last)
+  currency        String    @default("USD")
+  researchedPrice Float? // AI-suggested competitive price (editable before apply)
+  priceLow        Float? // observed market low
+  priceHigh       Float? // observed market high
+  rationale       String? // short explanation of the suggestion
+  sources         Json? // string[] of URLs/notes the AI grounded on
+  confidence      String? // high | medium | low
+  status          String    @default("researched") // researched | edited | applied | failed
+  batchJobId      String? // set when produced by a bulk job
+  appliedAt       DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@unique([shop, variantId])
+  @@index([shop, status])
+  @@index([batchJobId])
+}
+
+// A bulk "Find Competitive Price for all" job. Runs asynchronously and emails the
+// merchant when COMPLETE (chunked grounded Gemini calls now; swappable to the true
+// Gemini Batch API via providerRef once the exact batch model/endpoint is confirmed).
+model PriceBatchJob {
+  id             String    @id @default(cuid())
+  shop           String
+  status         String    @default("pending") // pending | processing | complete | failed
+  productCount   Int       @default(0)
+  processedCount Int       @default(0)
+  creditsCharged Int       @default(0)
+  model          String? // gemini model id used
+  providerRef    String? // Gemini batch job name (when the true batch API is used)
+  email          String // where to notify on completion
+  notifiedAt     DateTime?
+  error          String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([shop, status])
+  @@index([status])
+}
+
+// Self-tracked storefront product-page visits (daily aggregate) — for stores where
+// ShopifyQL analytics isn't available (Basic plan) or to supplement it. Written by the
+// public /api/track-visit pixel endpoint injected via a storefront script tag.
+model ProductVisitDaily {
+  id        String   @id @default(cuid())
+  shop      String
+  productId String // numeric product id from the storefront
+  date      DateTime // day at 00:00 UTC
+  visits    Int      @default(0)
+
+  @@unique([shop, productId, date])
+  @@index([shop, date])
+}
+
+// Historical sessions the merchant imports from a Shopify Analytics CSV (a report they
+// export from their own admin), stored PER MONTH so the date-range filter works on them.
+// Keyed by numeric product id + month bucket. Re-importing replaces all rows for the shop.
+model ProductSessionImport {
+  id           String   @id @default(cuid())
+  shop         String
+  productId    String // numeric product id (resolved from the CSV)
+  productTitle String   @default("")
+  month        DateTime // month bucket: first day of the month at 00:00 UTC
+  sessions     Int      @default(0)
+  importedAt   DateTime @default(now())
+
+  @@unique([shop, productId, month])
+  @@index([shop, month])
+}
+
+// Per-shop Google Ads API integration — credentials (secrets encrypted at rest) + a cached
+// product→CPC snapshot for the Price Radar page. `cpcByProduct` is { numericProductId: cpc }.
+// Saved AI-generated reports (one per shop per kind) so merchants can re-open them for free and
+// only pay credits to REGENERATE. kinds: "profit_advisor" (Price Radar) | "campaign_plan" (Ad Campaigns).
+model AiReport {
+  id        String   @id @default(cuid())
+  shop      String
+  kind      String
+  data      Json // the report/plan payload, exactly as the UI renders it
+  meta      Json? // { currency, rangeLabel, analysed, generatedAt, basedOnReportAt, ... }
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([shop, kind])
+}
+
+model GoogleAdsSettings {
+  id              String    @id @default(cuid())
+  shop            String    @unique
+  developerToken  String? // encrypted
+  clientId        String? // encrypted
+  clientSecret    String? // encrypted
+  refreshToken    String? // encrypted
+  customerId      String? // 10-digit ads account (digits only)
+  loginCustomerId String? // manager/MCC id (digits only), optional
+  currencyCode    String?
+  enabled         Boolean   @default(false)
+  status          String? // "ok" | "error"
+  lastError       String?
+  lastSyncAt      DateTime?
+  cpcByProduct    Json? // { numericProductId: cpc }
+  adPerfByProduct Json? // { numericProductId: { c: clicks, s: spend } } — actual attributed ad spend, same sync window
+  cpcWindowDays   Int       @default(30)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+}
+
+model PriceRadarSettings {
+  id              String   @id @default(cuid())
+  shop            String   @unique
+  shipCostPrepaid Float    @default(0)
+  shipCostCod     Float    @default(0)
+  rtoCostPrepaid  Float    @default(0)
+  rtoCostCod      Float    @default(0)
+  assumedCogsPct  Float    @default(50) // product-cost assumption (% of price) when real unit cost is unknown
+  paymentFeePct   Float    @default(2)  // payment-gateway fee (% of price) for contribution-margin math
+  weeklyDigest    Boolean  @default(true) // weekly profit-digest email (sent only when a saved report exists)
+  lastDigestAt    DateTime? // last digest send — re-runs within ~5 days are skipped (idempotence)
+  storeCurrency   String?  // last-known shop currency — fallback when the live query is throttled (never silently guess USD)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
 model ProductAICheck {
   id        String   @id @default(uuid())
   productId String   @unique
@@ -231,4 +391,81 @@ enum AdminBannerState {
   PENDING
   COMPLETE
   ERROR
+}
+
+// Append-only activity log — one row per meaningful merchant action in the app
+// (profit report generated, campaign plan built, store scan run, price applied,
+// best-seller collection created, etc.). Powers the owner-only /app/admin timeline.
+// shop-keyed, mirrors the existing convention (plain `shop` column + indexes).
+model ActivityEvent {
+  id        String   @id @default(cuid())
+  shop      String
+  type      String // profit_report | campaign_plan | store_scan | price_apply | bestseller_collection | product_import | ai_check | ads_connected
+  label     String   @default("") // human-readable one-line summary
+  meta      Json? // arbitrary detail { count, currency, ... }
+  createdAt DateTime @default(now())
+
+  @@index([shop, createdAt])
+  @@index([type])
+  @@index([createdAt])
+}
+
+// Campaigns ShopFlix published to the merchant's Google Ads account — so the Ad Campaigns page can
+// show a "Published" state, offer a live performance Review, and know each campaign's age (learning).
+model AdsCampaign {
+  id           String   @id @default(cuid())
+  shop         String
+  resourceName String // customers/<cid>/campaigns/<id>
+  name         String
+  tier         String   @default("")
+  targetRoas   Float? // tROAS at creation (for reference)
+  dailyBudget  Float    @default(0)
+  createdAt    DateTime @default(now())
+
+  @@unique([shop, resourceName])
+  @@index([shop])
+}
+
+// Tracks the auto-updating "Best Sellers" smart collection created from Price Radar,
+// so the monthly cron knows which collection/tag to refresh for each shop.
+model BestSellerCollection {
+  id              String    @id @default(cuid())
+  shop            String    @unique
+  collectionId    String // gid://shopify/Collection/...
+  collectionTitle String    @default("Best Sellers")
+  tag             String    @default("shopflix-best-seller")
+  topN            Int       @default(20) // how many products to include
+  windowDays      Int       @default(30)
+  taggedIds       Json? // string[] of numeric product ids currently tagged (to diff on refresh)
+  lastRunAt       DateTime?
+  lastCount       Int       @default(0) // # products tagged on the last refresh
+  enabled         Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+}
+
+// Append-only audit trail for public-website (Razorpay) payments. One row per
+// event — order create, successful payment, and every failure mode — with who
+// (email), what (plan/amount/order/payment ids), from where (ip/userAgent) and
+// when (createdAt). No account/password is required to pay; email is captured here.
+model WebPaymentLog {
+  id          String   @id @default(cuid())
+  action      String // create | create_failed | create_error | paid | verify_failed | verify_error | amount_mismatch
+  email       String?
+  scanId      String?
+  planId      String?
+  amount      Int? // smallest currency unit (USD cents)
+  currency    String?
+  orderId     String?
+  paymentId   String?
+  status      String?
+  storeDomain String?
+  ip          String?
+  userAgent   String?
+  error       String?
+  createdAt   DateTime @default(now())
+
+  @@index([email])
+  @@index([orderId])
+  @@index([createdAt])
 }

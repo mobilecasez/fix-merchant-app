@@ -46,7 +46,7 @@ async function processAndSendReport(
   }
 
   const model = genAI.getGenerativeModel({
-    model: "gemini-2.5-flash",
+    model: (process.env.GEMINI_TEXT_MODEL || "gemini-3.1-flash-lite"),
     generationConfig: {
       temperature: 0.2,
       responseMimeType: "application/json", // Ensure JSON output

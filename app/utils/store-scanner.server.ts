@@ -1,6 +1,6 @@
 import { parse } from "node-html-parser";
 import { optimizeHtmlForAI, extractReadableText } from "./dom-optimizer.server";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { geminiGenerateText, extractJson } from "./gemini.server";
 import { retryOperation } from "./retry";
 import prisma from "../db.server";
 
@@ -27,6 +27,261 @@ const PAGES_TO_SCAN = [
   { path: "/pages/contact",              label: "Contact Page",              required: true,  altPath: "/contact"               },
   { path: "/pages/about-us",             label: "About Us",                  required: false, altPath: null },
 ];
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TRUST & IDENTITY LAYER — misrepresentation signals that on-page presence/format
+// checks miss (why some stores pass our Deep scan then get suspended). The two lists
+// below are MAINTAINED DATA ASSETS — expand them over time as new mail-drop addresses
+// and geo brands surface. See buildDeepPrompt / deriveTrustFindings for consumers.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Known registered-agent / mail-forwarding / mass-incorporation addresses. A store whose
+// "business address" is one of these has no real premises → Google reads it as a fake
+// business location (Misrepresentation). Stored NORMALIZED (see normalizeAddress).
+export const REGISTERED_AGENT_ADDRESSES: Array<{ norm: string; agent: string }> = [
+  { norm: "16192 coastal highway lewes de 19958", agent: "Harvard Business Services" },
+  { norm: "8 the green dover de 19901", agent: "Northwest Registered Agent" },
+  { norm: "651 n broad street middletown de 19709", agent: "Common Delaware shell address" },
+  { norm: "1209 orange street wilmington de 19801", agent: "CT Corporation" },
+  { norm: "30 n gould street sheridan wy 82801", agent: "Registered Agents Inc (WY mail-drop)" },
+  { norm: "418 broadway albany ny 12207", agent: "Registered Agents Inc (NY)" },
+  { norm: "254 chapman road suite 208 newark de 19702", agent: "Delaware registered agent" },
+  { norm: "17350 state highway 249 houston tx", agent: "Bizee / Incfile" },
+];
+
+// Brand-geography tokens → the country/currency/TLD they imply. If a store NAME carries a
+// token but NONE of {phone country, address country, currency, TLD} matches → Misrepresentation.
+export const GEO_TOKEN_MAP: Array<{ tokens: string[]; country: string; currency: string; tld: string[] }> = [
+  { tokens: ["london", "british", "england", "britain", "uk"], country: "GB", currency: "GBP", tld: ["co.uk", "uk"] },
+  { tokens: ["nyc", "new york", "manhattan", "brooklyn"], country: "US", currency: "USD", tld: ["us"] },
+  { tokens: ["paris", "parisian"], country: "FR", currency: "EUR", tld: ["fr"] },
+  { tokens: ["milano", "milan", "italia", "italian"], country: "IT", currency: "EUR", tld: ["it"] },
+  { tokens: ["tokyo", "nippon"], country: "JP", currency: "JPY", tld: ["jp"] },
+  { tokens: ["nordic", "scandi", "scandinavian", "copenhagen", "stockholm"], country: "DK", currency: "DKK", tld: ["dk", "se"] },
+  { tokens: ["dubai", "emirates"], country: "AE", currency: "AED", tld: ["ae"] },
+  { tokens: ["sydney", "melbourne", "aussie", "australia"], country: "AU", currency: "AUD", tld: ["com.au", "au"] },
+  { tokens: ["swiss", "zurich", "geneva"], country: "CH", currency: "CHF", tld: ["ch"] },
+  { tokens: ["berlin", "german", "deutschland", "munich"], country: "DE", currency: "EUR", tld: ["de"] },
+];
+
+// Concealed-fulfillment language (Check 4 prefilter): overseas shipping behind a domestic identity.
+// Tightened to avoid false positives on ordinary return windows ("30 days of delivery") — the
+// long-transit branch requires "business days" + an explicit shipping/transit context, not returns.
+const OVERSEAS_FULFILLMENT_RE = /international\s+(?:warehouse|fulfil)|ships?\s+from\s+(?:overseas|abroad|our warehouse|china|asia|hong kong)|fulfil(?:l)?ed\s+from\b[^.]{0,40}(?:outside|overseas|abroad|china|international)|customs\s+(?:duties|fees|and\s+taxes|charges)[^.]{0,45}(?:included|covered|your responsibility|buyer|customer)|\b(?:1[0-9]|[2-9][0-9])\s*(?:[-–]\s*\d+\s*)?business\s+days\b[^.]{0,20}(?:transit|shipping|to arrive|dispatch|delivery time)/i;
+
+// E.164 calling-code → country (country-level is enough for brand-geo / NAP checks).
+const CALLING_CODE_COUNTRY: Array<[RegExp, string]> = [
+  [/^\+?44/, "GB"], [/^\+?33/, "FR"], [/^\+?39/, "IT"], [/^\+?81/, "JP"],
+  [/^\+?45/, "DK"], [/^\+?46/, "SE"], [/^\+?971/, "AE"], [/^\+?61/, "AU"],
+  [/^\+?41/, "CH"], [/^\+?49/, "DE"], [/^\+?91/, "IN"], [/^\+?86/, "CN"],
+  [/^\+?1\d{10}$/, "US"],
+];
+function callingCodeCountry(phone?: string | null): string | null {
+  const p = (phone || "").replace(/[^\d+]/g, "");
+  if (!p) return null;
+  for (const [re, c] of CALLING_CODE_COUNTRY) if (re.test(p)) return c;
+  if (/^\d{10}$/.test(p)) return "US"; // bare NANP 10-digit
+  return null;
+}
+
+export function normalizeAddress(raw: string): string {
+  let s = (raw || "").toLowerCase().replace(/[.,#]/g, " ");
+  const expand: Array<[RegExp, string]> = [
+    [/\bhwy\b/g, "highway"], [/\bste\b/g, "suite"], [/\bst\b/g, "street"], [/\brd\b/g, "road"],
+    [/\bave\b/g, "avenue"], [/\bblvd\b/g, "boulevard"], [/\bdr\b/g, "drive"], [/\bln\b/g, "lane"], [/\bpkwy\b/g, "parkway"],
+  ];
+  for (const [re, r] of expand) s = s.replace(re, r);
+  return s.replace(/\s+/g, " ").trim();
+}
+
+// Match an address (or a short address string) against the registered-agent list. Token-overlap
+// fuzzy matching is only applied to SHORT strings (a real address field), never long page text,
+// to avoid false positives from an unrelated blob that happens to share common words.
+export function addressMatchesRegisteredAgent(raw: string): { matched: boolean; agent: string | null } {
+  const s = normalizeAddress(raw);
+  if (s.length < 6) return { matched: false, agent: null };
+  for (const { norm, agent } of REGISTERED_AGENT_ADDRESSES) {
+    if (s === norm || s.includes(norm) || (s.length < 120 && norm.includes(s))) return { matched: true, agent };
+    if (s.length <= 120) {
+      const set = new Set(s.split(" ").filter(Boolean));
+      const toks = norm.split(" ").filter(Boolean);
+      const inter = toks.filter((t) => set.has(t)).length;
+      if (toks.length >= 4 && inter / toks.length >= 0.8) return { matched: true, agent };
+    }
+  }
+  return { matched: false, agent: null };
+}
+
+// RDAP domain lookup (free JSON, no key). 5s timeout, null-safe — MUST NEVER throw into the scan.
+export async function lookupDomainRdap(domain: string): Promise<{ createdAt: string | null; ageDays: number | null; privacy: boolean }> {
+  const host = (domain || "").replace(/^https?:\/\//i, "").replace(/\/.*$/, "").replace(/^www\./i, "").trim();
+  const fallback = { createdAt: null, ageDays: null, privacy: false };
+  if (!host || !host.includes(".")) return fallback;
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 5000);
+    const res = await fetch(`https://rdap.org/domain/${encodeURIComponent(host)}`, {
+      redirect: "follow", signal: ctrl.signal, headers: { Accept: "application/rdap+json" },
+    }).finally(() => clearTimeout(timer));
+    if (!res.ok) return fallback;
+    const data: any = await res.json();
+    const reg = (data.events || []).find((e: any) => e.eventAction === "registration");
+    const createdAt = reg?.eventDate || null;
+    let ageDays: number | null = null;
+    if (createdAt) { const ms = Date.now() - new Date(createdAt).getTime(); if (Number.isFinite(ms)) ageDays = Math.max(0, Math.floor(ms / 86400000)); }
+    const blob = JSON.stringify(data).toLowerCase();
+    const privacy = /redacted for privacy|withheld for privacy|whoisguard|domains by proxy|privacyprotect|privacy protect|data protected|privacy service|contact privacy|redacted\.for\.privacy/.test(blob);
+    return { createdAt, ageDays, privacy };
+  } catch { return fallback; }
+}
+
+// CHECK 7 (optional, low-confidence) — alias-network / scam reputation lookup. Behind the
+// TRUST_REPUTATION_LOOKUP=1 flag and OFF by default. Placeholder: wire a real reputation source
+// (e.g. Trustpilot / scam-signal API) here later. Always null-safe — a failure never blocks a scan,
+// and it only returns `negative:true` on CONCRETE evidence, so it can't false-flag a legit store.
+export async function lookupDomainReputation(_domain: string): Promise<{ negative: boolean; evidence?: string; detail?: string } | null> {
+  try {
+    // No reputation provider is wired yet — return no evidence (safe default). When a provider is
+    // added, query it with a short timeout and set negative:true ONLY on concrete negative results.
+    return { negative: false };
+  } catch {
+    return null;
+  }
+}
+
+// Brand geography vs reality (Check 2). Returns the first matched token + whether it's unsupported.
+export function brandGeoCheck(name: string, meta: { phone?: string | null; country_code?: string | null; currency?: string | null; tld?: string | null }): { token: string | null; implied_country: string | null; mismatch: boolean } {
+  const n = (name || "").toLowerCase();
+  for (const g of GEO_TOKEN_MAP) {
+    const token = g.tokens.find((t) => new RegExp(`\\b${t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(n));
+    if (!token) continue;
+    const addrCountry = (meta.country_code || "").toUpperCase();
+    const phoneCountry = callingCodeCountry(meta.phone) || "";
+    const currency = (meta.currency || "").toUpperCase();
+    const tld = (meta.tld || "").toLowerCase();
+    const anyMatch =
+      addrCountry === g.country || phoneCountry === g.country ||
+      currency === g.currency || g.tld.some((t) => tld === t || tld.endsWith("." + t));
+    // Only assert a mismatch when we actually have a concrete country/phone/currency signal (or a
+    // ccTLD) to contradict — a generic .com with no other identity signal isn't enough evidence, so
+    // the public web scan (which lacks Shopify billing data) never false-flags a store on absence.
+    const ccTld = g.tld.length > 0 && (tld.endsWith(".com") === false) && /\.[a-z]{2}$/.test(tld);
+    const hasConcreteSignal = !!(addrCountry || phoneCountry || currency) || ccTld;
+    return { token, implied_country: g.country, mismatch: !anyMatch && hasConcreteSignal };
+  }
+  return { token: null, implied_country: null, mismatch: false };
+}
+
+// Pull {email, phone, address, legal_name} out of a block of text (best-effort, for NAP compare).
+export function extractNapFields(text: string): { email?: string; phone?: string; address?: string; legal_name?: string } {
+  const t = text || "";
+  const email = (t.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i) || [])[0]?.toLowerCase();
+  const phone = (t.match(/\+?\d[\d\s().-]{7,}\d/) || [])[0]?.replace(/[^\d+]/g, "");
+  const legal_name = (t.match(/([A-Z][A-Za-z0-9&.,'\- ]{1,60}\b(?:LLC|L\.L\.C\.|Inc\.?|Incorporated|Ltd\.?|Limited|GmbH|LLP|Corp\.?)\b)/) || [])[1]?.trim();
+  const address = looksLikeAddress(t)
+    ? (t.match(/\d{1,6}\s+[A-Za-z0-9.,'\- ]{4,60}\b(?:street|st|road|rd|avenue|ave|highway|hwy|blvd|boulevard|drive|dr|lane|ln|way|court|ct|suite|ste)\b[A-Za-z0-9.,'\- ]{0,40}/i) || [])[0]?.trim()
+    : undefined;
+  return { email, phone, address, legal_name };
+}
+
+// Build the deterministic Trust & Identity deep findings (Checks 1,2,3,4,5) from enriched
+// audit data. Advisory, non-auto-fixable. Returns findings + "passed" labels for compliant stores.
+export function deriveTrustFindings(a: DeepAuditData): { errors: any[]; passed: string[] } {
+  const errors: any[] = [];
+  const passed: string[] = [];
+
+  // CHECK 1 — Registered-agent / mail-drop address
+  const ra = a.registered_agent_match;
+  if (ra?.matched) {
+    errors.push({
+      category: "Registered Agent Address", severity: "High",
+      evidence: `Business address matches a known registered-agent / incorporation-service address${ra.agent ? ` (${ra.agent})` : ""}: "${a.store_meta?.address_full || a.business_identity?.legal_address || ""}".`,
+      merchant_friendly_explanation: "Your listed business address is a shared registered-agent / mail-forwarding address, not a real place of business. Google cross-references business locations and reads a mail-drop as a fake location — a common Misrepresentation suspension trigger.",
+      google_policy_violated: "Misrepresentation",
+      remediation_steps: [
+        "Display a genuine operating or fulfillment address that matches your Merchant Center account.",
+        "Remove the registered-agent address from your storefront, contact page and policy pages.",
+        "Ensure the address on your site, GMC and business-verification documents all agree.",
+      ],
+    });
+  } else if (ra) {
+    passed.push("Business address is not a known registered-agent / mail-drop address");
+  }
+
+  // CHECK 2 — Brand-implied geography vs reality
+  const bg = a.brand_geo;
+  if (bg?.token && bg.mismatch) {
+    errors.push({
+      category: "Brand-Geography Mismatch", severity: "High",
+      evidence: `Brand implies ${bg.implied_country} (token "${bg.token}") but no business signal supports it — address country ${a.store_meta?.country_code || "?"}, phone ${a.store_meta?.phone || "?"}, currency ${a.store_meta?.currency || "?"}, domain ${a.business_identity?.domain || "?"}.`,
+      merchant_friendly_explanation: `Your brand name suggests a ${bg.implied_country} presence, but your address, phone, currency and domain don't back that up. Google treats a brand that implies a location it has no real nexus to as Misrepresentation.`,
+      google_policy_violated: "Misrepresentation",
+      remediation_steps: [
+        "Establish a genuine presence in the implied country (local address, phone, currency) …",
+        "… or adjust your branding so it no longer implies a location you don't operate from.",
+        "Set your Merchant Center target country to where you actually operate and ship from.",
+      ],
+    });
+  } else if (bg?.token) {
+    passed.push("Brand geography is consistent with business signals");
+  }
+
+  // CHECK 3 — New domain (privacy amplifies but does NOT flag alone — WHOIS privacy is common on
+  // perfectly legit aged stores, so a standalone-privacy flag would false-positive constantly).
+  const age = a.domain_age_days;
+  if (age != null && age < 90) {
+    errors.push({
+      category: "New/Untrusted Domain", severity: age < 30 ? "High" : "Medium",
+      evidence: `Domain registered ${a.domain_created_at || "recently"} (~${age} days old)${a.whois_privacy ? ", with registrant details privacy-masked" : ""}.`,
+      merchant_friendly_explanation: `A very new${a.whois_privacy ? ", privacy-masked" : ""} domain is a classic signal Google and payment processors weigh when assessing legitimacy. New stores are reviewed more aggressively for Misrepresentation.`,
+      google_policy_violated: "Misrepresentation",
+      remediation_steps: [
+        "This partly resolves naturally as the domain ages — keep your identity consistent meanwhile.",
+        "Build genuine trust signals: real reviews, active social profiles, a consistent NAP and a real address.",
+        a.whois_privacy ? "Consider unmasking your organization (not personal) details in WHOIS to look more established." : "Keep registration details accurate and consistent with your storefront identity.",
+      ],
+    });
+  } else if (age != null) {
+    passed.push("Domain is established (not newly registered)");
+  }
+
+  // CHECK 4 — Concealed fulfillment origin (overseas shipping behind a domestic identity)
+  const fs = a.fulfillment_signals;
+  const domesticIdentity = ["US", "GB", "CA", "AU", "IE", "NZ"].includes((a.store_meta?.country_code || "").toUpperCase());
+  if (fs?.has_overseas_language && domesticIdentity) {
+    errors.push({
+      category: "Concealed Fulfillment Origin", severity: "High",
+      evidence: `Policy text admits overseas / long-transit fulfillment ("${(fs.text_excerpt || "").trim().slice(0, 180)}") while the store presents a domestic (${a.store_meta?.country_code}) identity.`,
+      merchant_friendly_explanation: "Your store presents a domestic identity, but your own shipping/terms text reveals goods ship from overseas with long transit and buyer-paid customs. Hiding the true fulfillment origin behind a local identity is a Misrepresentation (omission of relevant information) Google suspends for.",
+      google_policy_violated: "Misrepresentation - Omission of relevant information",
+      remediation_steps: [
+        "Clearly disclose the country goods ship from and realistic delivery times on the product and shipping pages.",
+        "State who pays customs/duties up front, before checkout.",
+        "Align your stated business location with where you actually fulfill from.",
+      ],
+    });
+  }
+
+  // CHECK 5 — NAP consistency
+  const nap = a.nap;
+  if (nap && nap.consistent === false) {
+    errors.push({
+      category: "NAP Inconsistency", severity: (nap.issues || []).some((i) => /country/i.test(i)) ? "High" : "Medium",
+      evidence: `Inconsistent business identity across sources: ${(nap.issues || []).join("; ") || "name/address/phone differ between pages"}.`,
+      merchant_friendly_explanation: "Your business name, address or phone number don't match across your storefront, contact page and legal pages (or phone country ≠ address country). Inconsistent identity (NAP) undermines the legitimacy Google looks for and is a Misrepresentation review trigger.",
+      google_policy_violated: "Misrepresentation",
+      remediation_steps: [
+        "Use ONE consistent legal business name, address and phone number everywhere on the site.",
+        "Match that identity to your Merchant Center and business-verification details.",
+        "If you use a DBA/brand name, also show the legal entity name consistently on legal pages.",
+      ],
+    });
+  } else if (nap && nap.consistent === true && (nap.issues !== undefined)) {
+    passed.push("Business identity (name/address/phone) is consistent across pages");
+  }
+
+  return { errors, passed };
+}
 
 /** Detect if an HTML page is Shopify's storefront password page */
 function isPasswordPage(html: string, finalUrl?: string): boolean {
@@ -635,6 +890,27 @@ export interface DeepAuditData {
     simulated_checkout_price: string;
   };
   active_third_party_apps: string[];
+
+  // ── Trust & Identity layer (misrepresentation signals; populated in enrichDeepData) ──
+  store_meta?: {
+    phone?: string | null;
+    currency?: string | null;
+    country_code?: string | null; // billing-address country (ISO-2)
+    address_full?: string | null; // full billing address, one line
+    tld?: string | null;          // e.g. "spencerlondon.com" registrable part
+  };
+  domain_created_at?: string | null;
+  domain_age_days?: number | null;
+  whois_privacy?: boolean;
+  registered_agent_match?: { matched: boolean; agent: string | null };
+  brand_geo?: { token: string | null; implied_country: string | null; mismatch: boolean };
+  fulfillment_signals?: { text_excerpt: string; has_overseas_language: boolean };
+  policy_texts?: { shipping?: string; terms?: string; legal_notice?: string; refund?: string };
+  nap?: {
+    sources?: Record<string, { address?: string; phone?: string; email?: string; legal_name?: string }>;
+    consistent?: boolean;
+    issues?: string[];
+  };
 }
 
 export function buildDeepPrompt(deepData: DeepAuditData): string {
@@ -680,6 +956,11 @@ E. PRICING & AVAILABILITY ACCURACY (Misrepresentation)
 F. CRAWLABILITY
 17. Password Protection: If is_password_protected is true, add to store_warnings exactly: "Before going live, please remove the password protection to ensure GMC bots can crawl your site."
 
+G. TRUST & IDENTITY (Misrepresentation — cross-reference the story the store tells)
+18. Contradictory Policy Statements: Read policy_texts (shipping, terms, legal_notice, refund). Identify any PAIR of statements ACROSS these pages that contradict each other — e.g. one says US-only / domestic operations while another admits international or overseas fulfillment; one says 30-day returns while another says no returns; one names a different country/currency/entity than another. For EACH contradiction, emit a finding with category "Contradictory Policy Statements", google_policy_violated "Misrepresentation", quoting BOTH conflicting sentences verbatim in "evidence".
+19. Concealed Fulfillment Origin: If fulfillment_signals.has_overseas_language is true AND the store presents a domestic identity (store_meta.country_code + store_meta.currency look domestic), emit "Concealed Fulfillment Origin", google_policy_violated "Misrepresentation - Omission of relevant information", quoting the exact policy sentence (fulfillment_signals.text_excerpt) and the conflicting identity signal.
+IMPORTANT: Do NOT emit "Registered Agent Address", "Brand-Geography Mismatch", "New/Untrusted Domain" or "NAP Inconsistency" — those are computed deterministically elsewhere and would duplicate. Focus section G on checks 18 and 19 only.
+
 SEVERITY GUIDE: "High" = direct suspension/disapproval trigger; "Medium" = trust/review risk; "Low" = best-practice improvement.
 
 Also produce a "passed_checks" array: short labels of the trust/compliance checks the store PASSED (so the merchant sees what is already good). And a "summary" one-sentence overall assessment.
@@ -693,7 +974,7 @@ OUTPUT FORMAT (return ONLY this JSON — include as many findings as apply, do n
   "passed_checks": ["e.g. Privacy Policy present", "HTTPS enabled", "..."],
   "critical_misrepresentation_errors": [
     {
-      "category": "Business Identity Mismatch | Missing Business Address | Insufficient Contact Information | Inadequate Refund/Return Policy | Inadequate Shipping Policy | Missing Terms of Service | Missing Privacy Policy | No SSL / Insecure Connection | Missing Payment/Trust Signals | No Social Presence Detected | Deceptive Urgency / Fake Scarcity | Deceptive App Detected | Structured Data / Price Mismatch | Hidden Fees / Checkout Price Mismatch | Deceptive Discount Pricing | Inaccurate Availability",
+      "category": "Business Identity Mismatch | Missing Business Address | Insufficient Contact Information | Inadequate Refund/Return Policy | Inadequate Shipping Policy | Missing Terms of Service | Missing Privacy Policy | No SSL / Insecure Connection | Missing Payment/Trust Signals | No Social Presence Detected | Deceptive Urgency / Fake Scarcity | Deceptive App Detected | Structured Data / Price Mismatch | Hidden Fees / Checkout Price Mismatch | Deceptive Discount Pricing | Inaccurate Availability | Contradictory Policy Statements | Concealed Fulfillment Origin | Registered Agent Address | Brand-Geography Mismatch | New/Untrusted Domain | NAP Inconsistency | Alias Network Reputation",
       "severity": "High | Medium | Low",
       "evidence": "The exact data point (or its absence) that caused the flag.",
       "merchant_friendly_explanation": "Plain-English explanation of what is wrong and WHY Google may suspend or review the store for this.",
@@ -705,22 +986,16 @@ OUTPUT FORMAT (return ONLY this JSON — include as many findings as apply, do n
 }
 
 /** Shared helper — run Gemini with a prompt and return parsed JSON */
-async function runGeminiJson(prompt: string, timeoutMs = 180000, retryId = "scan"): Promise<any> {
-  const genAI = new GoogleGenerativeAI(process.env.GOOGLE_GEMINI_API_KEY!);
-  const model = genAI.getGenerativeModel({
-    model: "gemini-2.5-flash",
-    generationConfig: { temperature: 0.1, responseMimeType: "application/json" },
-  });
+export async function runGeminiJson(prompt: string, timeoutMs = 180000, retryId = "scan"): Promise<any> {
   const aiText = await retryOperation(async () => {
-    const result = await Promise.race([
-      model.generateContent(prompt),
+    return await Promise.race([
+      geminiGenerateText({ config: { generationConfig: { temperature: 0.1, responseMimeType: "application/json" } } }, prompt),
       new Promise<never>((_, reject) => setTimeout(() => reject(new Error("AI timed out")), timeoutMs)),
     ]);
-    return (await (result as any).response).text();
   }, 3, 2000, retryId);
-  const start = aiText.indexOf("{");
-  const end = aiText.lastIndexOf("}");
-  return JSON.parse(aiText.substring(start, end + 1));
+  const parsed = extractJson(aiText);
+  if (!parsed) throw new Error("AI returned unparseable JSON");
+  return parsed;
 }
 
 // ── Deterministic reconciliation (authoritative live-store validation) ─────────
@@ -1220,7 +1495,7 @@ export async function processAdvancedScan(
  * with the unlocked session cookie. Detects trust/transparency/scarcity signals
  * that the AI needs to robustly audit for GMC suspension triggers.
  */
-async function enrichDeepData(
+export async function enrichDeepData(
   deepData: DeepAuditData,
   storeUrl: string,
   products: AdvancedProduct[],
@@ -1326,6 +1601,7 @@ async function enrichDeepData(
     ["privacy", ["/policies/privacy-policy", "/pages/privacy-policy"], "privacy"],
   ];
   const policyPages: NonNullable<DeepAuditData["policy_pages"]> = {};
+  const policyTexts: NonNullable<DeepAuditData["policy_texts"]> = {};
   await Promise.all(policyPaths.map(async ([key, paths, discoveryKey]) => {
     const candidates = [...paths.map(p => `${storeUrl}${p}`)];
     if (discoveredPolicies[discoveryKey]) candidates.push(discoveredPolicies[discoveryKey]);
@@ -1338,6 +1614,12 @@ async function enrichDeepData(
           const text = extractReadableText(html, 8000);
           const wordCount = text ? text.split(/\s+/).filter(Boolean).length : 0;
           policyPages[key] = { exists: true, word_count: wordCount };
+          // Keep the prose for the Trust & Identity checks (fulfillment origin, contradictions, NAP).
+          if (text) {
+            if (key === "refund_return") policyTexts.refund = text.slice(0, 6000);
+            else if (key === "shipping") policyTexts.shipping = text.slice(0, 6000);
+            else if (key === "terms") policyTexts.terms = text.slice(0, 6000);
+          }
           return;
         }
       } catch { /* try next variant */ }
@@ -1345,6 +1627,86 @@ async function enrichDeepData(
     policyPages[key] = { exists: false, word_count: 0 };
   }));
   out.policy_pages = policyPages;
+
+  // ── Legal Notice / Impressum (separate from Terms — often carries the entity + address) ──
+  for (const p of ["/pages/legal-notice", "/policies/legal-notice", "/pages/legal", "/pages/impressum", "/pages/imprint"]) {
+    try {
+      const { html, status } = await safeFetch(`${storeUrl}${p}`, 8000, cookie);
+      if (html && status !== 404 && !isPasswordPage(html)) { policyTexts.legal_notice = extractReadableText(html, 6000); break; }
+    } catch { /* try next */ }
+  }
+  out.policy_texts = policyTexts;
+
+  // ── Trust & Identity enrichment (misrepresentation signals). Every lookup is
+  //    null-safe and time-boxed — a failure never fails the scan. ─────────────
+  // Domain age + WHOIS privacy (RDAP).
+  try {
+    const rdap = await lookupDomainRdap(out.business_identity?.domain || storeUrl);
+    out.domain_created_at = rdap.createdAt;
+    out.domain_age_days = rdap.ageDays;
+    out.whois_privacy = rdap.privacy;
+  } catch { out.domain_created_at = null; out.domain_age_days = null; out.whois_privacy = false; }
+
+  // Registered-agent / mail-drop address — check the Shopify billing address (short, precise)
+  // first, then scan long page text for an exact agent-address substring.
+  {
+    let ram: { matched: boolean; agent: string | null } = { matched: false, agent: null };
+    for (const cand of [out.store_meta?.address_full || "", out.business_identity?.legal_address || "", out.contact_page_text || "", policyTexts.legal_notice || "", policyTexts.terms || ""]) {
+      if (!cand) continue;
+      const m = addressMatchesRegisteredAgent(cand);
+      if (m.matched) { ram = m; break; }
+    }
+    out.registered_agent_match = ram;
+  }
+
+  // Brand-implied geography vs reality.
+  out.brand_geo = brandGeoCheck(out.business_identity?.name || "", {
+    phone: out.store_meta?.phone, country_code: out.store_meta?.country_code,
+    currency: out.store_meta?.currency, tld: out.store_meta?.tld,
+  });
+
+  // Concealed fulfillment origin (keyword prefilter over shipping/terms prose — NOT refund, whose
+  // return-window language would false-match).
+  {
+    const corpus = `${policyTexts.shipping || ""}\n${policyTexts.terms || ""}`;
+    const m = corpus.match(OVERSEAS_FULFILLMENT_RE);
+    out.fulfillment_signals = {
+      has_overseas_language: !!m,
+      text_excerpt: m ? corpus.slice(Math.max(0, (m.index || 0) - 40), (m.index || 0) + 180) : "",
+    };
+  }
+
+  // NAP (Name/Address/Phone) consistency across storefront, contact, legal pages + admin.
+  {
+    const sources: Record<string, { address?: string; phone?: string; email?: string; legal_name?: string }> = {
+      homepage: extractNapFields(out.homepage_text || ""),
+      contact_page: extractNapFields(out.contact_page_text || ""),
+      legal_pages: extractNapFields(`${policyTexts.legal_notice || ""}\n${policyTexts.terms || ""}`),
+      shopify_admin: {
+        address: out.store_meta?.address_full || out.business_identity?.legal_address || undefined,
+        phone: (out.store_meta?.phone || "").replace(/[^\d+]/g, "") || undefined,
+        email: out.business_identity?.contact_email || undefined,
+        legal_name: out.business_identity?.name || undefined,
+      },
+    };
+    const issues: string[] = [];
+    const emails = new Set(Object.values(sources).map((s) => s.email).filter(Boolean) as string[]);
+    const phones = new Set(Object.values(sources).map((s) => (s.phone || "").replace(/[^\d]/g, "").slice(-10)).filter(Boolean) as string[]);
+    if (emails.size > 1) issues.push(`different support emails across pages (${[...emails].join(", ")})`);
+    if (phones.size > 1) issues.push("different phone numbers across pages");
+    const phoneCountry = callingCodeCountry(out.store_meta?.phone);
+    const addrCountry = (out.store_meta?.country_code || "").toUpperCase();
+    if (phoneCountry && addrCountry && phoneCountry !== addrCountry) issues.push(`phone country (${phoneCountry}) ≠ address country (${addrCountry})`);
+    const legalName = sources.legal_pages.legal_name || sources.contact_page.legal_name;
+    const brand = (out.business_identity?.name || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+    if (legalName && brand) {
+      const ln = legalName.toLowerCase().replace(/\b(llc|inc|incorporated|ltd|limited|gmbh|llp|corp|co)\b/g, "").replace(/[^a-z0-9]/g, "");
+      if (ln && !ln.includes(brand) && !brand.includes(ln)) issues.push(`storefront brand "${out.business_identity?.name}" ≠ legal entity "${legalName}"`);
+    }
+    // Only assert consistency when we actually had ≥2 sources with data to compare.
+    const withData = Object.values(sources).filter((s) => s.email || s.phone || s.address || s.legal_name).length;
+    out.nap = { sources, issues, consistent: withData >= 2 ? issues.length === 0 : undefined };
+  }
 
   // ── Product price/availability samples (from already-fetched feed) ─────────
   out.product_samples = (products || []).slice(0, 15).map(p => ({
@@ -1365,6 +1727,14 @@ async function enrichDeepData(
  */
 function deepAutofixForCategory(category: string): { can_autofix: boolean; auto_fix_type: string | null; credit_cost: number } {
   const c = (category || "").toLowerCase();
+  // Trust & Identity findings are ADVISORY — they can't be auto-fixed (a real address, an aged
+  // domain, or a consistent identity is a business change, not a template). Keep this FIRST so
+  // e.g. "Registered Agent Address" isn't caught by the "address" → business_contact rule below.
+  if (
+    c.includes("registered agent") || c.includes("brand-geograph") || c.includes("geography mismatch") ||
+    c.includes("untrusted domain") || c.includes("new/untrusted") || c.includes("concealed fulfillment") ||
+    c.includes("nap inconsistency") || c.includes("contradictory policy") || c.includes("alias network")
+  ) return { can_autofix: false, auto_fix_type: null, credit_cost: 0 };
   if (c.includes("privacy")) return { can_autofix: true, auto_fix_type: "privacy_policy", credit_cost: 3 };
   if (c.includes("terms")) return { can_autofix: true, auto_fix_type: "terms_of_service", credit_cost: 3 };
   if (c.includes("refund") || c.includes("return")) return { can_autofix: true, auto_fix_type: "refund_policy", credit_cost: 3 };
@@ -1402,7 +1772,7 @@ function annotateDeepErrors(deepResult: any): void {
  * store isn't told it has suspension risks it has already satisfied. Mutates
  * deepResult in place and records the dropped items under passed_checks.
  */
-function reconcileDeepResult(deepResult: any, auditData: DeepAuditData): void {
+export function reconcileDeepResult(deepResult: any, auditData: DeepAuditData): void {
   const errors: any[] = deepResult?.critical_misrepresentation_errors;
   if (!Array.isArray(errors)) return;
 
@@ -1419,6 +1789,12 @@ function reconcileDeepResult(deepResult: any, auditData: DeepAuditData): void {
     if ((c.includes("refund") || c.includes("return")) && pp.refund_return?.exists && (pp.refund_return.word_count || 0) >= 80) return "Refund/Return policy present & substantive";
     if (c.includes("shipping") && pp.shipping?.exists && (pp.shipping.word_count || 0) >= 50) return "Shipping policy present & substantive";
     if ((c.includes("no ssl") || c.includes("insecure")) && auditData.https_enabled) return "HTTPS enabled";
+    // Trust & Identity — suppress any AI-emitted advisory finding the deterministic facts contradict,
+    // so a clean store isn't told it has a suspension risk it doesn't (moves it to passed_checks).
+    if (c.includes("registered agent") && auditData.registered_agent_match && !auditData.registered_agent_match.matched) return "Business address is not a known registered-agent address";
+    if ((c.includes("brand-geograph") || c.includes("geography mismatch")) && auditData.brand_geo && !auditData.brand_geo.mismatch) return "Brand geography consistent with business signals";
+    if ((c.includes("untrusted domain") || c.includes("new/untrusted") || c.includes("new domain")) && auditData.domain_age_days != null && auditData.domain_age_days >= 90) return "Domain is established (not newly registered)";
+    if (c.includes("nap inconsistency") && auditData.nap && auditData.nap.consistent === true) return "Business identity (NAP) consistent across sources";
     return null;
   };
 
@@ -1491,11 +1867,71 @@ export async function processDeepScan(
     // 2. Deep misrepresentation audit (AI).
     const deepResult = await runGeminiJson(buildDeepPrompt(auditData), 180000, scanId);
 
+    // 3. TRUST & IDENTITY LAYER — merge the deterministic misrepresentation findings
+    //    (registered-agent address, brand-geography, new/untrusted domain, concealed
+    //    fulfillment, NAP) with the AI findings. Deterministic findings win on dedupe.
+    try {
+      const trust = deriveTrustFindings(auditData);
+      const aiErrs: any[] = Array.isArray(deepResult.critical_misrepresentation_errors) ? deepResult.critical_misrepresentation_errors : [];
+      const seen = new Set<string>();
+      deepResult.critical_misrepresentation_errors = [...trust.errors, ...aiErrs].filter((e: any) => {
+        const k = (e?.category || "").toLowerCase().trim();
+        if (!k || seen.has(k)) return false;
+        seen.add(k); return true;
+      });
+      deepResult.passed_checks = Array.from(new Set([...(Array.isArray(deepResult.passed_checks) ? deepResult.passed_checks : []), ...trust.passed]));
+    } catch (e) { console.warn("[DeepScan] Trust layer merge failed (non-fatal):", e); }
+
+    // Optional CHECK 7 — alias-network reputation (low-confidence). OFF unless TRUST_REPUTATION_LOOKUP=1;
+    // never blocks a scan and only fires on concrete negative evidence.
+    if (process.env.TRUST_REPUTATION_LOOKUP === "1") {
+      try {
+        const rep = await lookupDomainReputation(auditData.business_identity?.domain || storeUrl);
+        if (rep?.negative) {
+          deepResult.critical_misrepresentation_errors.push({
+            category: "Alias Network Reputation", severity: "Medium",
+            evidence: rep.evidence || "External reputation signals suggest this domain/brand is associated with an alias network.",
+            merchant_friendly_explanation: `Low-confidence signal: external reputation sources flag this store's domain/brand pattern. ${rep.detail || ""}`.trim(),
+            google_policy_violated: "Misrepresentation",
+            remediation_steps: ["Build genuine, verifiable trust signals (reviews, consistent identity, real address).", "If this is a false association, document your legitimate operations for any appeal."],
+          });
+        }
+      } catch { /* reputation lookup is best-effort */ }
+    }
+
     // Drop AI findings the live-store facts contradict (deterministic safety net).
     reconcileDeepResult(deepResult, auditData);
 
     // Annotate findings with system auto-fix metadata (reuses the basic auto-fix engine).
     annotateDeepErrors(deepResult);
+
+    // Recompute the headline suspension risk so injected High/Medium findings are reflected.
+    {
+      const errs: any[] = deepResult.critical_misrepresentation_errors || [];
+      if (errs.some((e) => (e.severity || "").toLowerCase() === "high")) deepResult.suspension_risk = "High";
+      else if (errs.some((e) => (e.severity || "").toLowerCase() === "medium")) deepResult.suspension_risk = deepResult.suspension_risk === "High" ? "High" : "Medium";
+    }
+
+    // Surface the store-wide identity issues (registered-agent address, brand-geography) in the
+    // Store-Level Compliance card too — they are store-level, not product-level, problems.
+    try {
+      if (basicResult && !basicResult._error) {
+        const ident: any[] = [];
+        if (auditData.registered_agent_match?.matched) ident.push({
+          issue_description: "Your listed business address is a shared registered-agent / incorporation-service address, not a real place of business. Google reads this as a fake business location.",
+          severity: "High", suggested_fix: "Display a genuine operating or fulfillment address that matches your Merchant Center account.",
+          detailed_fix_steps: ["Replace the registered-agent address with a real operating/fulfillment address.", "Update it on your storefront, contact page and policy pages.", "Match it to your Merchant Center + business-verification details."],
+          auto_fixable: false, auto_fix_type: null, credit_cost: 0,
+        });
+        if (auditData.brand_geo?.token && auditData.brand_geo.mismatch) ident.push({
+          issue_description: `Your brand implies a ${auditData.brand_geo.implied_country} presence, but your address, phone, currency and domain don't support it. Google treats this as misrepresentation.`,
+          severity: "High", suggested_fix: "Establish a real presence in the implied country, or adjust branding so it doesn't imply a location you don't operate from.",
+          detailed_fix_steps: ["Align address/phone/currency with the country your brand implies.", "Or update branding to match where you actually operate.", "Set your Merchant Center target country to your real operating country."],
+          auto_fixable: false, auto_fix_type: null, credit_cost: 0,
+        });
+        if (ident.length) basicResult.customer_trust_and_policy = [...ident, ...(basicResult.customer_trust_and_policy || [])];
+      }
+    } catch { /* non-fatal */ }
 
     const combined = {
       scan_type: "deep",
@@ -1594,5 +2030,137 @@ export function extractBasicIssues(result: any): Array<{ fp: string; label: stri
       push(`${section}|${i.auto_fix_type || norm(i.issue_description || "")}`, i.issue_description || i.label || "Compliance issue", i.severity || "Medium");
     }
   }
+  return out;
+}
+
+export type ScanSummary = {
+  scanType: string;
+  totalIssues: number;
+  severity: { High: number; Medium: number; Low: number };
+  autofixable: number;
+  byCategory: Record<string, number>;
+  samples: Array<{ title: string; severity: string; category: string; autofixable: boolean; product?: string }>;
+  affectedProducts?: number;
+  pagesScanned?: number;
+  pagesMissing?: number;
+  brokenLinks?: number;
+  overallRisk?: string;
+};
+
+/**
+ * Compact, DB-safe summary of a StoreScan result for the owner-only admin analytics
+ * timeline. Handles all shapes: a flat Basic result, or the combined
+ * `{ basic_result, advanced_result, deep_result }` produced by Advanced/Deep scans.
+ * Captures counts by severity/category, autofixable count, key summary metrics and a
+ * handful of sample issues — never the full (potentially large) payload.
+ */
+export function summarizeScanResult(scanType: string, result: any): ScanSummary {
+  const severity = { High: 0, Medium: 0, Low: 0 };
+  const byCategory: Record<string, number> = {};
+  const samples: ScanSummary["samples"] = [];
+  let autofixable = 0;
+  let total = 0;
+
+  const normSev = (s: any): "High" | "Medium" | "Low" =>
+    s === "High" || s === "Medium" || s === "Low" ? s : "Medium";
+  const add = (title: any, sev: any, category: string, autofix: boolean, product?: any) => {
+    total++;
+    const s = normSev(sev);
+    severity[s]++;
+    byCategory[category] = (byCategory[category] || 0) + 1;
+    if (autofix) autofixable++;
+    if (samples.length < 15) {
+      samples.push({
+        title: String(title || "Issue").slice(0, 180),
+        severity: s,
+        category,
+        autofixable: !!autofix,
+        ...(product ? { product: String(product).slice(0, 120) } : {}),
+      });
+    }
+  };
+
+  const CATS: Record<string, string> = {
+    merchant_center_compliance: "Merchant Center",
+    customer_trust_and_policy: "Trust & Policy",
+    site_structure_and_seo: "Structure & SEO",
+    missing_pages: "Missing pages",
+    broken_links: "Broken links",
+  };
+
+  const collectBasic = (b: any) => {
+    if (!b || typeof b !== "object") return;
+    for (const key of Object.keys(CATS)) {
+      const arr = Array.isArray(b[key]) ? b[key] : [];
+      for (const it of arr) {
+        const title =
+          key === "missing_pages"
+            ? `Missing page: ${it?.label || it?.url || "required page"}`
+            : it?.issue_description || it?.label || "Issue";
+        add(title, it?.severity || (key === "missing_pages" ? "High" : "Medium"), CATS[key], !!it?.auto_fixable);
+      }
+    }
+  };
+  const collectAdvanced = (a: any) => {
+    const errs = Array.isArray(a?.errors_found) ? a.errors_found : [];
+    for (const e of errs) {
+      add(
+        e?.merchant_friendly_description || e?.policy_violation_type || "Product feed issue",
+        "High",
+        "Product feed",
+        !!e?.autofix_metadata?.can_autofix,
+        e?.product_title,
+      );
+    }
+  };
+  // Deep result shape varies — scan any nested array of issue-like objects.
+  const collectDeep = (d: any) => {
+    if (!d || typeof d !== "object") return;
+    for (const v of Object.values(d)) {
+      if (!Array.isArray(v)) continue;
+      for (const it of v) {
+        if (it && typeof it === "object" && (it.issue_description || it.merchant_friendly_description)) {
+          add(
+            it.issue_description || it.merchant_friendly_description,
+            it.severity || "High",
+            "Misrepresentation",
+            !!it.auto_fixable || !!it?.autofix_metadata?.can_autofix,
+            it.product_title,
+          );
+        }
+      }
+    }
+  };
+
+  const out: ScanSummary = {
+    scanType: String(scanType || "").toUpperCase(),
+    totalIssues: 0,
+    severity,
+    autofixable: 0,
+    byCategory,
+    samples,
+  };
+
+  if (result?.basic_result || result?.advanced_result || result?.deep_result) {
+    collectBasic(result.basic_result);
+    collectAdvanced(result.advanced_result);
+    collectDeep(result.deep_result);
+    if (result?.advanced_result?.affected_products_count != null) {
+      out.affectedProducts = result.advanced_result.affected_products_count;
+    }
+  } else {
+    collectBasic(result); // flat Basic result
+  }
+
+  const ss = result?.basic_result?.scan_summary || result?.scan_summary;
+  if (ss && typeof ss === "object") {
+    if (ss.pages_scanned != null) out.pagesScanned = Number(ss.pages_scanned) || 0;
+    if (ss.pages_missing != null) out.pagesMissing = Number(ss.pages_missing) || 0;
+    if (ss.broken_links_found != null) out.brokenLinks = Number(ss.broken_links_found) || 0;
+    if (ss.overall_risk) out.overallRisk = String(ss.overall_risk);
+  }
+
+  out.totalIssues = total;
+  out.autofixable = autofixable;
   return out;
 }

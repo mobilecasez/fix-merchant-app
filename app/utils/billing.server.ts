@@ -206,6 +206,46 @@ export async function incrementProductUsage(shop: string) {
 }
 
 /**
+ * Remaining spendable credits = effective limit − used (never negative).
+ */
+export function getRemainingCredits(subscription: any): number {
+  if (!subscription) return 0;
+  return Math.max(0, getEffectiveProductLimit(subscription) - getProductsUsed(subscription));
+}
+
+/**
+ * Atomically charge `credits` against the shop's remaining balance. Returns true if
+ * charged, false if insufficient. A single conditional UPDATE (guarded by the effective
+ * limit) means concurrent charges can't overspend — unlike the non-atomic
+ * incrementProductUsage loop. Effective limit = periodProductLimit ?? plan.productLimit.
+ */
+export async function chargeCredits(shop: string, credits: number): Promise<boolean> {
+  if (credits <= 0) return true;
+  if (DEV_STORES.includes(shop)) return true; // unlimited dev stores
+  const affected = await prisma.$executeRaw`
+    UPDATE "ShopSubscription" AS s
+    SET "productsUsed" = s."productsUsed" + ${credits}, "updatedAt" = now()
+    FROM "SubscriptionPlan" AS p
+    WHERE s."planId" = p."id"
+      AND s."shop" = ${shop}
+      AND s."status" = 'active'
+      AND s."productsUsed" + ${credits} <= COALESCE(s."periodProductLimit", p."productLimit")
+  `;
+  return affected === 1;
+}
+
+/**
+ * Refund previously-charged credits (e.g. a bulk job failed before doing the work).
+ */
+export async function refundCredits(shop: string, credits: number): Promise<void> {
+  if (credits <= 0 || DEV_STORES.includes(shop)) return;
+  await prisma.shopSubscription.updateMany({
+    where: { shop, productsUsed: { gte: credits } },
+    data: { productsUsed: { decrement: credits } },
+  });
+}
+
+/**
  * Reset monthly product usage (should be called via cron or webhook)
  */
 export async function resetMonthlyUsage(shop: string) {

@@ -11,8 +11,11 @@ import prisma from "./db.server";
 const shopify = shopifyApp({
   apiKey: process.env.SHOPIFY_API_KEY,
   apiSecretKey: process.env.SHOPIFY_API_SECRET || "",
-  apiVersion: ApiVersion.July24,
-  scopes: ["read_products", "write_products"],
+  apiVersion: ApiVersion.July25,
+  // read_orders + read_reports power the Price Radar analytics (order counts + ShopifyQL
+  // sessions); script_tags let us inject the storefront visit pixel. Adding scopes forces
+  // existing merchants to re-authorize on next visit.
+  scopes: ["read_products", "write_products", "read_orders", "read_reports", "read_script_tags", "write_script_tags"],
   appUrl: process.env.SHOPIFY_APP_URL || "",
   authPathPrefix: "/auth",
   sessionStorage: new PrismaSessionStorage(prisma),
@@ -30,7 +33,7 @@ const shopify = shopifyApp({
 });
 
 export default shopify;
-export const apiVersion = ApiVersion.July24;
+export const apiVersion = ApiVersion.July25;
 export const addDocumentResponseHeaders = shopify.addDocumentResponseHeaders;
 export const authenticate = shopify.authenticate;
 export const unauthenticated = shopify.unauthenticated;

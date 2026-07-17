@@ -29,13 +29,17 @@ export async function action({ request }: ActionFunctionArgs) {
     imagesToAdd, // array of image URLs to add to the product
   } = productData;
 
-  const descriptionHtml = await convertMarkdownToHtml(description);
+  // Only write descriptionHtml when a real description is supplied — an empty/undefined
+  // description must NOT blank the merchant's existing product description.
+  const descriptionHtml = description && String(description).trim()
+    ? await convertMarkdownToHtml(description)
+    : undefined;
 
   const productInput: any = {
     id,
     title,
     handle,
-    descriptionHtml,
+    ...(descriptionHtml ? { descriptionHtml } : {}),
     seo: { description: meta_description },
     tags,
     ...(vendor && vendor.trim() ? { vendor: vendor.trim() } : {}),

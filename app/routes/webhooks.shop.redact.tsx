@@ -27,20 +27,34 @@ import db from "../db.server";
  * Reference: https://shopify.dev/docs/apps/build/privacy-law-compliance
  */
 export const action = async ({ request }: ActionFunctionArgs) => {
-  const { shop, topic, payload } = await authenticate.webhook(request);// GDPR: Shop data erasure request
-  // This webhook is sent by Shopify 48 hours after app uninstallation
-  // We MUST delete all shop data immediately upon receiving this webhook
-  // Reference: https://shopify.dev/docs/apps/build/privacy-law-compliance
-  
-  if (payload) {
-    const data = JSON.parse(payload.toString());// Delete all data related to this shop
+  const { shop } = await authenticate.webhook(request);
+  // GDPR shop/redact (sent 48h after uninstall): permanently delete all data for this shop.
+  // NOTE: `payload` from authenticate.webhook is ALREADY a parsed object — re-parsing it via
+  // JSON.parse(payload.toString()) throws ("[object Object]" isn't JSON) and made this webhook
+  // return 500. We only need `shop`, so delete directly and always acknowledge with 200.
+  try {
     await Promise.all([
       db.session.deleteMany({ where: { shop } }),
       db.shopSubscription.deleteMany({ where: { shop } }),
       db.usageHistory.deleteMany({ where: { shop } }),
       db.shopReview.deleteMany({ where: { shop } }),
       db.appSettings.deleteMany({ where: { shop } }),
-    ]);}
+      // Price Radar / AI era data — leaving these would keep dead shops in cron batches
+      // (weekly digest) and retain merchant data past the GDPR deadline.
+      db.aiReport.deleteMany({ where: { shop } }),
+      db.priceRadarSettings.deleteMany({ where: { shop } }),
+      db.googleAdsSettings.deleteMany({ where: { shop } }),
+      db.productPriceResearch.deleteMany({ where: { shop } }),
+      db.productSessionImport.deleteMany({ where: { shop } }),
+      db.productVisitDaily.deleteMany({ where: { shop } }),
+      db.priceBatchJob.deleteMany({ where: { shop } }),
+      db.productAICheck.deleteMany({ where: { shop } }),
+      db.storeMonitor.deleteMany({ where: { shop } }),
+      db.storeScan.deleteMany({ where: { shop } }),
+    ]);
+  } catch (err) {
+    console.error(`[shop/redact] deletion failed for ${shop}:`, err);
+  }
 
   return new Response(null, { status: 200 });
 };

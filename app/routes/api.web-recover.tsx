@@ -3,6 +3,7 @@ import prisma from "../db.server";
 import { runMonitoringScan } from "../utils/store-scanner.server";
 import { mapBasicResult, toPreview } from "../utils/web-scan.server";
 import { recoveryHashOf } from "./api.web-pay";
+import { runWebTierScan } from "../utils/web-tier-scan.server";
 import { webSessionStorage, getWebSession } from "../utils/web-session.server";
 
 // Redeem a post-payment recovery token: re-runs the scan for the paid store and
@@ -21,23 +22,12 @@ export async function action({ request }: ActionFunctionArgs) {
     return json({ ok: false, error: "Invalid or unknown recovery key." }, { status: 404 });
   }
 
-  // Re-run the live Basic scan; refresh stored results if it succeeds.
-  try {
-    const result = await runMonitoringScan(scan.storeUrl);
-    if (result) {
-      const mapped = mapBasicResult(result, scan.storeUrl, scan.storeDomain);
-      await prisma.webScan.update({
-        where: { id: scan.id },
-        data: {
-          score: mapped.score, riskLevel: mapped.riskLevel,
-          totalIssues: mapped.totalIssues, highCount: mapped.highCount,
-          preview: toPreview(mapped, 2), fullResult: mapped.issues as any,
-        },
-      });
-    }
-  } catch (e) {
-    console.error("[web-recover] re-scan failed (keeping prior results):", e);
-  }
+  // Re-run a fresh scan for the PAID tier in the background; the report screen polls
+  // until it's COMPLETE (Basic just re-runs the basic scan). Survives this request.
+  await prisma.webScan.update({ where: { id: scan.id }, data: { scanStatus: "PROCESSING" } }).catch(() => {});
+  setImmediate(() => {
+    runWebTierScan(scan.id, scan.paidTier || "basic").catch((e) => console.error("[web-recover] bg scan error:", e));
+  });
 
   // Re-authenticate the session to the buyer's email so the gated report loads.
   const session = await getWebSession(request);

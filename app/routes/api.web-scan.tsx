@@ -1,7 +1,7 @@
 import { json, type ActionFunctionArgs, type LoaderFunctionArgs } from "@remix-run/node";
 import prisma from "../db.server";
 import { runMonitoringScan } from "../utils/store-scanner.server";
-import { normalizeStoreUrl, mapBasicResult, toPreview, assertPublicHost } from "../utils/web-scan.server";
+import { normalizeStoreUrl, mapBasicResult, toPreview, resolveScanTargets } from "../utils/web-scan.server";
 import { getWebEmail } from "../utils/web-session.server";
 
 const PREVIEW_COUNT = 2; // free issues shown in the preview; the rest are locked
@@ -75,12 +75,19 @@ export async function action({ request }: ActionFunctionArgs) {
       });
     }
 
-    // SSRF guard: confirm the host resolves to a public IP before any server-side fetch.
-    if (!(await assertPublicHost(domain))) {
+    // SSRF guard + apex/www fallback: resolve the public, reachable base URLs (apex first, then the
+    // www sibling) so a bare "zop.in" scans even when the store actually serves on www / redirects.
+    const targets = await resolveScanTargets(domain);
+    if (targets.length === 0) {
       return json({ ok: false, error: "That store URL could not be reached as a public store." }, { status: 400 });
     }
-    // Run the real Basic scan against the live storefront.
-    const result = await runMonitoringScan(url);
+    // Try each reachable host; the first that returns a live (non-password) storefront wins.
+    let result: any = null;
+    let scannedUrl = url;
+    for (const target of targets) {
+      result = await runMonitoringScan(target);
+      if (result) { scannedUrl = target; break; }
+    }
     if (!result) {
       return json({
         ok: false,
@@ -88,13 +95,14 @@ export async function action({ request }: ActionFunctionArgs) {
       }, { status: 422 });
     }
 
-    const mapped = mapBasicResult(result, url, domain);
+    // Keep the canonical apex `domain` as the dedup key, but record the URL that actually served.
+    const mapped = mapBasicResult(result, scannedUrl, domain);
     const preview = toPreview(mapped, PREVIEW_COUNT);
 
     const saved = await prisma.webScan.create({
       data: {
         storeDomain: domain,
-        storeUrl: url,
+        storeUrl: scannedUrl,
         ip,
         userAgent,
         score: mapped.score,
@@ -110,7 +118,7 @@ export async function action({ request }: ActionFunctionArgs) {
       ok: true,
       alreadyScanned: false,
       scanId: saved.id,
-      storeUrl: url,
+      storeUrl: scannedUrl,
       storeDomain: domain,
       score: mapped.score,
       riskLevel: mapped.riskLevel,

@@ -1,0 +1,24 @@
+name: Monthly Best-Sellers Refresh
+
+# Re-ranks each shop's last-30-day best sellers (net of ad cost) and re-tags the products so their
+# auto-updating "Best Sellers" smart collection stays current. The endpoint skips shops that never
+# created one and shops that uninstalled.
+#
+# Uses the SAME repo secrets as the other crons:
+#   APP_URL      e.g. https://shopflixai-production.up.railway.app
+#   CRON_SECRET  must match CRON_SECRET set on Railway
+
+on:
+  schedule:
+    - cron: "0 4 1 * *" # 1st of each month, 04:00 UTC ≈ 09:30 IST
+  workflow_dispatch: {} # allow manual "Run workflow" from the Actions tab
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger best-sellers refresh
+        run: |
+          curl -fsS --max-time 300 -X POST \
+            -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" \
+            "${{ secrets.APP_URL }}/api/cron/bestseller-refresh"

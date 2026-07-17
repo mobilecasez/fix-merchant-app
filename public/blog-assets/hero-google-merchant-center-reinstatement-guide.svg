@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630"><title>Google Merchant Center Reinstatement — Reinstated, Cleanly</title>
+<defs>
+<linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#07101f"/><stop offset="1" stop-color="#0d1a30"/></linearGradient>
+<radialGradient id="glowGreen" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#38d39a" stop-opacity="0.32"/><stop offset="1" stop-color="#38d39a" stop-opacity="0"/></radialGradient>
+<radialGradient id="glowCyan" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#41c6ee" stop-opacity="0.22"/><stop offset="1" stop-color="#41c6ee" stop-opacity="0"/></radialGradient>
+<linearGradient id="shieldFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0e1c34"/><stop offset="1" stop-color="#0a1526"/></linearGradient>
+</defs>
+<rect width="1200" height="630" fill="url(#bg)"/>
+
+<!-- decorative dot grid -->
+<g fill="#25395a" opacity="0.5">
+<circle cx="80" cy="90" r="2"/><circle cx="140" cy="90" r="2"/><circle cx="200" cy="90" r="2"/><circle cx="80" cy="150" r="2"/><circle cx="140" cy="150" r="2"/><circle cx="80" cy="210" r="2"/>
+<circle cx="1120" cy="540" r="2"/><circle cx="1060" cy="540" r="2"/><circle cx="1000" cy="540" r="2"/><circle cx="1120" cy="480" r="2"/><circle cx="1060" cy="480" r="2"/><circle cx="1120" cy="420" r="2"/>
+</g>
+
+<!-- soft glows -->
+<circle cx="930" cy="300" r="280" fill="url(#glowGreen)"/>
+<circle cx="1080" cy="120" r="220" fill="url(#glowCyan)"/>
+
+<!-- concentric ring motif behind icon -->
+<g stroke="#25395a" fill="none" opacity="0.55">
+<circle cx="930" cy="315" r="210" stroke-width="1"/>
+<circle cx="930" cy="315" r="160" stroke-width="1"/>
+</g>
+
+<!-- ===== LEFT TEXT BLOCK ===== -->
+<!-- eyebrow -->
+<rect x="80" y="232" width="11" height="11" rx="2.5" fill="#41c6ee"/>
+<text x="104" y="242" font-family="Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="19" font-weight="700" letter-spacing="3.5" fill="#41c6ee">REINSTATEMENT</text>
+
+<!-- thematic phrase -->
+<text x="78" y="330" font-family="Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="86" font-weight="800" letter-spacing="-1.5" fill="#e9f0fa">Reinstated,</text>
+<text x="78" y="424" font-family="Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="86" font-weight="800" letter-spacing="-1.5" fill="#38d39a">cleanly.</text>
+
+<!-- subline -->
+<text x="80" y="486" font-family="Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="22" font-weight="500" fill="#9fb2c9">Fix every signal first — then appeal once.</text>
+
+<!-- ===== ICON: suspended shield restored ===== -->
+<g transform="translate(930 315)">
+<!-- outer shield plate -->
+<path d="M0 -150 L118 -106 L118 18 C118 96 64 150 0 178 C-64 150 -118 96 -118 18 L-118 -106 Z" fill="url(#shieldFill)" stroke="#25395a" stroke-width="1.5"/>
+<!-- inner shield ring -->
+<path d="M0 -120 L92 -85 L92 14 C92 76 50 119 0 142 C-50 119 -92 76 -92 14 L-92 -85 Z" fill="none" stroke="#25395a" stroke-width="1" opacity="0.7"/>
+
+<!-- success checkmark -->
+<path d="M-46 6 L-12 42 L52 -38" fill="none" stroke="#38d39a" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/>
+
+<!-- restore / re-review arrow circling the shield top -->
+<g stroke="#41c6ee" stroke-width="6" fill="none" stroke-linecap="round">
+<path d="M-78 -98 A150 150 0 0 1 70 -110"/>
+</g>
+<path d="M70 -110 L52 -126 M70 -110 L48 -98" stroke="#41c6ee" stroke-width="6" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+
+<!-- small feed/grid rows below check (merchant feed motif) -->
+<g opacity="0.9">
+<rect x="-44" y="74" width="88" height="9" rx="4.5" fill="#9fb2c9" opacity="0.55"/>
+<rect x="-44" y="92" width="60" height="9" rx="4.5" fill="#9fb2c9" opacity="0.35"/>
+</g>
+</g>
+
+<!-- status chips near icon -->
+<g font-family="Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif">
+<g transform="translate(708 188)">
+<rect width="150" height="40" rx="12" fill="#0a1526" stroke="#25395a" stroke-width="1"/>
+<circle cx="24" cy="20" r="5" fill="#ef6f6f"/>
+<text x="40" y="26" font-size="17" font-weight="600" fill="#9fb2c9">Suspended</text>
+</g>
+<g transform="translate(708 442)">
+<rect width="150" height="40" rx="12" fill="#0a1526" stroke="#25395a" stroke-width="1"/>
+<circle cx="24" cy="20" r="5" fill="#38d39a"/>
+<text x="40" y="26" font-size="17" font-weight="600" fill="#e9f0fa">Approved</text>
+</g>
+</g>
+
+<!-- baseline brand mark -->
+<text x="80" y="566" font-family="Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="17" font-weight="700" letter-spacing="0.5" fill="#6b819c">ShopFlix AI<tspan fill="#41c6ee">  ·  </tspan><tspan font-weight="500">Merchant Center compliance</tspan></text>
+</svg>

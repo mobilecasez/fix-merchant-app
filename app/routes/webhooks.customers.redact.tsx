@@ -1,6 +1,5 @@
 import type { ActionFunctionArgs } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
-import db from "../db.server";
 
 /**
  * CUSTOMER REDACT WEBHOOK (GDPR)
@@ -24,14 +23,9 @@ import db from "../db.server";
  * Reference: https://shopify.dev/docs/apps/build/privacy-law-compliance
  */
 export const action = async ({ request }: ActionFunctionArgs) => {
-  const { shop, topic, payload } = await authenticate.webhook(request);// GDPR: Customer data erasure request
-  // Delete all customer-related data when requested
-  
-  if (payload) {
-    const data = JSON.parse(payload.toString());
-    const customerId = data.customer?.id;// This app doesn't store customer data, so nothing to delete// If you stored customer data, delete it here:
-    // await db.customerData.deleteMany({ where: { customerId } });
-  }
-
+  await authenticate.webhook(request);
+  // GDPR customers/redact: this app stores NO customer-level personal data, so there is
+  // nothing to delete — just acknowledge. NOTE: `payload` from authenticate.webhook is
+  // already parsed; re-parsing it via JSON.parse(payload.toString()) throws and returned 500.
   return new Response(null, { status: 200 });
 };

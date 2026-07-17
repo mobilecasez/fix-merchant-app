@@ -40,8 +40,16 @@ function parseCategories(fileContent: string): CategoryNode[] {
   return root.children;
 }
 
-export function getProductCategories() {
-  const filePath = path.resolve(process.cwd(), "categories.txt");
-  const fileContent = fs.readFileSync(filePath, "utf-8");
-  return parseCategories(fileContent);
+export function getProductCategories(): CategoryNode[] {
+  try {
+    const filePath = path.resolve(process.cwd(), "categories.txt");
+    const fileContent = fs.readFileSync(filePath, "utf-8");
+    return parseCategories(fileContent);
+  } catch (err) {
+    // categories.txt is a runtime dependency (see .railwayignore note). If it's ever
+    // missing on a deploy, degrade gracefully — return no categories so the page still
+    // opens (empty category picker) instead of throwing and breaking the whole route.
+    console.error("[categories.server] Could not read categories.txt — category picker will be empty:", err);
+    return [];
+  }
 }

@@ -1,41 +1,41 @@
 import { json, type ActionFunctionArgs } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
-import { GoogleGenerativeAI } from "@google/generative-ai";
-import { retryOperation } from "../utils/retry.js";
+import { geminiGenerateText, extractJson } from "../utils/gemini.server";
 import {
   incrementProductUsage, getOrCreateSubscription, getProductsUsed, getEffectiveProductLimit,
 } from "../utils/billing.server";
 
-const genAI = new GoogleGenerativeAI(process.env.GOOGLE_GEMINI_API_KEY!);
-
-/** Run Gemini and parse a JSON object from the response. */
-async function runGeminiJson(prompt: string, retryId: string, temperature = 0.2): Promise<any> {
-  const model = genAI.getGenerativeModel({
-    model: "gemini-2.5-flash",
-    generationConfig: { temperature, responseMimeType: "application/json" },
-  });
-  const text = await retryOperation(async () => {
-    const result = await Promise.race([
-      model.generateContent(prompt),
-      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("AI timed out")), 90000)),
-    ]);
-    return (await (result as any).response).text();
-  }, 3, 1500, retryId);
-  const start = text.indexOf("{");
-  const end = text.lastIndexOf("}");
-  return JSON.parse(text.substring(start, end + 1));
+/**
+ * Run Gemini and parse JSON — uses the shared model-fallback helper with JSON mode, a high output
+ * cap and low-thinking (Gemini 3's dynamic thinking otherwise burns the whole output budget and
+ * truncates), and the robust `extractJson` salvage (handles top-level arrays + trailing braces,
+ * which the old indexOf('{')…lastIndexOf('}') slice broke on). Time-boxed so a big prompt can't hang.
+ */
+async function runGeminiJson(prompt: string, _retryId: string, temperature = 0.2): Promise<any> {
+  const text = await Promise.race([
+    geminiGenerateText(
+      { config: { generationConfig: { temperature, responseMimeType: "application/json", maxOutputTokens: 8192 } }, lowThinking: true },
+      prompt,
+    ),
+    new Promise<never>((_, reject) => setTimeout(() => reject(new Error("AI timed out")), 120000)),
+  ]);
+  const parsed = extractJson(text);
+  if (!parsed) throw new Error("AI returned unparseable JSON");
+  return parsed;
 }
 
-/** Pull every product with its tags/type/vendor (paginated, up to ~250). */
-async function fetchAllProducts(admin: any): Promise<Array<{ id: string; title: string; type: string; vendor: string; tags: string[] }>> {
-  const out: any[] = [];
+type CatProduct = { id: string; title: string; handle: string; type: string; vendor: string; tags: string[] };
+
+/** Pull the WHOLE catalogue (250/page, uncapped up to ~6000) with the fields the AI + rules need. */
+async function fetchAllProducts(admin: any): Promise<CatProduct[]> {
+  const out: CatProduct[] = [];
   let cursor: string | null = null;
-  for (let page = 0; page < 5; page++) {
+  for (let page = 0; page < 24; page++) {
     const resp: any = await admin.graphql(`#graphql
       query products($cursor: String) {
-        products(first: 50, after: $cursor) {
+        products(first: 250, after: $cursor, query: "status:active") {
           pageInfo { hasNextPage endCursor }
-          edges { node { id title productType vendor tags } }
+          edges { node { id title handle productType vendor tags } }
         }
       }
     `, { variables: { cursor } });
@@ -46,11 +46,35 @@ async function fetchAllProducts(admin: any): Promise<Array<{ id: string; title: 
       out.push({
         id: e.node.id,
         title: e.node.title || "",
+        handle: e.node.handle || "",
         type: e.node.productType || "",
         vendor: e.node.vendor || "",
         tags: e.node.tags || [],
       });
     }
+    if (!conn.pageInfo?.hasNextPage) break;
+    cursor = conn.pageInfo.endCursor;
+  }
+  return out;
+}
+
+/** Cursor-paginated fetch of {handle,title} nodes for a connection (collections / pages). */
+async function fetchAllNodes(admin: any, field: "collections" | "pages"): Promise<Array<{ handle: string; title: string }>> {
+  const out: Array<{ handle: string; title: string }> = [];
+  let cursor: string | null = null;
+  for (let page = 0; page < 12; page++) {
+    const resp: any = await admin.graphql(`#graphql
+      query nodes($cursor: String) {
+        ${field}(first: 250, after: $cursor) {
+          pageInfo { hasNextPage endCursor }
+          edges { node { handle title } }
+        }
+      }
+    `, { variables: { cursor } });
+    const data = await resp.json();
+    const conn = data?.data?.[field];
+    if (!conn) break;
+    for (const e of conn.edges) out.push({ handle: e.node.handle, title: e.node.title });
     if (!conn.pageInfo?.hasNextPage) break;
     cursor = conn.pageInfo.endCursor;
   }
@@ -89,66 +113,106 @@ export async function action({ request }: ActionFunctionArgs) {
       const products = await fetchAllProducts(admin);
       if (!products.length) return json({ error: "No products found in your store." }, { status: 400 });
 
-      // Build tag / type / vendor frequency maps (token-efficient summary for AI)
-      const tagFreq: Record<string, number> = {};
-      const typeFreq: Record<string, number> = {};
-      const vendorFreq: Record<string, number> = {};
-      for (const p of products) {
-        for (const t of p.tags) tagFreq[t] = (tagFreq[t] || 0) + 1;
-        if (p.type) typeFreq[p.type] = (typeFreq[p.type] || 0) + 1;
-        if (p.vendor) vendorFreq[p.vendor] = (vendorFreq[p.vendor] || 0) + 1;
-      }
-      const top = (m: Record<string, number>, n: number) =>
-        Object.entries(m).sort((a, b) => b[1] - a[1]).slice(0, n).map(([k, v]) => ({ value: k, count: v }));
-
       const creditErr = await checkCredits(3);
       if (creditErr) return creditErr;
 
-      const prompt = `You are a Shopify merchandising expert. A store has these product TAGS, TYPES and VENDORS (with how many products carry each). Design a clean, shopper-friendly set of COLLECTIONS that organise this catalog so customers can browse easily.
+      // Send the WHOLE catalog to the AI — the point is to read every TITLE and infer the real
+      // brand / model / category structure, not just prettify existing tags. Compact & indexed.
+      const catalog = products.map((p, i) => ({ i, t: p.title, ty: p.type || undefined, v: p.vendor || undefined }));
 
-PRODUCT TAGS (tag : product count):
-${JSON.stringify(top(tagFreq, 60))}
+      const prompt = `You are a world-class Shopify merchandising expert. Below is a store's FULL product catalog. Each item has an index "i", a title "t", and optional product type "ty" and vendor "v".
 
-PRODUCT TYPES:
-${JSON.stringify(top(typeFreq, 30))}
+Read the PRODUCT TITLES and infer the true structure of this catalog — brand, product line / MODEL, category, material, colour, compatibility, use-case. Example: from "UAG Monarch Rugged Case for iPhone 15 Pro Max" infer brand=UAG, model="iPhone 15 Pro Max", category=Case. Then design a set of HIGH-CONVERTING collections shoppers actually search and browse for.
 
-VENDORS/BRANDS:
-${JSON.stringify(top(vendorFreq, 30))}
+CATALOG (${products.length} products):
+${JSON.stringify(catalog)}
 
-TOTAL PRODUCTS: ${products.length}
+Define every collection with a TITLE-KEYWORD RULE the system applies automatically: "title_all" is the list of lowercase words/phrases that a product's TITLE must ALL contain to belong. Optionally also constrain by exact product_type or vendor. Examples:
+- "iPhone 15 Pro Cases"  -> title_all: ["iphone 15 pro", "case"]
+- "Samsung Galaxy S24 Screen Protectors" -> title_all: ["galaxy s24", "screen protector"]
+- "Leather Wallets" -> title_all: ["leather", "wallet"]
+- "UAG Accessories" -> title_all: ["uag"]   (or vendor: "UAG")
 
 RULES:
-1. Group suggestions under intuitive PARENT GROUPS (e.g. "By Category", "By Gender", "By Brand", "By Price", "Featured"). Use whatever groups fit THIS catalog (apparel → Gender/Category/Size; phone cases → Phone Model/Type; etc.).
-2. Every collection must be backed by a concrete RULE the system can apply automatically: match on a TAG, a PRODUCT_TYPE, or a VENDOR that actually exists in the data above.
-3. Only suggest collections that will contain products (the rule value must exist in the data).
-4. Give each collection a clean shopper-facing title and a one-line description.
-5. Suggest 6–18 collections total. Skip near-duplicates.
+1. Group collections under intuitive PARENT GROUPS that fit THIS catalog (e.g. "By Brand", "By Model / Device", "By Category", "By Material / Feature", "Bundles & Featured").
+2. Choose title_all keywords that are SPECIFIC enough to be accurate yet BROAD enough to catch every matching product — use the exact brand/model/category tokens that appear in the titles.
+3. Produce 15-40 collections that together cover most of the catalog, with minimal near-duplicates. Favour model+category combos ("iPhone 15 Pro Cases") that convert.
+4. Each collection: a clean shopper-facing title + a one-line SEO description.
+5. title_all: lowercase, trimmed keywords only. No regex, no punctuation-only tokens.
 6. Output valid JSON only — no markdown.
 
 Return ONLY:
-{
-  "groups": [
-    {
-      "group": "By Category",
-      "collections": [
-        { "title": "T-Shirts", "rule_field": "TAG | TYPE | VENDOR", "rule_value": "t-shirts", "description": "Short shopper-facing description", "est_products": 12 }
-      ]
-    }
-  ]
-}`;
+{ "groups": [ { "group": "By Model / Device", "collections": [ { "title": "iPhone 15 Pro Cases", "description": "...", "title_all": ["iphone 15 pro","case"], "product_type": null, "vendor": null } ] } ] }`;
 
       const result = await runGeminiJson(prompt, "suggest_collections");
+
+      // Compute membership DETERMINISTICALLY in code (accurate counts, drop empties/dupes). The AI
+      // proposes the rules; the app decides who's actually in — so no hallucinated product lists.
+      // On very large catalogs the local scan is over the fetched window (≤6000); the created smart
+      // collection matches the WHOLE catalog, so when truncated we keep low-count collections (their
+      // real membership can be larger) and treat counts as a lower bound.
+      const truncated = products.length >= 6000;
+      const minCount = truncated ? 1 : 3;
+      const norm = (s: string) => (s || "").toLowerCase().trim();
+      const seenRule = new Set<string>();
+      const groups = ((result.groups || []) as any[]).map((g: any) => ({
+        group: g.group || "Collections",
+        collections: ((g.collections || []) as any[]).map((c: any) => {
+          const titleAll: string[] = (c.title_all || []).map((k: string) => norm(k)).filter(Boolean);
+          const pType = c.product_type ? norm(c.product_type) : null;
+          const vendor = c.vendor ? norm(c.vendor) : null;
+          if (!titleAll.length && !pType && !vendor) return null;
+          const ruleKey = JSON.stringify([titleAll, pType, vendor]);
+          if (seenRule.has(ruleKey)) return null; // drop duplicate rules across groups
+          seenRule.add(ruleKey);
+          let count = 0;
+          for (const p of products) {
+            const t = norm(p.title);
+            if (titleAll.length && !titleAll.every((k) => t.includes(k))) continue;
+            if (pType && norm(p.type) !== pType) continue;
+            if (vendor && norm(p.vendor) !== vendor) continue;
+            count++;
+          }
+          return { title: String(c.title || "").trim(), description: String(c.description || "").trim(), title_all: titleAll, product_type: c.product_type || null, vendor: c.vendor || null, count };
+        }).filter((c: any) => c && c.title && c.count >= minCount),
+      })).filter((g: any) => g.collections.length);
+
+      // Only charge once we've confirmed the AI produced usable collections.
+      if (!groups.length) return json({ error: "The AI couldn't design usable collections for this catalog (too few matching products). No credits were charged." }, { status: 422 });
       await chargeCredits(session.shop, 3);
-      return json({ success: true, suggestions: result.groups || [], totalProducts: products.length, creditsUsed: 3 });
+
+      return json({ success: true, suggestions: groups, totalProducts: products.length, truncated, creditsUsed: 3 });
     }
 
     // ── Create the selected collections as Shopify smart collections ──────────
     if (intent === "create_collections") {
-      const selected: Array<{ title: string; rule_field: string; rule_value: string; description?: string }> = body.collections || [];
+      const selected: Array<any> = body.collections || [];
       if (!selected.length) return json({ error: "No collections selected." }, { status: 400 });
 
-      const COLUMN_BY_FIELD: Record<string, string> = { TAG: "TAG", TYPE: "TYPE", VENDOR: "VENDOR" };
-      const QUERY_FIELD: Record<string, string> = { TAG: "tag", TYPE: "product_type", VENDOR: "vendor" };
+      // Build a smart-collection ruleSet from the AI match spec (title keywords + optional
+      // type/vendor). Falls back to the legacy single rule_field/rule_value shape.
+      const buildRules = (c: any): any[] => {
+        const rules: any[] = [];
+        for (const kw of (Array.isArray(c.title_all) ? c.title_all : [])) {
+          const v = String(kw || "").trim();
+          if (v) rules.push({ column: "TITLE", relation: "CONTAINS", condition: v });
+        }
+        if (c.product_type) rules.push({ column: "TYPE", relation: "EQUALS", condition: String(c.product_type) });
+        if (c.vendor) rules.push({ column: "VENDOR", relation: "EQUALS", condition: String(c.vendor) });
+        if (!rules.length && c.rule_field && c.rule_value) {
+          const col: Record<string, string> = { TAG: "TAG", TYPE: "TYPE", VENDOR: "VENDOR" };
+          rules.push({ column: col[String(c.rule_field).toUpperCase()] || "TAG", relation: "EQUALS", condition: String(c.rule_value) });
+        }
+        return rules;
+      };
+      // A storefront search query to grab a representative cover image for the collection.
+      const coverQuery = (c: any): string => {
+        const kw = (Array.isArray(c.title_all) && c.title_all[0]) || c.rule_value;
+        if (kw) return `title:*${String(kw).replace(/[:'"*]/g, " ").trim()}*`;
+        if (c.product_type) return `product_type:'${String(c.product_type).replace(/'/g, " ")}'`;
+        if (c.vendor) return `vendor:'${String(c.vendor).replace(/'/g, " ")}'`;
+        return "";
+      };
 
       // Resolve the Online Store publication once so collections become visible.
       let onlineStorePublicationId: string | null = null;
@@ -165,34 +229,33 @@ Return ONLY:
       const results: Array<{ title: string; ok: boolean; error?: string }> = [];
 
       for (const c of selected) {
-        const fieldKey = (c.rule_field || "TAG").toUpperCase();
-        const column = COLUMN_BY_FIELD[fieldKey] || "TAG";
+        const rules = buildRules(c);
+        if (!rules.length) { results.push({ title: c.title, ok: false, error: "No valid rule for this collection." }); continue; }
         try {
-          // 1. Find the first matching product's image to use as the collection image.
+          // 1. Find a representative product image to use as the collection cover.
           let imageSrc: string | null = null;
           try {
-            const qField = QUERY_FIELD[fieldKey] || "tag";
-            const escaped = String(c.rule_value).replace(/'/g, "\\'");
-            const prodResp = await admin.graphql(`#graphql
-              query firstMatch($q: String!) {
-                products(first: 1, query: $q) {
-                  edges { node { featuredImage { url } images(first: 1) { edges { node { url } } } } }
+            const q = coverQuery(c);
+            if (q) {
+              const prodResp = await admin.graphql(`#graphql
+                query firstMatch($q: String!) {
+                  products(first: 1, query: $q) {
+                    edges { node { featuredImage { url } images(first: 1) { edges { node { url } } } } }
+                  }
                 }
-              }
-            `, { variables: { q: `${qField}:'${escaped}'` } });
-            const prodData = await prodResp.json();
-            const node = prodData?.data?.products?.edges?.[0]?.node;
-            imageSrc = node?.featuredImage?.url || node?.images?.edges?.[0]?.node?.url || null;
+              `, { variables: { q } });
+              const prodData = await prodResp.json();
+              const node = prodData?.data?.products?.edges?.[0]?.node;
+              imageSrc = node?.featuredImage?.url || node?.images?.edges?.[0]?.node?.url || null;
+            }
           } catch { /* image is optional */ }
 
-          // 2. Create the smart collection (with image if found).
+          // 2. Create the smart collection — a multi-rule ruleSet (all rules AND'd) that
+          //    auto-updates as the catalog changes, so no tagging / manual attach is needed.
           const input: any = {
             title: c.title,
             descriptionHtml: c.description ? `<p>${c.description}</p>` : undefined,
-            ruleSet: {
-              appliedDisjunctively: false,
-              rules: [{ column, relation: "EQUALS", condition: c.rule_value }],
-            },
+            ruleSet: { appliedDisjunctively: false, rules },
           };
           if (imageSrc) input.image = { src: imageSrc };
 
@@ -238,74 +301,116 @@ Return ONLY:
     // 2. SITEMAP — build an organised HTML sitemap page for SEO + navigation
     // ════════════════════════════════════════════════════════════════════════
     if (intent === "generate_sitemap") {
-      // Gather live collections + published pages.
-      const [collResp, pageResp, shopResp] = await Promise.all([
-        admin.graphql(`#graphql
-          query { collections(first: 100) { edges { node { handle title } } } }
-        `),
-        admin.graphql(`#graphql
-          query { pages(first: 100) { edges { node { handle title } } } }
-        `),
-        admin.graphql(`#graphql query { shop { name primaryDomain { url } } }`),
+      // Gather EVERYTHING crawlable: all products, all collections, all pages, real store policies.
+      const [collections, pages, products, shopResp] = await Promise.all([
+        fetchAllNodes(admin, "collections"),
+        fetchAllNodes(admin, "pages"),
+        fetchAllProducts(admin),
+        admin.graphql(`#graphql query { shop { name primaryDomain { url } shopPolicies { title url } } }`),
       ]);
-      const collData = await collResp.json();
-      const pageData = await pageResp.json();
       const shopData = await shopResp.json();
-
       const storeUrl: string = shopData?.data?.shop?.primaryDomain?.url || "";
       const shopName: string = shopData?.data?.shop?.name || "Our Store";
-      const collections = (collData?.data?.collections?.edges || []).map((e: any) => e.node);
-      const pages = (pageData?.data?.pages?.edges || []).map((e: any) => e.node);
+      // Real policy URLs from Shopify (never guessed handles) — only the ones that actually exist.
+      const policies: Array<{ title: string; url: string }> = (shopData?.data?.shop?.shopPolicies || []).filter((p: any) => p?.url);
 
-      const policyLinks = [
-        { title: "Privacy Policy", handle: "privacy-policy" },
-        { title: "Refund & Return Policy", handle: "refund-policy" },
-        { title: "Shipping Policy", handle: "shipping-policy" },
-        { title: "Terms of Service", handle: "terms-of-service" },
-      ];
-
+      const esc = (s: string) => String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
       const linkLi = (title: string, href: string) =>
-        `<li style="margin:6px 0;"><a href="${href}" style="color:#0369a1;text-decoration:none;">${title}</a></li>`;
-
+        `<li><a href="${esc(href)}" style="color:#0369a1">${esc(title)}</a></li>`;
       const section = (heading: string, items: string[]) =>
         items.length
-          ? `<div style="margin-bottom:28px;"><h2 style="font-size:20px;margin:0 0 10px;color:#1a1a1a;border-bottom:2px solid #eee;padding-bottom:6px;">${heading}</h2><ul style="list-style:none;padding:0;margin:0;columns:2;-webkit-columns:2;">${items.join("")}</ul></div>`
+          ? `<div style="margin-bottom:28px;"><h2 style="font-size:20px;margin:0 0 10px;color:#1a1a1a;border-bottom:2px solid #eee;padding-bottom:6px;">${esc(heading)}</h2><ul style="list-style:none;padding:0;margin:0;columns:2;-webkit-columns:2;">${items.join("")}</ul></div>`
           : "";
 
-      const html = `<div style="max-width:960px;margin:0 auto;line-height:1.6;color:#333;">
-<p style="font-size:16px;margin:0 0 24px;">Welcome to the ${shopName} sitemap — a complete directory of our shop. Use the links below to quickly find collections, pages and policies.</p>
-${section("Shop by Collection", collections.map((c: any) => linkLi(c.title, `/collections/${c.handle}`)))}
-${section("Pages", pages.map((p: any) => linkLi(p.title, `/pages/${p.handle}`)))}
-${section("Customer Policies", policyLinks.map(p => linkLi(p.title, `/policies/${p.handle}`)))}
-<div style="margin-top:8px;"><h2 style="font-size:20px;margin:0 0 10px;color:#1a1a1a;border-bottom:2px solid #eee;padding-bottom:6px;">Quick Links</h2><ul style="list-style:none;padding:0;margin:0;">${linkLi("Home", "/")}${linkLi("All Products", "/collections/all")}${linkLi("Contact Us", "/pages/contact")}</ul></div>
+      // Products grouped by product type (crawlable internal links Google + shoppers can follow).
+      // Capped to keep the page body within Shopify limits on very large catalogs.
+      const MAX_PRODUCT_LINKS = 1000; // keep the page body within Shopify's size limit
+      const byType = new Map<string, Array<{ title: string; handle: string }>>();
+      let linkBudget = MAX_PRODUCT_LINKS;
+      for (const p of products) {
+        if (linkBudget <= 0) break;
+        if (!p.handle) continue;
+        const key = p.type?.trim() || "More Products";
+        if (!byType.has(key)) byType.set(key, []);
+        byType.get(key)!.push({ title: p.title, handle: p.handle });
+        linkBudget--;
+      }
+      const typeSections = [...byType.entries()]
+        .sort((a, b) => b[1].length - a[1].length)
+        .map(([type, list]) =>
+          section(type, list.sort((a, b) => a.title.localeCompare(b.title)).map((p) => linkLi(p.title, `/products/${p.handle}`)))
+        )
+        .join("");
+
+      const html = `<div style="max-width:1000px;margin:0 auto;line-height:1.6;color:#333;">
+<p style="font-size:16px;margin:0 0 24px;">Welcome to the ${esc(shopName)} sitemap — a complete directory of our shop. Browse every collection, product, page and policy below.</p>
+${section("Shop by Collection", collections.map((c) => linkLi(c.title, `/collections/${c.handle}`)))}
+<h2 style="font-size:22px;margin:6px 0 14px;color:#111;">All Products</h2>
+${typeSections || section("Products", [])}
+${section("Pages", pages.map((p) => linkLi(p.title, `/pages/${p.handle}`)))}
+${section("Customer Policies", policies.map((p) => linkLi(p.title, p.url)))}
+<div style="margin-top:8px;"><h2 style="font-size:20px;margin:0 0 10px;color:#1a1a1a;border-bottom:2px solid #eee;padding-bottom:6px;">Quick Links</h2><ul style="list-style:none;padding:0;margin:0;">${linkLi("Home", "/")}${linkLi("All Products", "/collections/all")}</ul></div>
 </div>`;
 
-      // Upsert a "Sitemap" page (handle: sitemap)
+      // Upsert a "Sitemap" page. NON-DESTRUCTIVE: app-generated sitemaps carry a marker so re-runs
+      // update in place; if a merchant already has a REAL page at 'sitemap', we publish ours at
+      // 'store-sitemap' instead of clobbering it. We track the ACTUAL handle we wrote to.
+      const SITEMAP_MARKER = "shopflix-sitemap";
+      const body = `<!-- ${SITEMAP_MARKER} -->\n${html}`;
+      // Runs a page mutation and returns the real handle OR a userError message (never a false handle).
+      const upsert = async (mutation: string, variables: any): Promise<{ handle: string | null; error: string | null }> => {
+        try {
+          const r = await admin.graphql(mutation, variables);
+          const d = await r.json();
+          const payload = d?.data?.pageUpdate || d?.data?.pageCreate;
+          const err = payload?.userErrors?.[0]?.message || (d?.errors?.[0]?.message) || null;
+          return { handle: payload?.page?.handle || null, error: err };
+        } catch (e: any) {
+          return { handle: null, error: e?.message || "Page mutation failed." };
+        }
+      };
+      const CREATE = `#graphql
+        mutation pageCreate($page: PageCreateInput!) {
+          pageCreate(page: $page) { page { id handle } userErrors { field message } }
+        }`;
+      const UPDATE = `#graphql
+        mutation pageUpdate($id: ID!, $page: PageUpdateInput!) {
+          pageUpdate(id: $id, page: $page) { page { id handle } userErrors { field message } }
+        }`;
+
+      // Look at BOTH candidate handles so re-runs update our own page in place (never re-create a
+      // taken handle). Our page is the one carrying the marker, whichever handle it lives on.
       const findResp = await admin.graphql(`#graphql
-        query findPage($q: String!) { pages(first: 1, query: $q) { edges { node { id } } } }
-      `, { variables: { q: "handle:sitemap" } });
-      const existing = (await findResp.json())?.data?.pages?.edges?.[0]?.node;
+        query findPages($q: String!) { pages(first: 10, query: $q) { edges { node { id handle body } } } }
+      `, { variables: { q: "handle:sitemap OR handle:store-sitemap" } });
+      const nodes: any[] = ((await findResp.json())?.data?.pages?.edges || []).map((e: any) => e.node);
+      const appPage = nodes.find((n) => String(n.body || "").includes(SITEMAP_MARKER));
+      const sitemapPage = nodes.find((n) => n.handle === "sitemap");
+      const storePage = nodes.find((n) => n.handle === "store-sitemap");
 
-      if (existing) {
-        await admin.graphql(`#graphql
-          mutation pageUpdate($id: ID!, $page: PageUpdateInput!) {
-            pageUpdate(id: $id, page: $page) { page { id handle } userErrors { field message } }
-          }
-        `, { variables: { id: existing.id, page: { body: html } } });
+      let res: { handle: string | null; error: string | null };
+      if (appPage) {
+        res = await upsert(UPDATE, { id: appPage.id, page: { body } }); // refresh our page in place
+      } else if (sitemapPage) {
+        // A real merchant page owns 'sitemap' — publish/refresh ours at 'store-sitemap' instead.
+        res = storePage
+          ? await upsert(UPDATE, { id: storePage.id, page: { body } })
+          : await upsert(CREATE, { page: { title: "Store Sitemap", handle: "store-sitemap", body, isPublished: true } });
       } else {
-        await admin.graphql(`#graphql
-          mutation pageCreate($page: PageCreateInput!) {
-            pageCreate(page: $page) { page { id handle } userErrors { field message } }
-          }
-        `, { variables: { page: { title: "Sitemap", handle: "sitemap", body: html, isPublished: true } } });
+        res = await upsert(CREATE, { page: { title: "Sitemap", handle: "sitemap", body, isPublished: true } });
       }
+      if (res.error || !res.handle) {
+        return json({ error: `Couldn't save the sitemap page: ${res.error || "unknown error"}. No sitemap was published.` }, { status: 502 });
+      }
+      const handle = res.handle;
 
+      const productCount = MAX_PRODUCT_LINKS - Math.max(0, linkBudget);
       return json({
         success: true,
-        sitemapUrl: `${storeUrl}/pages/sitemap`,
+        sitemapUrl: `${storeUrl}/pages/${handle}`,
         xmlSitemapUrl: `${storeUrl}/sitemap.xml`,
-        counts: { collections: collections.length, pages: pages.length },
-        message: `HTML sitemap built with ${collections.length} collections and ${pages.length} pages.`,
+        counts: { products: productCount, collections: collections.length, pages: pages.length },
+        message: `HTML sitemap built with ${productCount} products, ${collections.length} collections and ${pages.length} pages.`,
       });
     }
 
@@ -313,8 +418,18 @@ ${section("Customer Policies", policyLinks.map(p => linkLi(p.title, `/policies/$
     // 3. CROSS-SELL — AI suggests complementary products, save as metafields
     // ════════════════════════════════════════════════════════════════════════
     if (intent === "suggest_crosssell") {
-      const products = await fetchAllProducts(admin);
-      if (products.length < 2) return json({ error: "You need at least 2 products to build cross-sell links." }, { status: 400 });
+      const allProducts = await fetchAllProducts(admin);
+      if (allProducts.length < 2) return json({ error: "You need at least 2 products to build cross-sell links." }, { status: 400 });
+
+      // Cross-sell embeds the candidate pool in every batch prompt, so cost scales with catalog size
+      // — process a bounded WINDOW per run. The UI passes `offset` to continue through a large
+      // catalog; `nextOffset` in the response tells it where to resume so every product gets covered.
+      const CS_MAX = 500;
+      const totalCatalog = allProducts.length;
+      const offset = Math.min(Math.max(0, Math.floor(Number(body.offset) || 0)), Math.max(0, totalCatalog - 1));
+      const products = allProducts.slice(offset, offset + CS_MAX);
+      if (products.length < 2) return json({ error: "No more products to process from that point." }, { status: 400 });
+      const nextOffset = offset + CS_MAX < totalCatalog ? offset + CS_MAX : null;
 
       const creditsNeeded = Math.max(1, Math.ceil(products.length / 5));
       const creditErr = await checkCredits(creditsNeeded);
@@ -324,8 +439,9 @@ ${section("Customer Policies", policyLinks.map(p => linkLi(p.title, `/policies/$
       // the whole catalog. Kept compact (index + short title + type + a few tags).
       const pool = products.map((p, i) => ({
         i,
-        title: p.title.slice(0, 70),
+        title: p.title.slice(0, 80),
         type: p.type || "",
+        vendor: p.vendor || "",
         tags: (p.tags || []).slice(0, 5),
       }));
       const poolJson = JSON.stringify(pool);
@@ -347,8 +463,8 @@ ${JSON.stringify(targetIdxs)}
 STRICT RULES (be thorough, consistent and deterministic):
 1. Output a recommendation entry for EVERY target index above. Do not skip any target unless the pool literally has no other product (i.e. fewer than 2 products total).
 2. Recommend ONLY by index from the POOL. Never invent products. Never recommend the target itself.
-3. Prefer TRUE COMPLEMENTS first — different items bought together (phone case → tempered glass + charger; jeans → belt + shoes; snowboard → bindings + boots + wax + bag).
-4. If the catalog has no genuine complement for a target, FALL BACK to the 2–4 most closely RELATED / similar products so every product still gets useful recommendations.
+3. BRAND + MODEL AWARE: infer each product's brand and MODEL/DEVICE from its title (e.g. "iPhone 15 Pro Max", "Galaxy S24"). For accessories (case, cover, screen protector, charger, cable, mount, strap), the strongest complements are (a) OTHER accessory categories for the SAME device/model, then (b) the same accessory in a compatible model. Never recommend a case for a different phone model.
+4. Prefer TRUE COMPLEMENTS bought together (phone case → tempered glass + charger + cable; jeans → belt + shoes; snowboard → bindings + boots + wax + bag). Only if there's no genuine complement, FALL BACK to the 2–4 most closely RELATED / same-category products so every product still gets useful recommendations.
 5. Give 2–4 recommendations per target (fewer only if the catalog is very small).
 6. Be DETERMINISTIC: always choose the single most relevant set; pick lower indices first when equally relevant, so repeated runs give the same result.
 7. One short, specific reason per target.
@@ -366,18 +482,24 @@ Return ONLY:
         const targetIdxs: number[] = [];
         for (let i = start; i < Math.min(start + BATCH, products.length); i++) targetIdxs.push(i);
         return runGeminiJson(buildPrompt(targetIdxs), `crosssell_${start}`, 0)
-          .catch(() => ({ links: [] }));
+          .catch(() => ({ links: [], _failed: true }));
       }));
 
       const linkByIndex = new Map<number, { complements: number[]; reason: string }>();
       for (const result of batchResults) {
-        for (const l of (result.links || [])) {
-          if (typeof l.i !== "number") continue;
-          const complements = (l.complements || []).filter((ci: number) => ci !== l.i && products[ci]);
+        const linksArr = Array.isArray((result as any)?.links) ? (result as any).links : [];
+        for (const l of linksArr) {
+          if (!l || typeof l.i !== "number") continue;
+          const raw = Array.isArray(l.complements) ? l.complements : [];
+          const complements = raw.filter((ci: number) => ci !== l.i && products[ci]);
           if (complements.length) linkByIndex.set(l.i, { complements, reason: l.reason || "" });
         }
       }
 
+      // If EVERY batch failed (AI outage/overload), don't charge — surface the error instead.
+      if (batchResults.every((r: any) => r?._failed)) {
+        return json({ error: "The AI service is busy right now — no cross-sell links were generated and no credits were charged. Please try again in a minute." }, { status: 503 });
+      }
       await chargeCredits(session.shop, creditsNeeded);
 
       // Resolve indices → product ids/titles, dedupe complements, stable order by index.
@@ -396,8 +518,10 @@ Return ONLY:
       return json({
         success: true,
         links,
-        totalProducts: products.length,
+        totalProducts: totalCatalog,
+        processedCount: products.length,
         coveredProducts: links.length,
+        nextOffset,
         creditsUsed: creditsNeeded,
       });
     }

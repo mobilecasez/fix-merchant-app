@@ -12,7 +12,7 @@ const CREDIT_COST = 10;
 
 async function runGeminiJson(prompt: string, retryId: string): Promise<any> {
   const model = genAI.getGenerativeModel({
-    model: "gemini-2.5-flash",
+    model: (process.env.GEMINI_TEXT_MODEL || "gemini-3.1-flash-lite"),
     generationConfig: { temperature: 0.2, responseMimeType: "application/json" },
   });
   const text = await retryOperation(async () => {

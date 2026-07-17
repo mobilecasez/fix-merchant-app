@@ -9,16 +9,18 @@ import polarisStyles from "@shopify/polaris/build/esm/styles.css?url";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { RatingPrompt } from "../components/RatingPrompt";
+import { getAssociatedUser } from "../utils/account-owner.server";
+import { isAdminShop, isAdminEmail } from "../utils/admin-access.server";
 
 export const links = () => [{ rel: "stylesheet", href: polarisStyles }];
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
 
-  // Check if user is account owner
-  const sessionData = await prisma.session.findFirst({
-    where: { shop: session.shop },
-  });
+  // One online token-exchange → account-owner flag + email; email gates the owner-only Admin link.
+  const user = await getAssociatedUser(request, session.shop);
+  const isAccountOwner = user.accountOwner;
+  const isAdmin = isAdminShop(session.shop) || isAdminEmail(user.email);
 
   // Get or create app settings for this shop
   let settings = await prisma.appSettings.findUnique({
@@ -65,16 +67,20 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   return json({
     apiKey: process.env.SHOPIFY_API_KEY || "",
     settings,
-    isAccountOwner: sessionData?.accountOwner || false,
+    isAccountOwner,
+    isAdmin, // owner-only Admin console — gated by ADMIN_EMAILS (default: your emails) / ADMIN_SHOPS
     subscription,
     reviewRating: review?.rating || 0,
     reviewDismissed: review?.dismissed || false,
-    reviewUrl: process.env.SHOPIFY_APP_LISTING_URL || "",
+    // Deep-link that opens the "Write a review" modal on our App Store listing.
+    // Falls back to the hardcoded listing so happy merchants are always routed to a
+    // public review even when SHOPIFY_APP_LISTING_URL isn't set in the environment.
+    reviewUrl: process.env.SHOPIFY_APP_LISTING_URL || "https://apps.shopify.com/shopflix-ai#modal-show=WriteReviewModal",
   });
 };
 
 export default function App() {
-  const { apiKey, settings, isAccountOwner, subscription, reviewRating, reviewDismissed, reviewUrl } = useLoaderData<typeof loader>();
+  const { apiKey, settings, isAccountOwner, isAdmin, subscription, reviewRating, reviewDismissed, reviewUrl } = useLoaderData<typeof loader>();
 
   return (
     <AppProvider isEmbeddedApp apiKey={apiKey}>
@@ -96,6 +102,8 @@ export default function App() {
         {settings.merchandisingEnabled !== false && (
           <Link to="/app/merchandising">Boost Sales</Link>
         )}
+        <Link to="/app/price-radar">Price Radar</Link>
+        <Link to="/app/ad-campaigns">Ad Campaigns</Link>
         <Link to="/app/growth">Protect & Grow</Link>
         <Link to="/app/requests">Feature Requests</Link>
         {subscription && (
@@ -108,9 +116,10 @@ export default function App() {
         {isAccountOwner && (
           <>
             <Link to="/app/subscription-plans">Manage Plans</Link>
-            <Link to="/app/settings">Control Access</Link>
+            <Link to="/app/settings">Settings</Link>
           </>
         )}
+        {isAdmin && <Link to="/app/admin">Admin</Link>}
       </NavMenu>
       <Outlet />
       <RatingPrompt initialRating={reviewRating} initialDismissed={reviewDismissed} reviewUrl={reviewUrl} />

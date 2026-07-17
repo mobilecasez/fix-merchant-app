@@ -259,7 +259,7 @@ async function generateContent(
 ): Promise<string> {
   const genAI = new GoogleGenerativeAI(process.env.GOOGLE_GEMINI_API_KEY!);
   const model = genAI.getGenerativeModel({
-    model: "gemini-2.5-flash",
+    model: (process.env.GEMINI_TEXT_MODEL || "gemini-3.1-flash-lite"),
     generationConfig: { temperature: 0.3 },
   });
 
@@ -487,7 +487,9 @@ export async function action({ request }: ActionFunctionArgs) {
       const existingPage = findData?.data?.pages?.edges?.[0]?.node;
 
       if (existingPage) {
-        // Update existing page
+        // The scan flagged this policy as missing/inadequate → rewrite it with a proper, full
+        // compliant policy. (A business-NAME change goes through business_contact, which only
+        // renames + prepends the identity header, preserving the policy text.)
         const updateResult = await admin.graphql(`#graphql
           mutation pageUpdate($id: ID!, $page: PageUpdateInput!) {
             pageUpdate(id: $id, page: $page) {
@@ -572,6 +574,9 @@ export async function action({ request }: ActionFunctionArgs) {
           const existingPage = findData?.data?.pages?.edges?.[0]?.node;
 
           if (existingPage) {
+            // This fix type runs when the scan flagged the page as missing/inadequate → replace
+            // it with proper, full content (generateContent produces a complete rich page, not a
+            // stub). A pure business-NAME change goes through business_contact, which only renames.
             const updateResult = await admin.graphql(`#graphql
               mutation pageUpdate($id: ID!, $page: PageUpdateInput!) {
                 pageUpdate(id: $id, page: $page) {
@@ -775,20 +780,35 @@ export async function action({ request }: ActionFunctionArgs) {
         const existingPage = existingPageMap[handle];
         if (!existingPage) return;
 
+        // NON-DESTRUCTIVE for ALL page types (incl. About Us & Contact): fetch the current
+        // body, strip any previously-injected identity header, surgically rename an out-of-
+        // date business name to the corrected one, then prepend a fresh identity header —
+        // PRESERVING the merchant's real content. A business-name fix must never wipe a page.
+        // Only when the page is essentially empty do we seed a minimal template.
+        const pageRes = await admin.graphql(`#graphql
+          query getPage($id: ID!) { page(id: $id) { body } }
+        `, { variables: { id: existingPage.id } });
+        const pageData = await pageRes.json();
+        let currentBody: string = pageData?.data?.page?.body || "";
+        currentBody = currentBody.replace(/<div style="background:#f8fafc;border-left:4px solid #1a4a5a[\s\S]*?<\/div>\s*/g, "");
+        // Surgical rename: replace the old (incorrect) store name with the corrected one.
+        if (storeName && effectiveStoreName && storeName !== effectiveStoreName) {
+          currentBody = currentBody.split(storeName).join(effectiveStoreName);
+        }
+        const textLen = currentBody.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim().length;
+
         let newBody: string;
-        if (fixType === "about_page") {
-          newBody = aboutBody;
-        } else if (fixType === "contact_page") {
-          newBody = contactBody;
-        } else {
-          // Policy pages: fetch current body, strip old header, prepend new one
-          const pageRes = await admin.graphql(`#graphql
-            query getPage($id: ID!) { page(id: $id) { body } }
-          `, { variables: { id: existingPage.id } });
-          const pageData = await pageRes.json();
-          let currentBody: string = pageData?.data?.page?.body || "";
-          currentBody = currentBody.replace(/<div style="background:#f8fafc;border-left:4px solid #1a4a5a[\s\S]*?<\/div>\s*/g, "");
+        if (textLen > 40) {
+          // Real content exists — this is a NAME/identity fix, so just keep the content
+          // (already surgically renamed above) and assert the corrected identity on top.
           newBody = identityHeader + currentBody;
+        } else {
+          // Page is empty — generate a PROPER, full page (not a 2-line stub).
+          try {
+            newBody = await generateContent(fixType, issueDescription, effectiveStoreName, storeUrl, storeDetails);
+          } catch {
+            newBody = fixType === "about_page" ? aboutBody : fixType === "contact_page" ? contactBody : identityHeader;
+          }
         }
 
         await admin.graphql(`#graphql

@@ -107,15 +107,18 @@ export function RatingPrompt({
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
-          width: "100%", maxWidth: "420px", background: "#fff",
-          borderRadius: "14px", boxShadow: "0 20px 60px rgba(0,0,0,0.25)",
-          padding: "24px", fontFamily: "-apple-system,Segoe UI,sans-serif",
+          width: "100%", maxWidth: "430px", background: "#fff",
+          borderRadius: "18px", boxShadow: "0 24px 70px rgba(15,23,42,0.35)",
+          padding: "28px 26px", fontFamily: "-apple-system,Segoe UI,sans-serif",
+          border: "1px solid #eef1f4",
         }}
       >
         {!done ? (
           <>
-            <div style={{ fontSize: "26px", textAlign: "center", marginBottom: "6px" }}>🎉</div>
-            <h2 style={{ margin: "0 0 6px", fontSize: "18px", fontWeight: 700, color: "#212121", textAlign: "center" }}>
+            <div style={{ display: "flex", justifyContent: "center", marginBottom: "12px" }}>
+              <div style={{ width: "56px", height: "56px", borderRadius: "50%", background: "linear-gradient(135deg,#e0f2f1,#d1fae5)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "28px" }}>🎉</div>
+            </div>
+            <h2 style={{ margin: "0 0 6px", fontSize: "19px", fontWeight: 700, color: "#212121", textAlign: "center" }}>
               How's ShopFlix AI working for you?
             </h2>
             <p style={{ margin: "0 0 16px", fontSize: "13px", color: "#6b7280", textAlign: "center", lineHeight: 1.5 }}>
@@ -160,9 +163,10 @@ export function RatingPrompt({
               onClick={submit}
               disabled={rating < 1 || submitting}
               style={{
-                width: "100%", padding: "12px", border: "none", borderRadius: "8px",
-                background: rating < 1 ? "#9ca3af" : teal, color: "#fff",
+                width: "100%", padding: "13px", border: "none", borderRadius: "10px",
+                background: rating < 1 ? "#9ca3af" : "linear-gradient(135deg,#1a4a5a,#0f766e)", color: "#fff",
                 fontWeight: 700, fontSize: "14px", cursor: rating < 1 ? "not-allowed" : "pointer",
+                boxShadow: rating < 1 ? "none" : "0 6px 16px rgba(15,118,110,0.28)",
               }}
             >
               {submitting ? "Sending…" : "Submit feedback"}

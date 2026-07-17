@@ -18,14 +18,9 @@ import { authenticate } from "../shopify.server";
  * Reference: https://shopify.dev/docs/apps/build/privacy-law-compliance
  */
 export const action = async ({ request }: ActionFunctionArgs) => {
-  const { shop, topic, payload } = await authenticate.webhook(request);// GDPR: Customer data request
-  // When a customer requests their data, you need to provide it
-  // Since this app doesn't store customer data, we acknowledge the request
-  
-  if (payload) {
-    const data = JSON.parse(payload.toString());}
-
-  // Return 200 to acknowledge receipt
-  // In a real scenario where customer data exists, you would email the customer their data
+  await authenticate.webhook(request);
+  // GDPR customers/data_request: this app stores NO customer personal data, so there is
+  // nothing to return — just acknowledge receipt. NOTE: `payload` from authenticate.webhook
+  // is already parsed; re-parsing via JSON.parse(payload.toString()) throws and returned 500.
   return new Response(null, { status: 200 });
 };

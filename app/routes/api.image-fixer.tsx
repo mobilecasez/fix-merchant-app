@@ -220,7 +220,10 @@ export async function action({ request }: ActionFunctionArgs) {
       }
       const finalBuffer = await toCompliantSquare(working);
 
-      // Upload new → set featured (position 0) → delete the old image.
+      // Upload the compliant image and set it as FEATURED (position 0). NON-DESTRUCTIVE:
+      // we do NOT delete the merchant's original — it stays in the gallery (Shopify has no
+      // image version history, so a delete is irrecoverable, and the AI edit isn't guaranteed
+      // to preserve the product faithfully). GMC only uses the featured/first image anyway.
       const filename = `compliant-${Date.now()}.jpg`;
       const { mediaId: newMediaId, url: newUrl } = await uploadImageToShopify(admin, productId, finalBuffer, filename);
 
@@ -230,13 +233,6 @@ export async function action({ request }: ActionFunctionArgs) {
           productReorderMedia(id: $id, moves: $moves) { job { id } mediaUserErrors { field message } }
         }
       `, { variables: { id: productId, moves: [{ id: newMediaId, newPosition: "0" }] } }).catch(() => {});
-
-      // Delete the old non-compliant image.
-      await admin.graphql(`#graphql
-        mutation del($mediaIds: [ID!]!, $productId: ID!) {
-          productDeleteMedia(mediaIds: $mediaIds, productId: $productId) { deletedMediaIds mediaUserErrors { field message } }
-        }
-      `, { variables: { productId, mediaIds: [target.id] } }).catch(() => {});
 
       for (let i = 0; i < FIX_CREDIT; i++) await incrementProductUsage(session.shop);
 

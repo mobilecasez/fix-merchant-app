@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { findSimilarRequests, makeTags } from "../utils/feature-requests.server";
+import { isCurrentUserAccountOwner } from "../utils/account-owner.server";
 import "../styles/dashboard.css";
 
 const STATUS_META: Record<string, { label: string; bg: string; color: string; border: string }> = {
@@ -29,8 +30,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   // very first request during a deploy cutover before `prisma generate` finishes)
   // shows a friendly "refresh" state instead of crashing the page.
   try {
-    const sessionData = await prisma.session.findFirst({ where: { shop: session.shop } });
-    isAccountOwner = sessionData?.accountOwner || false;
+    isAccountOwner = await isCurrentUserAccountOwner(request, session.shop);
 
     const review = await prisma.shopReview.findUnique({ where: { shop: session.shop } }).catch(() => null);
     reviewRating = review?.rating || 0;
@@ -69,10 +69,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const form = await request.formData();
   const intent = (form.get("intent") || "").toString();
 
-  const isOwner = async () => {
-    const s = await prisma.session.findFirst({ where: { shop } });
-    return s?.accountOwner || false;
-  };
+  const isOwner = async () => isCurrentUserAccountOwner(request, shop);
 
   try {
     if (intent === "check") {

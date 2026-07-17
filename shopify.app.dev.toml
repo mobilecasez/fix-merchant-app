@@ -7,7 +7,7 @@ application_url = "http://localhost:3000"
 embedded = true
 
 [access_scopes]
-scopes = "read_products,write_products"
+scopes = "read_products,write_products,read_orders,read_reports,read_script_tags,write_script_tags"
 
 [build]
 automatically_update_urls_on_dev = true

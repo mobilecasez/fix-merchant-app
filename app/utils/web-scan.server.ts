@@ -53,6 +53,24 @@ export async function assertPublicHost(domain: string): Promise<boolean> {
   }
 }
 
+/**
+ * A store's canonical apex and its `www.` sibling — a Shopify custom domain may serve on either
+ * (and the other may not resolve, or only redirect). Returns the PUBLIC, reachable candidates as
+ * `https://host` base URLs, apex first, so the scanner can try both instead of failing when the
+ * user omits `www` / `https`. Empty array ⇒ nothing resolvable & public.
+ */
+export async function resolveScanTargets(domain: string): Promise<string[]> {
+  const hosts = domain.startsWith("www.") ? [domain, domain.slice(4)] : [domain, `www.${domain}`];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const h of hosts) {
+    if (seen.has(h)) continue;
+    seen.add(h);
+    if (await assertPublicHost(h)) out.push(`https://${h}`);
+  }
+  return out;
+}
+
 export interface WebIssue {
   sev: "High" | "Medium" | "Low";
   title: string;

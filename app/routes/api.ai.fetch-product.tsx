@@ -9,6 +9,7 @@ import { parse } from "node-html-parser";
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
 import { canCreateProduct, incrementProductUsage } from "../utils/billing.server";
 import { detectCurrency, convertProductPrices } from "../utils/currency.server";
+import { logActivity } from "../utils/activity.server";
 
 import { optimizeHtmlForAI } from "../utils/dom-optimizer.server";
 
@@ -21,7 +22,7 @@ async function extractProductDataWithAI(url: string, htmlContent: string) {
   const genAI = new GoogleGenerativeAI(apiKey);
 
   const model = genAI.getGenerativeModel({ 
-    model: "gemini-2.5-flash",
+    model: (process.env.GEMINI_TEXT_MODEL || "gemini-3.1-flash-lite"),
     generationConfig: {
       responseMimeType: "application/json",
     },
@@ -392,9 +393,41 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     if (!hasMainPrice && !hasVariantPrices) {
       missingFields.push("pricing");
     }
-    
+
+    // Field-level fetch report (which details the scraper/AI actually pulled) — logged
+    // to the admin analytics so we can see how well the importer performs per source.
+    const has = (v: any) => !!(v != null && String(v).trim() !== "");
+    const fetchedReport = {
+      title: has(productData.productName),
+      description: has(productData.description),
+      vendor: has(productData.vendor),
+      productType: has(productData.productType),
+      tags: has(productData.tags),
+      price: hasMainPrice || hasVariantPrices,
+      compareAtPrice: has(productData.compareAtPrice),
+      sku: has(productData.sku),
+      barcode: has(productData.barcode),
+      weight: has(productData.weight),
+      images: Array.isArray(productData.images) ? productData.images.length : 0,
+      variants: Array.isArray(productData.variants) ? productData.variants.length : 0,
+      options: Array.isArray(productData.options) ? productData.options.length : 0,
+    };
+    const importMeta = (success: boolean) => ({
+      success,
+      sourceUrl: url || "manual-upload",
+      productName: String(productData.productName || "").slice(0, 200),
+      missingFields,
+      fetched: fetchedReport,
+    });
+
     // If critical fields are missing, return warning without charging credit
     if (missingFields.length > 0) {
+      logActivity(
+        session.shop,
+        "product_import",
+        `Import incomplete · ${productData.productName || "product"} · missing ${missingFields.join(", ")}`,
+        importMeta(false),
+      );
       return json(
         {
           incompleteData: true,
@@ -409,6 +442,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
     // All critical fields present - increment product usage counter
     await incrementProductUsage(session.shop);
+
+    logActivity(session.shop, "product_import", `Fetched "${productData.productName}"`, importMeta(true));
 
     return json({ ...productData, fetchedHtml: fetchSuccess ? html : "" });
   } catch (error) {

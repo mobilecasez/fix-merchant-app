@@ -8,6 +8,7 @@ import { getOrCreateSubscription, getProductsUsed, getEffectiveProductLimit } fr
 import "../styles/dashboard.css";
 import RichTextEditor from "../components/RichTextEditor";
 import { notifyAiSuccess } from "../utils/ai-success";
+import { recordResultsVisit, recordIssueInteraction, shouldPromptReview, markReviewPrompted } from "../utils/engagement";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
@@ -2668,12 +2669,12 @@ function CollapsedBasicResults({
 
   return (
     <ScanSection
-      icon="🔍" title="Basic Scan Results"
+      icon="🏪" title="Store-Level Compliance"
       badgeText={badgeText}
       badgeBg={totalIssues === 0 ? "#f0fdf4" : rs.bg}
       badgeColor={totalIssues === 0 ? "#166534" : rs.color}
       badgeBorder={totalIssues === 0 ? "#86efac" : rs.border}
-      defaultOpen={false}
+      defaultOpen={true}
     >
       <ScanResults
         scan={{ id: scanId, type: "BASIC", updatedAt: new Date().toISOString(), result: basicResult }}
@@ -2866,9 +2867,14 @@ function DeepScanResults({ scan, credits, fixStates, setFixStates, savedDetails,
     const adv = result.advanced_result;
     const advErrors: any[] = adv?.errors_found || [];
     const advBadgeText = !adv ? "—" : adv.status === "pass" ? "✓ Pass" : `${new Set(advErrors.map((e: any) => e.product_id)).size} Products Affected`;
+    const deep = result.deep_result || {};
+    const deepErrs: any[] = deep.critical_misrepresentation_errors || [];
+    const deepRisk = deep.suspension_risk || "Low";
+    const drs = riskStyle(deepRisk);
+    const deepBadge = deepErrs.length > 0 ? `${deepErrs.length} finding${deepErrs.length !== 1 ? "s" : ""} · ${deepRisk} Risk` : `✓ ${deepRisk} Risk`;
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-        {/* Basic — collapsed */}
+        {/* Store-level — prominent (opens by default) */}
         {result.basic_result && (
           <CollapsedBasicResults
             basicResult={result.basic_result}
@@ -2880,7 +2886,7 @@ function DeepScanResults({ scan, credits, fixStates, setFixStates, savedDetails,
             scanId={scan.id}
           />
         )}
-        {/* Advanced — collapsed */}
+        {/* Product feed */}
         {adv && (
           <ScanSection
             icon="🔬" title="Advanced Scan — Product Feed Analysis"
@@ -2888,38 +2894,62 @@ function DeepScanResults({ scan, credits, fixStates, setFixStates, savedDetails,
             badgeBg={adv.status === "pass" ? "#f0fdf4" : "#fef2f2"}
             badgeColor={adv.status === "pass" ? "#166534" : "#d72c0d"}
             badgeBorder={adv.status === "pass" ? "#86efac" : "#fca5a5"}
-            defaultOpen={false}
+            defaultOpen={advErrors.length > 0}
           >
             <AdvancedErrorPanel advancedResult={adv} scanId={scan.id} groupFixes={result.group_fixes} />
           </ScanSection>
         )}
-        {/* Deep — expanded */}
-        <DeepPanel
-          result={result.deep_result || {}}
-          updatedAt={scan.updatedAt}
-          scanId={scan.id}
-          credits={credits}
-          fixStates={fixStates}
-          setFixStates={setFixStates}
-          savedDetails={savedDetails}
-          onDetailsSaved={onDetailsSaved}
-        />
+        {/* Suspension & misrepresentation */}
+        <ScanSection
+          icon="🛡️" title="Suspension & Misrepresentation Audit"
+          badgeText={deepBadge}
+          badgeBg={deepErrs.length > 0 ? drs.bg : "#f0fdf4"}
+          badgeColor={deepErrs.length > 0 ? drs.color : "#166534"}
+          badgeBorder={deepErrs.length > 0 ? drs.border : "#86efac"}
+          defaultOpen={true}
+        >
+          <DeepPanel
+            embedded
+            result={deep}
+            updatedAt={scan.updatedAt}
+            scanId={scan.id}
+            credits={credits}
+            fixStates={fixStates}
+            setFixStates={setFixStates}
+            savedDetails={savedDetails}
+            onDetailsSaved={onDetailsSaved}
+          />
+        </ScanSection>
       </div>
     );
   }
 
   // ── Legacy format: deep fields at the top level ─────────────────────────────
+  const legacyErrs: any[] = result.critical_misrepresentation_errors || [];
+  const legacyRisk = result.suspension_risk || "Low";
+  const lrs = riskStyle(legacyRisk);
+  const legacyBadge = legacyErrs.length > 0 ? `${legacyErrs.length} finding${legacyErrs.length !== 1 ? "s" : ""} · ${legacyRisk} Risk` : `✓ ${legacyRisk} Risk`;
   return (
-    <DeepPanel
-      result={result}
-      updatedAt={scan.updatedAt}
-      scanId={scan.id}
-      credits={credits}
-      fixStates={fixStates}
-      setFixStates={setFixStates}
-      savedDetails={savedDetails}
-      onDetailsSaved={onDetailsSaved}
-    />
+    <ScanSection
+      icon="🛡️" title="Suspension & Misrepresentation Audit"
+      badgeText={legacyBadge}
+      badgeBg={legacyErrs.length > 0 ? lrs.bg : "#f0fdf4"}
+      badgeColor={legacyErrs.length > 0 ? lrs.color : "#166534"}
+      badgeBorder={legacyErrs.length > 0 ? lrs.border : "#86efac"}
+      defaultOpen={true}
+    >
+      <DeepPanel
+        embedded
+        result={result}
+        updatedAt={scan.updatedAt}
+        scanId={scan.id}
+        credits={credits}
+        fixStates={fixStates}
+        setFixStates={setFixStates}
+        savedDetails={savedDetails}
+        onDetailsSaved={onDetailsSaved}
+      />
+    </ScanSection>
   );
 }
 
@@ -3000,11 +3030,12 @@ function DeepIssueCard({
   );
 }
 
-function DeepPanel({ result, updatedAt, scanId, credits, fixStates, setFixStates, savedDetails, onDetailsSaved }: {
+function DeepPanel({ result, updatedAt, scanId, credits, fixStates, setFixStates, savedDetails, onDetailsSaved, embedded }: {
   result: any; updatedAt: string; scanId: string; credits: number;
   fixStates: Map<string, IssueFixState>;
   setFixStates: React.Dispatch<React.SetStateAction<Map<string, IssueFixState>>>;
   savedDetails: Partial<StoreDetails>; onDetailsSaved: (d: StoreDetails) => void;
+  embedded?: boolean; // rendered inside a ScanSection card — hide the duplicate heading/badge
 }) {
   const errors: any[] = result.critical_misrepresentation_errors || [];
   const warnings: string[] = result.store_warnings || [];
@@ -3024,15 +3055,17 @@ function DeepPanel({ result, updatedAt, scanId, credits, fixStates, setFixStates
     <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
       {/* Summary */}
       <div className="intro-card" style={{ marginBottom: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "12px", flexWrap: "wrap" }}>
-          <h3 style={{ margin: 0, fontSize: "18px", fontWeight: 700, color: "#212121" }}>Suspension Risk Audit</h3>
-          <span style={{
-            padding: "3px 10px", borderRadius: "4px", fontSize: "12px", fontWeight: 700,
-            background: rs.bg, color: rs.color, border: `1px solid ${rs.border}`,
-          }}>
-            {risk} Suspension Risk
-          </span>
-        </div>
+        {!embedded && (
+          <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "12px", flexWrap: "wrap" }}>
+            <h3 style={{ margin: 0, fontSize: "18px", fontWeight: 700, color: "#212121" }}>Suspension Risk Audit</h3>
+            <span style={{
+              padding: "3px 10px", borderRadius: "4px", fontSize: "12px", fontWeight: 700,
+              background: rs.bg, color: rs.color, border: `1px solid ${rs.border}`,
+            }}>
+              {risk} Suspension Risk
+            </span>
+          </div>
+        )}
         {result.summary && (
           <p style={{ margin: "0 0 16px 0", fontSize: "13px", color: "#374151", lineHeight: 1.6 }}>{result.summary}</p>
         )}
@@ -3548,6 +3581,21 @@ export default function StoreErrorReport() {
     if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
   }, []);
 
+  // Review gate (issue: ask for a review only after the merchant has interacted with issues AND
+  // come back across visits — never on the first scan). notifyAiSuccess opens the global RatingPrompt.
+  const maybePromptReview = useCallback(() => {
+    if (shouldPromptReview()) { markReviewPrompted(); notifyAiSuccess("engagement"); }
+  }, []);
+  const onResultsInteract = useCallback(() => { recordIssueInteraction(); maybePromptReview(); }, [maybePromptReview]);
+  // Count a visit whenever a completed scan is on screen (once per session), then re-check the gate.
+  const visitRecordedRef = useRef(false);
+  useEffect(() => {
+    if (visitRecordedRef.current || scan?.status !== "COMPLETE") return;
+    visitRecordedRef.current = true;
+    recordResultsVisit();
+    maybePromptReview();
+  }, [scan?.status, maybePromptReview]);
+
   useEffect(() => {
     if (!pollFetcher.data) return;
     const polled = (pollFetcher.data as any).scan;
@@ -3555,7 +3603,7 @@ export default function StoreErrorReport() {
       setScan(polled);
       if (polled.status === "COMPLETE" || polled.status === "FAILED") {
         stopPolling();
-        if (polled.status === "COMPLETE") notifyAiSuccess("scan");
+        // No longer prompts for a review on scan-complete — the engagement gate above decides.
       }
     }
   }, [pollFetcher.data, stopPolling]);
@@ -4223,6 +4271,9 @@ export default function StoreErrorReport() {
                     </p>
                   )}
 
+                  {/* Interacting with the issues (expanding sections, viewing fixes, marking fixed)
+                      feeds the engagement gate that decides when to ask for a review. */}
+                  <div onClickCapture={onResultsInteract}>
                   {scan.type === "ADVANCED" ? (
                     <AdvancedScanResults
                       scan={scan}
@@ -4251,6 +4302,7 @@ export default function StoreErrorReport() {
                       onDetailsSaved={handleDetailsSaved}
                     />
                   )}
+                  </div>
                 </>
               )}
             </>

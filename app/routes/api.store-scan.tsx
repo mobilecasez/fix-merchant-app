@@ -120,7 +120,8 @@ export async function action({ request }: ActionFunctionArgs) {
         name
         primaryDomain { url }
         contactEmail
-        billingAddress { address1 city countryCodeV2 }
+        currencyCode
+        billingAddress { address1 address2 city provinceCode zip countryCodeV2 phone }
       }
     }
   `);
@@ -256,6 +257,11 @@ export async function action({ request }: ActionFunctionArgs) {
     const domain = storeUrl.replace(/^https?:\/\//, "");
     const addr = shopInfo.billingAddress || {};
     const legalAddress = [addr.address1, addr.city, addr.countryCodeV2].filter(Boolean).join(", ");
+    // Full billing address + registrable domain — feed the Trust & Identity layer (registered-agent
+    // match, brand-geography, NAP). Best-effort; every field is optional/null-safe downstream.
+    const addressFull = [addr.address1, addr.address2, addr.city, addr.provinceCode, addr.zip, addr.countryCodeV2].filter(Boolean).join(", ");
+    let registrableTld = "";
+    try { registrableTld = new URL(storeUrl).hostname.replace(/^www\./, "").split(".").slice(-2).join("."); } catch { /* keep empty */ }
 
     // Fetch contact page text
     let contactPageText = "";
@@ -363,6 +369,14 @@ export async function action({ request }: ActionFunctionArgs) {
         simulated_checkout_price: visualDomPrice, // we can't simulate real checkout without a user session
       },
       active_third_party_apps: activeThirdPartyApps,
+      // Identity ground-truth for the Trust & Identity layer (enrichDeepData populates the rest).
+      store_meta: {
+        phone: addr.phone || null,
+        currency: shopInfo.currencyCode || null,
+        country_code: addr.countryCodeV2 || null,
+        address_full: addressFull || null,
+        tld: registrableTld || null,
+      },
     };
 
     setImmediate(() => {

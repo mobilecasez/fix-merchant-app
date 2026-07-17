@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 600"><title>Three-stage Merchant Center verification flow for Shopify</title>
+<defs>
+<linearGradient id="bgF" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#07101f"/><stop offset="1" stop-color="#0d1a30"/></linearGradient>
+<linearGradient id="card" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0e1c34"/><stop offset="1" stop-color="#0a1526"/></linearGradient>
+<radialGradient id="gC" cx="0.5" cy="0.5" r="0.5"><stop offset="0" stop-color="#41c6ee" stop-opacity="0.16"/><stop offset="1" stop-color="#41c6ee" stop-opacity="0"/></radialGradient>
+</defs>
+<rect width="1200" height="600" rx="18" fill="url(#bgF)"/>
+<circle cx="600" cy="260" r="360" fill="url(#gC)"/>
+<text x="60" y="66" font-family="Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="15" font-weight="600" letter-spacing="2.5" fill="#41c6ee">VERIFICATION ORDER</text>
+<text x="60" y="104" font-family="Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="30" font-weight="800" fill="#e9f0fa">The three checks, in sequence</text>
+
+<!-- connector arrows -->
+<g stroke="#25395a" stroke-width="1.5" fill="none"><line x1="398" y1="330" x2="452" y2="330"/><path d="M 446 322 L 458 330 L 446 338" stroke="#41c6ee"/></g>
+<g stroke="#25395a" stroke-width="1.5" fill="none"><line x1="790" y1="330" x2="844" y2="330"/><path d="M 838 322 L 850 330 L 838 338" stroke="#41c6ee"/></g>
+
+<!-- STAGE 1 -->
+<g transform="translate(60,150)">
+<rect width="338" height="360" rx="16" fill="url(#card)" stroke="#25395a" stroke-width="1.5"/>
+<circle cx="42" cy="50" r="22" fill="#0a1526" stroke="#41c6ee" stroke-width="1.5"/><text x="42" y="58" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="22" font-weight="800" fill="#41c6ee">1</text>
+<g transform="translate(270,30)"><circle cx="0" cy="20" r="22" fill="#0a1526" stroke="#25395a" stroke-width="1.5"/><circle cx="0" cy="20" r="11" fill="none" stroke="#41c6ee" stroke-width="2.2"/><line x1="-11" y1="20" x2="11" y2="20" stroke="#41c6ee" stroke-width="2"/><path d="M 0 9 C 6 14 6 26 0 31 C -6 26 -6 14 0 9" fill="none" stroke="#41c6ee" stroke-width="2"/></g>
+<text x="82" y="46" font-family="Inter, system-ui, sans-serif" font-size="21" font-weight="800" fill="#e9f0fa">Verify &amp; claim</text>
+<text x="82" y="72" font-family="Inter, system-ui, sans-serif" font-size="21" font-weight="800" fill="#e9f0fa">your website URL</text>
+<line x1="24" y1="100" x2="314" y2="100" stroke="#25395a" stroke-width="1"/>
+<g font-family="Inter, system-ui, sans-serif" font-size="18" fill="#9fb2c9">
+<circle cx="32" cy="132" r="3" fill="#41c6ee"/><text x="48" y="138">HTML meta-tag method</text>
+<circle cx="32" cy="170" r="3" fill="#41c6ee"/><text x="48" y="176">Paste tag in theme.liquid</text>
+<circle cx="32" cy="208" r="3" fill="#41c6ee"/><text x="48" y="214">Custom domain &#8212; not</text><text x="48" y="240">myshopify.com</text>
+<circle cx="32" cy="278" r="3" fill="#41c6ee"/><text x="48" y="284">Then claim the URL</text>
+</g>
+<rect x="24" y="312" width="290" height="30" rx="8" fill="#0a1526" stroke="#25395a" stroke-width="1"/><text x="38" y="332" font-family="Inter, system-ui, sans-serif" font-size="15" fill="#6b819c">Proves ownership &#183; links account</text>
+</g>
+
+<!-- STAGE 2 -->
+<g transform="translate(452,150)">
+<rect width="338" height="360" rx="16" fill="url(#card)" stroke="#25395a" stroke-width="1.5"/>
+<circle cx="42" cy="50" r="22" fill="#0a1526" stroke="#e89b3c" stroke-width="1.5"/><text x="42" y="58" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="22" font-weight="800" fill="#e89b3c">2</text>
+<g transform="translate(270,30)"><circle cx="0" cy="20" r="22" fill="#0a1526" stroke="#25395a" stroke-width="1.5"/><circle cx="0" cy="13" r="7" fill="none" stroke="#e89b3c" stroke-width="2.2"/><path d="M -11 31 C -11 21 11 21 11 31" fill="none" stroke="#e89b3c" stroke-width="2.2" stroke-linecap="round"/></g>
+<text x="82" y="46" font-family="Inter, system-ui, sans-serif" font-size="21" font-weight="800" fill="#e9f0fa">Identity</text>
+<text x="82" y="72" font-family="Inter, system-ui, sans-serif" font-size="21" font-weight="800" fill="#e9f0fa">verification (IDV)</text>
+<line x1="24" y1="100" x2="314" y2="100" stroke="#25395a" stroke-width="1"/>
+<g font-family="Inter, system-ui, sans-serif" font-size="18" fill="#9fb2c9">
+<circle cx="32" cy="132" r="3" fill="#e89b3c"/><text x="48" y="138">Government photo ID</text>
+<circle cx="32" cy="170" r="3" fill="#e89b3c"/><text x="48" y="176">Business license &amp; docs</text>
+<circle cx="32" cy="208" r="3" fill="#e89b3c"/><text x="48" y="214">NAP must match exactly</text>
+<circle cx="32" cy="246" r="3" fill="#e89b3c"/><text x="48" y="252">Every doc shows Merchant ID</text>
+</g>
+<rect x="24" y="312" width="290" height="30" rx="8" fill="#0a1526" stroke="#25395a" stroke-width="1"/><text x="38" y="332" font-family="Inter, system-ui, sans-serif" font-size="15" fill="#6b819c">Usually required before review</text>
+</g>
+
+<!-- STAGE 3 -->
+<g transform="translate(844,150)">
+<rect width="296" height="360" rx="16" fill="url(#card)" stroke="#25395a" stroke-width="1.5"/>
+<circle cx="42" cy="50" r="22" fill="#0a1526" stroke="#38d39a" stroke-width="1.5"/><text x="42" y="58" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="22" font-weight="800" fill="#38d39a">3</text>
+<g transform="translate(228,30)"><circle cx="0" cy="20" r="22" fill="#0a1526" stroke="#25395a" stroke-width="1.5"/><path d="M -9 21 L -3 28 L 10 13" fill="none" stroke="#38d39a" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></g>
+<text x="82" y="46" font-family="Inter, system-ui, sans-serif" font-size="21" font-weight="800" fill="#e9f0fa">Account</text>
+<text x="82" y="72" font-family="Inter, system-ui, sans-serif" font-size="21" font-weight="800" fill="#e9f0fa">review</text>
+<line x1="24" y1="100" x2="272" y2="100" stroke="#25395a" stroke-width="1"/>
+<g font-family="Inter, system-ui, sans-serif" font-size="18" fill="#9fb2c9">
+<circle cx="32" cy="132" r="3" fill="#38d39a"/><text x="48" y="138">Policies checked</text>
+<circle cx="32" cy="170" r="3" fill="#38d39a"/><text x="48" y="176">Contact info checked</text>
+<circle cx="32" cy="208" r="3" fill="#38d39a"/><text x="48" y="214">Product data checked</text>
+</g>
+<rect x="24" y="258" width="248" height="40" rx="10" fill="#0a1526" stroke="#38d39a" stroke-width="1.3"/><text x="148" y="283" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="17" font-weight="700" fill="#38d39a">Request review</text>
+<text x="24" y="332" font-family="Inter, system-ui, sans-serif" font-size="15" fill="#6b819c">Button unlocks after IDV</text>
+</g>
+
+<text x="60" y="556" font-family="Inter, system-ui, sans-serif" font-size="16" fill="#6b819c">If &#8220;Request review&#8221; is greyed out, the fix is usually to finish verification &#8212; not to wait.</text>
+</svg>

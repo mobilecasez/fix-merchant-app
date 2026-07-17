@@ -21,17 +21,12 @@ import {
 import { useState, useCallback } from "react";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
+import { isCurrentUserAccountOwner } from "../utils/account-owner.server";
 
 export const loader: LoaderFunction = async ({ request }) => {
   const { session } = await authenticate.admin(request);
 
-  // Check if user is account owner
-  const sessionData = await prisma.session.findUnique({
-    where: { id: session.id },
-    select: { accountOwner: true },
-  });
-
-  if (!sessionData?.accountOwner) {
+  if (!(await isCurrentUserAccountOwner(request, session.shop))) {
     return json({ error: "Access denied. Admin only." }, { status: 403 });
   }
 
@@ -45,13 +40,7 @@ export const loader: LoaderFunction = async ({ request }) => {
 export const action: ActionFunction = async ({ request }) => {
   const { session } = await authenticate.admin(request);
 
-  // Check if user is account owner
-  const sessionData = await prisma.session.findUnique({
-    where: { id: session.id },
-    select: { accountOwner: true },
-  });
-
-  if (!sessionData?.accountOwner) {
+  if (!(await isCurrentUserAccountOwner(request, session.shop))) {
     return json({ error: "Access denied" }, { status: 403 });
   }
 

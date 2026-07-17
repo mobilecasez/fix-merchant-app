@@ -13,4 +13,5 @@ ShopFlix AI Website/
 Screenshots/
 Icons/
 WebSite/
-categories.txt
+# NOTE: categories.txt is a RUNTIME dependency (read by categories.server.ts for the
+# product-category picker on Add Product Replica & Smart Product Editor) — do NOT ignore it.

@@ -9,6 +9,23 @@ function useTweaks(d){ return [d, function(){}]; }
 // asset URLs served from /public/web-assets
 if (typeof window !== "undefined") { window.__resources = window.__resources || { logoImg: "/web-assets/logo.png", appScanImg: "/web-assets/app-scan.png" }; }
 
+// WIRING: Google Ads conversion tracking. The Google tag + config (window.__ADS) are
+// injected server-side on the marketing page — see app/routes/_index/route.tsx. This
+// helper no-ops safely until GOOGLE_ADS_ID is configured, so nothing breaks pre-setup.
+// kind = "scan" (a store scan completed) or "purchase" (a paid scan was bought).
+function fireConversion(kind, params) {
+  try {
+    if (typeof window === "undefined") return;
+    var a = window.__ADS;
+    if (!a || !a.id || typeof window.gtag !== "function") return;
+    var label = a[kind];
+    if (!label) return;
+    var data = { send_to: a.id + "/" + label };
+    if (params) for (var k in params) { if (params[k] != null) data[k] = params[k]; }
+    window.gtag("event", "conversion", data);
+  } catch (e) { /* no-op */ }
+}
+
 
 /* ===================== file6.js ===================== */
 // ShopFlix AI — shared components: icons, nav, footer, scan input, plan data
@@ -135,14 +152,14 @@ function Nav({ route, email, onHome, onSignIn }) {
   const close = () => setOpen(false);
   const links = onLanding ? (
     <React.Fragment>
+      <a href="/features" onClick={close}>Features</a>
       <a href="#how" onClick={close}>How it works</a>
       <a href="#checks" onClick={close}>What we check</a>
       <a href="#plans" onClick={close}>Pricing</a>
-      <a href="#sample" onClick={close}>Sample report</a>
       <a href="#app" onClick={close}>Shopify app</a>
       {email
         ? <span title={email} style={{ color: 'var(--muted)', fontSize: '13px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}><Icons.check size={13} /> Signed in</span>
-        : <a href="#signin" onClick={(e) => { e.preventDefault(); close(); onSignIn && onSignIn(); }}>Sign in</a>}
+        : null}
     </React.Fragment>
   ) : (
     <a href="#top" onClick={(e) => { e.preventDefault(); close(); onHome(); }} style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
@@ -177,7 +194,7 @@ function Nav({ route, email, onHome, onSignIn }) {
 }
 
 /* ---------- footer ---------- */
-function Footer() {
+function Footer({ onNav }) {
   return (
     <footer className="footer">
       <div className="wrap" style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1.2fr', gap: '40px' }} data-footer-grid="1">
@@ -192,9 +209,10 @@ function Footer() {
         </div>
         <div>
           <h5>Product</h5>
-          <a href="#how">How it works</a>
-          <a href="#checks">What we check</a>
-          <a href="#plans">Pricing</a>
+          <a href="#how" onClick={(e) => { e.preventDefault(); onNav && onNav('how'); }}>How it works</a>
+          <a href="#checks" onClick={(e) => { e.preventDefault(); onNav && onNav('checks'); }}>What we check</a>
+          <a href="#plans" onClick={(e) => { e.preventDefault(); onNav && onNav('plans'); }}>Pricing</a>
+          <a href="/blog">Blog</a>
           <a href="https://apps.shopify.com/shopflix-ai" target="_blank" rel="noopener">Shopify app</a>
         </div>
         <div>
@@ -454,6 +472,64 @@ function PlansSection({ onSelectPlan }) {
         <p className="mono" style={{ textAlign: 'center', color: 'var(--faint)', fontSize: '12.5px', marginTop: '28px' }}>
           One-time payment per scan &middot; secure checkout &middot; results in about a minute
         </p>
+      </div>
+    </section>);
+
+}
+
+/* ---------- in-app subscription plans (Shopify App Store) ---------- */
+const APP_INSTALL = 'https://apps.shopify.com/shopflix-ai';
+const APP_PLANS = [
+  { id: 'free', name: 'Free', price: 0, tagline: '2 credits', flag: 'No card required',
+    features: ['First Basic store scan free', '2 credits for AI imports & fixes', 'Full compliance scan preview', 'Upgrade anytime'] },
+  { id: 'starter', name: 'Starter', price: 4.99, tagline: '20 credits / month',
+    features: ['20 credits every month', 'AI product imports', 'Basic + compliance scans', 'One-click auto-fixes'] },
+  { id: 'basic', name: 'Basic', price: 9.99, tagline: '50 credits / month',
+    features: ['50 credits every month', 'Basic + Advanced scans', 'Auto-fixes & image fixer', 'Store monitoring'] },
+  { id: 'pro', name: 'Professional', price: 17.99, tagline: '100 credits / month', pop: true, flag: 'Most popular',
+    features: ['100 credits every month', 'Full scan suite incl. Deep scan', 'Trust & Identity misrepresentation audit', 'Suspension Recovery + appeal letters'] },
+  { id: 'adv', name: 'Advanced', price: 24.99, tagline: '150 credits / month',
+    features: ['150 credits every month', 'Everything at scale', 'Image fixes & monitoring', 'Priority processing'] },
+  { id: 'ent', name: 'Enterprise', price: 99, tagline: '999 credits / month',
+    features: ['999 credits every month', 'For high-volume stores & agencies', 'All features unlocked', 'Dedicated support'] },
+];
+
+function AppPlanCard({ plan }) {
+  return (
+    <div className={'card card-hover plan' + (plan.pop ? ' plan-pop' : '')} style={{ padding: '22px' }}>
+      {plan.flag ? <div className="plan-flag" style={plan.pop ? null : { background: 'var(--panel2)', color: 'var(--accent)', border: '1px solid var(--line-strong)' }}>{plan.flag}</div> : null}
+      <div style={{ fontWeight: 700, fontSize: '16px' }}>{plan.name}</div>
+      <div className="mono" style={{ fontSize: '12px', color: 'var(--faint)', textTransform: 'uppercase', letterSpacing: '0.08em', marginTop: '4px' }}>{plan.tagline}</div>
+      <div className="plan-price">
+        <b style={{ fontSize: '30px' }}>${plan.price}</b>
+        <span>{plan.price === 0 ? 'free forever' : '/ month'}</span>
+      </div>
+      <ul>
+        {plan.features.map((f, i) =>
+        <li key={i}><Icons.check size={15} color="var(--green)" sw={2.4} />{f}</li>
+        )}
+      </ul>
+      <a className={'btn btn-block ' + (plan.pop ? 'btn-primary' : 'btn-ghost')} href={APP_INSTALL} target="_blank" rel="noopener" style={{ textAlign: 'center', textDecoration: 'none', marginTop: 'auto' }}>{plan.price === 0 ? 'Install free' : 'Choose ' + plan.name}</a>
+    </div>);
+
+}
+
+function AppPlansSection() {
+  return (
+    <section className="section section-alt" id="app-plans">
+      <div className="wrap">
+        <div style={{ textAlign: 'center' }}>
+          <div className="kicker">In-app pricing &middot; Shopify App Store</div>
+          <h2 className="h2">Install the app for scans, fixes &amp; growth</h2>
+          <p className="sub" style={{ margin: '14px auto 0' }}>Pay-per-scan is great for a one-off check. To fix issues, import products, recover from suspensions and run Google Ads, install ShopFlix AI on your store &mdash; credits refresh every month.</p>
+        </div>
+        <div className="grid-3" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', marginTop: '56px', alignItems: 'stretch' }}>
+          {APP_PLANS.map((p) => <AppPlanCard key={p.id} plan={p} />)}
+        </div>
+        <div style={{ textAlign: 'center', marginTop: '36px' }}>
+          <a className="btn btn-primary btn-lg" href={APP_INSTALL} target="_blank" rel="noopener" style={{ textDecoration: 'none' }}>Install ShopFlix AI on Shopify &mdash; free</a>
+          <p className="mono" style={{ color: 'var(--faint)', fontSize: '12.5px', marginTop: '16px' }}>Billed monthly through Shopify &middot; cancel anytime &middot; <a href="/pricing" style={{ color: 'var(--accent)' }}>see full pricing &rarr;</a></p>
+        </div>
       </div>
     </section>);
 
@@ -840,14 +916,35 @@ function FinalCta({ onScan }) {
 
 }
 
+function VideoSection() {
+  return (
+    <section className="section section-alt" id="video">
+      <div className="wrap">
+        <div style={{ textAlign: 'center' }}>
+          <div className="kicker">See it in action</div>
+          <h2 className="h2">Everything ShopFlix AI does &mdash; in 30 seconds</h2>
+          <p className="sub" style={{ margin: '14px auto 0' }}>Fix Google Merchant Center suspensions, import products, find your real profit and launch Google Ads &mdash; all from one Shopify app.</p>
+        </div>
+        <div style={{ maxWidth: 980, margin: '48px auto 0', borderRadius: 18, overflow: 'hidden', border: '1px solid var(--line-strong)', boxShadow: '0 40px 90px -30px rgba(0,0,0,.7)' }}>
+          <video controls playsInline preload="metadata" poster="/web-assets/promo-poster.jpg" style={{ display: 'block', width: '100%', height: 'auto', background: '#060d1b' }}>
+            <source src="/web-assets/shopflix-promo.mp4" type="video/mp4" />
+          </video>
+        </div>
+      </div>
+    </section>);
+
+}
+
 function Landing({ t, onScan, onSelectPlan }) {
   const Hero = t.heroVariant === 'Split' ? HeroSplit : t.heroVariant === 'Command' ? HeroCommand : HeroRadar;
   return (
     <div data-screen-label="Landing page">
       <Hero onScan={onScan} />
+      <VideoSection />
       <HowItWorks />
       <WhatWeCheck />
       <PlansSection onSelectPlan={onSelectPlan} />
+      <AppPlansSection />
       <SampleReport />
       <AppPromo />
       <Testimonials />
@@ -1042,7 +1139,7 @@ function ScoreRing({ score, size = 150 }) {
 }
 
 /* ============ RESULTS (free preview) ============ */
-function ResultsScreen({ storeUrl, onUnlock, onRescan, data, toast }) {
+function ResultsScreen({ storeUrl, onUnlock, onRescan, onReopen, data, toast }) {
   // WIRING: render the live scan from /api/web-scan; loading + error states first.
   if (!data) {
     return (
@@ -1073,6 +1170,10 @@ function ResultsScreen({ storeUrl, onUnlock, onRescan, data, toast }) {
   const risk = data.riskLevel || (score < 60 ? 'High' : score < 80 ? 'Medium' : 'Low');
   const riskClass = risk === 'High' ? 'sev-high' : risk === 'Medium' ? 'sev-medium' : 'sev-low';
   const clean = totalIssues === 0;
+  // If the basic scan surfaced no more issues than we already show unblurred in the
+  // free preview, the Basic tier reveals nothing new (it only adds fix-text for those
+  // same issues) — drop it and offer only the deeper Advanced/Deep scans.
+  const unlockPlans = totalIssues <= freePreview.length ? PLANS.filter((p) => p.id !== 'basic') : PLANS;
 
   const scrollToPlans = () => { const el = document.getElementById('unlock'); if (el) el.scrollIntoView({ behavior: 'smooth' }); };
 
@@ -1092,6 +1193,17 @@ function ResultsScreen({ storeUrl, onUnlock, onRescan, data, toast }) {
   return (
     <div data-screen-label="Scan results (free preview)">
       <div className="wrap" style={{ padding: '32px 32px 90px' }}>
+        {/* Cross-device reopen: a paid store opened where the visitor isn't recognized —
+            offer the recovery key instead of asking them to pay again. */}
+        {data.paid && !data.owned ? (
+          <div className="card" style={{ marginBottom: '24px', border: '1px solid rgba(65,198,238,0.4)', background: 'rgba(65,198,238,0.08)', display: 'flex', gap: '14px', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'space-between' }}>
+            <div style={{ flex: 1, minWidth: '240px' }}>
+              <h3 style={{ fontSize: '16px', fontWeight: 700 }}>This store&rsquo;s full report is already unlocked</h3>
+              <p style={{ color: 'var(--muted)', fontSize: '13.5px', marginTop: '4px' }}>You&rsquo;ve already paid for <strong style={{ color: 'var(--text)' }}>{storeUrl}</strong> on another device or browser. Reopen the full report with your recovery key &mdash; no second payment.</p>
+            </div>
+            <button className="btn btn-primary" onClick={onReopen} style={{ flexShrink: 0 }}><Icons.lock size={14} /> Reopen with recovery key</button>
+          </div>
+        ) : null}
         {/* summary card with the report header integrated (store + score in one place) */}
         <div className="card" style={{ marginBottom: '32px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '12px' }}>
@@ -1144,10 +1256,12 @@ function ResultsScreen({ storeUrl, onUnlock, onRescan, data, toast }) {
           </div>
         ))}
 
-        {/* upsell — ALWAYS shown (even with 0/1/2 issues) to drive Deep Scan revenue */}
-        <div style={{ position: 'relative', marginTop: '14px' }}>
-          <div aria-hidden="true">
-            {ALL_ISSUES.filter((i) => !FREE_PREVIEW.includes(i)).slice(0, 5).map((iss, i) => (
+        {/* upsell — ALWAYS shown (even with 0/1/2 issues) to drive Deep Scan revenue.
+            Compact: a faint blurred teaser sits BEHIND the message (absolute), so the
+            section is only as tall as the message itself — no empty space top/bottom. */}
+        <div style={{ position: 'relative', marginTop: '14px', borderRadius: '14px', overflow: 'hidden', border: '1px solid var(--line)' }}>
+          <div aria-hidden="true" style={{ position: 'absolute', inset: 0, padding: '12px', opacity: 0.5 }}>
+            {ALL_ISSUES.filter((i) => !FREE_PREVIEW.includes(i)).slice(0, 3).map((iss, i) => (
               <div key={i} className="issue issue-locked" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '9px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
                   <span className={'sev sev-' + iss.sev.toLowerCase()}>{iss.sev}</span>
@@ -1158,25 +1272,23 @@ function ResultsScreen({ storeUrl, onUnlock, onRescan, data, toast }) {
               </div>
             ))}
           </div>
-          <div style={{ position: 'absolute', inset: '-6px', background: 'linear-gradient(180deg, rgba(6,13,27,0.30), rgba(6,13,27,0.93) 70%)', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '14px' }}>
-            <div style={{ textAlign: 'center', padding: '24px', maxWidth: '460px' }}>
-              <div style={{ width: '52px', height: '52px', borderRadius: '14px', background: 'rgba(232,155,60,0.14)', border: '1px solid rgba(232,155,60,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--amber)', margin: '0 auto 16px' }}>
-                <Icons.lock size={24} />
-              </div>
-              <h3 style={{ fontSize: '22px', fontWeight: 700, lineHeight: 1.25 }}>
-                {lockedCount > 0
-                  ? lockedCount + ' more issue' + (lockedCount === 1 ? '' : 's') + ' to unlock'
-                  : 'Go deeper than the free scan'}
-              </h3>
-              <p style={{ color: 'var(--muted)', fontSize: '14.5px', marginTop: '8px' }}>
-                {lockedCount > 0
-                  ? 'Unlock the full report with step-by-step fixes for every issue — plus a Deep Scan of your product feed, images and misrepresentation signals that Google reviews.'
-                  : 'Your free preview looks light — but a Deep Scan checks your product feed (GTINs, pricing), images and misrepresentation signals that get products disapproved even when your storefront looks clean.'}
-              </p>
-              <button className="btn btn-amber" style={{ marginTop: '18px' }} onClick={scrollToPlans}>
-                <Icons.bolt size={14} /> Unlock the full report
-              </button>
+          <div style={{ position: 'relative', background: 'linear-gradient(180deg, rgba(6,13,27,0.62), rgba(6,13,27,0.92))', textAlign: 'center', padding: '24px 22px' }}>
+            <div style={{ width: '46px', height: '46px', borderRadius: '13px', background: 'rgba(232,155,60,0.14)', border: '1px solid rgba(232,155,60,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--amber)', margin: '0 auto 12px' }}>
+              <Icons.lock size={21} />
             </div>
+            <h3 style={{ fontSize: '21px', fontWeight: 700, lineHeight: 1.25 }}>
+              {lockedCount > 0
+                ? lockedCount + ' more issue' + (lockedCount === 1 ? '' : 's') + ' to unlock'
+                : 'Go deeper than the free scan'}
+            </h3>
+            <p style={{ color: 'var(--muted)', fontSize: '14.5px', marginTop: '7px', maxWidth: '460px', marginLeft: 'auto', marginRight: 'auto' }}>
+              {lockedCount > 0
+                ? 'Unlock the full report with step-by-step fixes for every issue — plus a Deep Scan of your product feed, images and misrepresentation signals that Google reviews.'
+                : 'Your free preview looks light — but a Deep Scan checks your product feed (GTINs, pricing), images and misrepresentation signals that get products disapproved even when your storefront looks clean.'}
+            </p>
+            <button className="btn btn-amber" style={{ marginTop: '16px' }} onClick={scrollToPlans}>
+              <Icons.bolt size={14} /> Unlock the full report
+            </button>
           </div>
         </div>
 
@@ -1189,8 +1301,8 @@ function ResultsScreen({ storeUrl, onUnlock, onRescan, data, toast }) {
             <h2 style={{ fontSize: '26px', fontWeight: 700, letterSpacing: '-0.02em' }}>Unlock your full report</h2>
             <p style={{ color: 'var(--muted)', marginTop: '8px' }}>One-time payment. Full fix instructions for every issue.</p>
           </div>
-          <div className="grid-3" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', alignItems: 'stretch' }}>
-            {PLANS.map((p) => (
+          <div className="grid-3" style={{ display: 'grid', gridTemplateColumns: 'repeat(' + unlockPlans.length + ', 1fr)', gap: '20px', alignItems: 'stretch', maxWidth: unlockPlans.length < 3 ? '760px' : undefined, marginLeft: 'auto', marginRight: 'auto' }}>
+            {unlockPlans.map((p) => (
               <PlanCard key={p.id} plan={p} compact cta={'Unlock for $' + p.price} onSelect={onUnlock} />
             ))}
           </div>
@@ -1276,6 +1388,49 @@ function AuthModal({ plan, onClose, onAuthed }) {
   );
 }
 
+/* ============ REOPEN (recovery key) MODAL — passwordless ============ */
+function RecoverModal({ onClose, onRecovered }) {
+  const [token, setToken] = useStateF('');
+  const [busy, setBusy] = useStateF(false);
+  const [err, setErr] = useStateF('');
+  const submit = () => {
+    const t = token.trim();
+    if (t.length < 8) { setErr('Enter the recovery key from your purchase.'); return; }
+    setBusy(true); setErr('');
+    fetch('/api/web-recover', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: t }) })
+      .then((r) => r.json())
+      .then((d) => { setBusy(false); if (d && d.ok) onRecovered(d); else setErr((d && d.error) || 'Invalid or unknown recovery key.'); })
+      .catch(() => { setBusy(false); setErr('Network error. Try again.'); });
+  };
+  return (
+    <div className="overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="modal" data-screen-label="Reopen report modal">
+        <button className="modal-x" onClick={onClose} aria-label="Close">&times;</button>
+        <div style={{ textAlign: 'center', marginBottom: '24px' }}>
+          <img src={(window.__resources || {}).logoImg || "assets/logo.png"} alt="" style={{ width: '44px', height: '44px', borderRadius: '12px', margin: '0 auto 14px' }} />
+          <h2 style={{ fontSize: '21px', fontWeight: 700 }}>Reopen your report</h2>
+          <p style={{ color: 'var(--muted)', fontSize: '14px', marginTop: '6px' }}>
+            Paste the recovery key from your purchase confirmation (or receipt email) to reopen your paid report &mdash; no password needed.
+          </p>
+        </div>
+        <div className="field">
+          <label>Recovery key</label>
+          <input type="text" placeholder="SFX-…" value={token} autoFocus autoComplete="off" spellCheck={false}
+            onChange={(e) => { setToken(e.target.value); if (err) setErr(''); }}
+            onKeyDown={(e) => { if (e.key === 'Enter') submit(); }} />
+        </div>
+        {err ? <p style={{ color: 'var(--red)', fontSize: '13px', margin: '-4px 0 10px' }}>{err}</p> : null}
+        <button className="btn btn-primary btn-block" onClick={submit} disabled={busy || token.trim().length < 8}>
+          {busy ? 'Reopening…' : 'Reopen my report'}
+        </button>
+        <p style={{ textAlign: 'center', fontSize: '11.5px', color: 'var(--faint)', marginTop: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+          <Icons.lock size={12} /> No password &mdash; your key is the secure access code
+        </p>
+      </div>
+    </div>
+  );
+}
+
 /* ============ CHECKOUT ============ */
 function fmtCard(v) { return v.replace(/\D/g, '').slice(0, 16).replace(/(\d{4})(?=\d)/g, '$1 '); }
 function loadRazorpay() {
@@ -1292,10 +1447,13 @@ function CheckoutScreen({ plan, storeUrl, email, scanId, onPaid, onBack }) {
   const [busy, setBusy] = useStateF(false);
   const [err, setErr] = useStateF('');
   const [soon, setSoon] = useStateF('');
+  const [em, setEm] = useStateF(email || '');
+  const emailValid = /^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/.test(em.trim());
   const pay = async () => {
+    if (!emailValid) { setErr('Please enter a valid email for your receipt.'); return; }
     setBusy(true); setErr(''); setSoon('');
     try {
-      const order = await fetch('/api/web-pay', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ intent: 'create', planId: plan.id, scanId }) }).then((r) => r.json());
+      const order = await fetch('/api/web-pay', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ intent: 'create', planId: plan.id, scanId, email: em.trim().toLowerCase() }) }).then((r) => r.json());
       if (!order || !order.ok) {
         if (order && order.configured === false) { setSoon(order.error); setBusy(false); return; }
         setErr((order && order.error) || 'Could not start checkout.'); setBusy(false); return;
@@ -1305,13 +1463,13 @@ function CheckoutScreen({ plan, storeUrl, email, scanId, onPaid, onBack }) {
       const rzp = new window.Razorpay({
         key: order.keyId, order_id: order.orderId, amount: order.amount, currency: order.currency,
         name: 'ShopFlix AI', description: order.planName + ' report — ' + storeUrl,
-        prefill: { email: order.email || email },
+        prefill: { email: order.email || em.trim().toLowerCase() },
         theme: { color: '#41c6ee' },
         modal: { ondismiss: () => setBusy(false) },
         handler: (resp) => {
           fetch('/api/web-pay', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ intent: 'verify', planId: plan.id, scanId, razorpay_order_id: resp.razorpay_order_id, razorpay_payment_id: resp.razorpay_payment_id, razorpay_signature: resp.razorpay_signature }) })
             .then((r) => r.json())
-            .then((v) => { setBusy(false); if (v && v.ok) onPaid(v.recoveryToken); else setErr((v && v.error) || 'Payment could not be verified.'); })
+            .then((v) => { setBusy(false); if (v && v.ok) onPaid(v.recoveryToken, em.trim().toLowerCase()); else setErr((v && v.error) || 'Payment could not be verified.'); })
             .catch(() => { setBusy(false); setErr('Verification failed. If charged, contact support.'); });
         },
       });
@@ -1324,7 +1482,6 @@ function CheckoutScreen({ plan, storeUrl, email, scanId, onPaid, onBack }) {
       <div className="wrap" style={{ position: 'relative', maxWidth: '920px', padding: '56px 32px 90px' }}>
         <div className="steps-rail" style={{ justifyContent: 'center', marginBottom: '44px' }}>
           <span className="st done"><Icons.check size={13} sw={2.6} /> Scan</span><span className="sep"></span>
-          <span className="st done"><Icons.check size={13} sw={2.6} /> Account</span><span className="sep"></span>
           <span className="st on">&#9656; Payment</span><span className="sep"></span>
           <span className="st">Full report</span>
         </div>
@@ -1334,6 +1491,13 @@ function CheckoutScreen({ plan, storeUrl, email, scanId, onPaid, onBack }) {
             <p style={{ color: 'var(--muted)', fontSize: '14px', marginBottom: '22px' }}>
               You'll pay securely via Razorpay (cards, UPI, netbanking & wallets). Your report unlocks instantly after payment.
             </p>
+            <div className="field" style={{ marginBottom: '20px' }}>
+              <label>Email &mdash; for your receipt &amp; report access</label>
+              <input type="email" placeholder="you@store.com" value={em} autoComplete="email" inputMode="email" autoFocus
+                onChange={(e) => { setEm(e.target.value); if (err) setErr(''); }}
+                onKeyDown={(e) => { if (e.key === 'Enter' && emailValid && !busy) pay(); }} />
+              <p style={{ color: 'var(--faint)', fontSize: '12px', margin: '6px 0 0' }}>No account or password needed — we email your receipt &amp; a recovery key to reopen the report.</p>
+            </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '20px' }}>
               {['Full fix instructions for every issue', 'Compliance score & severity breakdown', 'Downloadable report', 'One-time payment \u2014 no subscription'].map((f) => (
                 <div key={f} style={{ display: 'flex', gap: '10px', alignItems: 'center', fontSize: '14px', color: 'var(--muted)' }}>
@@ -1341,7 +1505,7 @@ function CheckoutScreen({ plan, storeUrl, email, scanId, onPaid, onBack }) {
                 </div>
               ))}
             </div>
-            <button className="btn btn-primary btn-block btn-lg" onClick={pay} disabled={busy} style={{ marginTop: '4px' }}>
+            <button className="btn btn-primary btn-block btn-lg" onClick={pay} disabled={busy || !emailValid} style={{ marginTop: '4px' }}>
               {busy ? 'Opening secure checkout\u2026' : 'Pay $' + plan.price + ' & unlock report'}
             </button>
             {err ? <p style={{ color: 'var(--red)', fontSize: '13px', textAlign: 'center', marginTop: '12px' }}>{err}</p> : null}
@@ -1387,18 +1551,50 @@ function FullReport({ plan, storeUrl, scanId, recoveryToken, onUpgrade, onRescan
   const ownedTier = TIER_ORDER[plan.id];
   const [open, setOpen] = useStateF(null);
   const [rep, setRep] = useStateF(null); // WIRING: real report from /api/web-report
+  const [scanState, setScanState] = useStateF(null); // COMPLETE | PROCESSING | PENDING | FAILED
+  const [rescanNonce, setRescanNonce] = useStateF(0);
+  const [rescanning, setRescanning] = useStateF(false);
   useEffectF(() => {
     if (!scanId) return;
-    fetch('/api/web-report?scanId=' + encodeURIComponent(scanId))
+    let stop = false; let n = 0; let timer = null;
+    const poll = () => {
+      fetch('/api/web-report?scanId=' + encodeURIComponent(scanId))
+        .then((r) => r.json())
+        .then((d) => {
+          if (stop) return;
+          if (d && d.ok) { setRep(d); setScanState(d.scanStatus || 'COMPLETE'); }
+          const st = d && d.scanStatus;
+          n += 1;
+          // Keep polling while the paid deeper scan is still running (or self-healing).
+          if ((st === 'PROCESSING' || st === 'PENDING' || st === 'FAILED') && n < 40) timer = setTimeout(poll, 5000);
+        })
+        .catch(() => { n += 1; if (!stop && n < 40) timer = setTimeout(poll, 7000); });
+    };
+    poll();
+    return () => { stop = true; if (timer) clearTimeout(timer); };
+  }, [scanId, rescanNonce]);
+  const processing = scanState === 'PROCESSING' || scanState === 'PENDING' || scanState === 'FAILED';
+  const loading = !rep || processing;
+  // Re-run the owned tier's scan (e.g. after fixing issues) — always available.
+  const rerun = () => {
+    if (rescanning || processing) return;
+    setRescanning(true);
+    fetch('/api/web-rescan', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scanId }) })
       .then((r) => r.json())
-      .then((d) => { if (d && d.ok) setRep(d); })
-      .catch(() => {});
-  }, [scanId]);
-  const loading = !rep;
+      .then((d) => {
+        setRescanning(false);
+        if (d && d.ok) { setScanState('PROCESSING'); setRescanNonce((n) => n + 1); toast('Re-running your ' + plan.name + '…'); }
+        else { toast((d && d.error) || 'Could not start the re-scan.'); }
+      })
+      .catch(() => { setRescanning(false); toast('Could not start the re-scan.'); });
+  };
+  // From a plan card: re-run for free if they already own that tier (or higher), else upgrade.
+  const onPlanSelect = (id) => { if (TIER_ORDER[id] <= ownedTier) rerun(); else onUpgrade(id); };
   const repScore = (rep && rep.score != null) ? rep.score : 0;
   const repRisk = (rep && rep.riskLevel) || (repScore < 60 ? 'High' : repScore < 80 ? 'Medium' : 'Low');
   const repRiskClass = repRisk === 'High' ? 'sev-high' : repRisk === 'Medium' ? 'sev-medium' : 'sev-low';
   const repHigh = (rep && rep.highCount) || 0;
+  const repProducts = (rep && rep.productsScanned) || 0;
   // Build categories ONLY from the real report. Never fall back to the mock
   // SCAN_CATEGORIES here — that catalog is for the marketing/landing surfaces only.
   let cats = [];
@@ -1429,7 +1625,8 @@ function FullReport({ plan, storeUrl, scanId, recoveryToken, onUpgrade, onRescan
             </div>
             <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
               <button className="btn btn-ghost btn-sm" onClick={downloadPdf}><Icons.download size={14} /> Download PDF</button>
-              <button className="btn btn-ghost btn-sm" onClick={onRescan}><Icons.search size={14} /> New scan</button>
+              <button className="btn btn-ghost btn-sm" onClick={rerun} disabled={rescanning || processing}><Icons.search size={14} /> {rescanning || processing ? 'Scanning…' : 'Re-scan this store'}</button>
+              <button className="btn btn-ghost btn-sm" onClick={onRescan}><Icons.search size={14} /> Scan another</button>
             </div>
           </div>
         </div>
@@ -1441,36 +1638,59 @@ function FullReport({ plan, storeUrl, scanId, recoveryToken, onUpgrade, onRescan
             <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
               <span style={{ color: 'var(--accent)', flexShrink: 0 }}><Icons.check size={18} /></span>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <h3 style={{ fontSize: '15px', fontWeight: 700, marginBottom: '4px' }}>Your report is saved</h3>
-                <p style={{ color: 'var(--muted)', fontSize: '13px', margin: 0 }}>
-                  This paid report is stored against <strong style={{ color: 'var(--text)' }}>{storeUrl}</strong>. To reopen it anytime, just sign in with this email and enter your store URL again — no second payment, nothing to remember. Razorpay has emailed your receipt.
+                <h3 style={{ fontSize: '15px', fontWeight: 700, marginBottom: '4px' }}>Your report is saved &mdash; here&rsquo;s your recovery key</h3>
+                <p style={{ color: 'var(--muted)', fontSize: '13px', margin: '0 0 10px' }}>
+                  To reopen your full report for <strong style={{ color: 'var(--text)' }}>{storeUrl}</strong> anytime, just enter your store URL again &mdash; you&rsquo;ll go straight back to it. No account, no password, no second payment. Razorpay has emailed your receipt. (Switching device or browser? Keep the recovery key below.)
                 </p>
+                <code className="mono" style={{ display: 'inline-block', userSelect: 'all', background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: '8px', padding: '8px 12px', fontSize: '13px', color: 'var(--accent)', wordBreak: 'break-all' }}>{recoveryToken}</code>
               </div>
             </div>
           </div>
         ) : null}
+
         {loading ? (
           <div style={{ padding: '70px 0', textAlign: 'center' }}>
             <div className="radar" style={{ width: '70px', height: '70px', margin: '0 auto 18px' }}><div className="radar-sweep"></div></div>
-            <p style={{ color: 'var(--muted)' }}>Loading your full report&hellip;</p>
+            <p style={{ fontSize: '17px', fontWeight: 600 }}>{processing ? 'Running your ' + plan.name + '…' : 'Loading your full report…'}</p>
+            {processing ? (
+              <p style={{ color: 'var(--muted)', fontSize: '14px', marginTop: '8px', maxWidth: '460px', marginLeft: 'auto', marginRight: 'auto' }}>
+                We&rsquo;re scanning <span className="mono" style={{ color: 'var(--accent)' }}>{storeUrl}</span> against the {plan.name} checks. This can take up to a minute &mdash; you can safely close this tab and come back; we&rsquo;ll keep scanning and your full report will be saved here.
+              </p>
+            ) : null}
           </div>
         ) : (
         <React.Fragment>
-        <div className="card" style={{ display: 'flex', gap: '36px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '40px' }}>
-          <ScoreRing score={repScore} size={120} />
-          <div style={{ flex: 1, minWidth: '240px' }}>
-            <span className={'sev ' + repRiskClass} style={{ fontSize: '12px', padding: '5px 12px' }}>{repRisk} suspension risk</span>
-            <p style={{ color: 'var(--muted)', fontSize: '14.5px', marginTop: '10px', maxWidth: '520px' }}>
-              {repHigh > 0
-                ? <>Fix the high-severity issues first &mdash; they&rsquo;re the ones Google&rsquo;s automated review treats as suspension triggers. Re-scan after fixing to watch your score climb.</>
-                : cats.length === 0
-                  ? <>Your storefront passes the Basic Google Merchant Center compliance checks &mdash; no blocking store-level issues found. Re-scan anytime to stay ahead of policy changes.</>
-                  : <>Work through the issues below and re-scan after fixing to watch your compliance score climb.</>}
-            </p>
+        <div className="card" style={{ marginBottom: '40px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap', marginBottom: '22px' }}>
+            <span className="chip" style={{ borderColor: 'rgba(52,211,153,0.4)', color: 'var(--green)' }}><Icons.check size={12} sw={2.6} /> {plan.name} report</span>
+            <a className="btn btn-amber" href={APP_INSTALL_URL} target="_blank" rel="noopener">
+              <Icons.bolt size={15} /> Auto-fix with the Shopify app
+            </a>
           </div>
-          <a className="btn btn-amber" href={APP_INSTALL_URL} target="_blank" rel="noopener">
-            <Icons.bolt size={15} /> Auto-fix with the Shopify app
-          </a>
+          <div style={{ display: 'flex', gap: '36px', alignItems: 'center', flexWrap: 'wrap' }}>
+            <ScoreRing score={repScore} size={120} />
+            <div style={{ flex: 1, minWidth: '220px' }}>
+              <span className={'sev ' + repRiskClass} style={{ fontSize: '12px', padding: '5px 12px' }}>{repRisk} suspension risk</span>
+              <p style={{ color: 'var(--muted)', fontSize: '14.5px', marginTop: '10px', maxWidth: '520px' }}>
+                {repHigh > 0
+                  ? <>Fix the high-severity issues first &mdash; they&rsquo;re the ones Google&rsquo;s automated review treats as suspension triggers. Re-scan after fixing to watch your score climb.</>
+                  : cats.length === 0
+                    ? <>Your storefront passes the Basic Google Merchant Center compliance checks &mdash; no blocking store-level issues found. Re-scan anytime to stay ahead of policy changes.</>
+                    : <>Work through the issues below and re-scan after fixing to watch your compliance score climb.</>}
+              </p>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, auto)', gap: '14px 36px' }}>
+              {[['Issues found', String(rep && rep.totalIssues != null ? rep.totalIssues : cats.reduce((n, c) => n + c.issues.length, 0))], ['High severity', String(repHigh)]]
+                .concat(repProducts > 0 ? [['Products scanned', repProducts.toLocaleString()]] : [])
+                .concat([['Scan tier', plan.name.replace(' Scan', '')]])
+                .map(([k, v]) => (
+                  <div key={k}>
+                    <div className="mono" style={{ fontSize: '11px', color: 'var(--faint)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{k}</div>
+                    <div style={{ fontSize: '24px', fontWeight: 700 }}>{v}</div>
+                  </div>
+                ))}
+            </div>
+          </div>
         </div>
 
         {cats.length === 0 ? (
@@ -1544,6 +1764,25 @@ function FullReport({ plan, storeUrl, scanId, recoveryToken, onUpgrade, onRescan
         })}
 
         <AppUpsell style={{ marginTop: '8px' }} />
+
+        {/* Scan packages — LAST section (mirrors the first scan): re-run the tier you
+            own (free) or upgrade to a deeper tier. */}
+        <div id="unlock" className="card" style={{ marginTop: '40px', border: '1px solid rgba(232,155,60,0.30)', background: 'rgba(232,155,60,0.05)' }}>
+          <h3 style={{ fontSize: '17px', fontWeight: 700 }}>Re-run this scan or go deeper</h3>
+          <p style={{ color: 'var(--muted)', fontSize: '13.5px', marginTop: '4px', marginBottom: '18px', maxWidth: '640px' }}>
+            Re-run the tier you own anytime &mdash; free &mdash; to confirm your fixes, or upgrade for deeper product-feed and misrepresentation checks.
+          </p>
+          <div className="grid-3" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '20px', alignItems: 'stretch' }}>
+            {PLANS.filter((p) => p.id !== 'basic').map((p) => {
+              const owns = TIER_ORDER[p.id] <= ownedTier;
+              return (
+                <PlanCard key={p.id} plan={p} compact
+                  cta={owns ? ((rescanning || processing) ? 'Scanning…' : 'Re-run scan — included') : ('Upgrade for $' + p.price)}
+                  onSelect={onPlanSelect} />
+              );
+            })}
+          </div>
+        </div>
         </React.Fragment>
         )}
       </div>
@@ -1626,6 +1865,7 @@ function App() {
       .then((r) => r.json())
       .then((d) => {
         setScan(d || { ok: false, error: 'Scan failed. Please try again.' });
+        if (d && d.ok) fireConversion('scan'); // WIRING: Google Ads — a store scan completed
         if (d && d.ok && d.alreadyScanned) {
           // This store was scanned before — serve the stored result straight from
           // the database instead of replaying the (multi-second) scan animation.
@@ -1655,39 +1895,22 @@ function App() {
   };
 
   const unlockPlan = (id) => {
-    setAuthFor(id);
-    if (email) {
-      // already logged in -> straight to checkout
-      setPlanId(id); LS.set('plan', id);
-      setAuthFor(null);
-      go('checkout');
-    }
+    // No account/login required — the buyer's email is captured on the checkout screen.
+    setPlanId(id); LS.set('plan', id);
+    go('checkout');
   };
 
-  const handleAuthed = (em) => {
-    setEmail(em);
-    const planPending = authFor;
-    setAuthFor(null); setSignIn(false);
-    if (planPending) {
-      // Came from "unlock a plan" → continue to checkout.
-      setPlanId(planPending);
-      go('checkout');
-      return;
-    }
-    // Standalone sign-in → if the current store URL is one they already paid for,
-    // reopen the saved report straight from the database.
-    const url = LS.get('url', '');
-    if (!url) { toast('Signed in'); return; }
-    fetch('/api/web-scan', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url }) })
-      .then((r) => r.json())
-      .then((d) => {
-        if (d && d.ok) {
-          setScan(d);
-          if (d.owned) { setPlanId(d.paidTier || 'basic'); go('report'); toast('Welcome back — opening your saved report.'); }
-          else { toast('Signed in'); }
-        } else { toast('Signed in'); }
-      })
-      .catch(() => toast('Signed in'));
+  // Passwordless reopen: redeem the recovery key issued at purchase. /api/web-recover
+  // validates the key (HMAC match), re-runs the scan and re-auths the session.
+  const handleRecovered = (d) => {
+    setSignIn(false);
+    if (!d || !d.scanId) { toast('Could not reopen the report.'); return; }
+    if (d.storeUrl) { setStoreUrl(d.storeUrl); LS.set('url', d.storeUrl); }
+    if (d.planId) { setPlanId(d.planId); LS.set('plan', d.planId); }
+    setScan({ ok: true, scanId: d.scanId, owned: true, paidTier: d.planId, storeUrl: d.storeUrl });
+    setRecoveryToken(null);
+    go('report');
+    toast('Welcome back — opening your saved report.');
   };
 
   const upgradeFromReport = (tierId) => {
@@ -1699,6 +1922,14 @@ function App() {
 
   const openSignIn = () => { setAuthFor(null); setSignIn(true); };
 
+  // Footer/section links must work from ANY route: jump to the landing page (where the
+  // #how/#checks/#plans sections live), then smooth-scroll to the target section.
+  const goToSection = (id) => {
+    const doScroll = () => { const el = document.getElementById(id); if (el) el.scrollIntoView({ behavior: 'smooth' }); };
+    if (route === 'landing') { doScroll(); }
+    else { go('landing'); setTimeout(doScroll, 400); }
+  };
+
   return (
     <div style={{ '--accent': t.accent, minHeight: '100vh', display: 'flex', flexDirection: 'column' }} className={t.gridTexture ? '' : 'no-grid'}>
       <a id="top"></a>
@@ -1706,13 +1937,13 @@ function App() {
       <div style={{ flex: '1 0 auto', display: 'flex', flexDirection: 'column' }}>
         {route === 'landing' ? <Landing t={t} onScan={startScan} onSelectPlan={landingPlanSelect} /> : null}
         {route === 'scanning' ? <ScanningScreen storeUrl={storeUrl} fast={t.fastScan} ready={!!scan} onDone={() => go(scan && scan.owned ? 'report' : 'results')} /> : null}
-        {route === 'results' ? <ResultsScreen storeUrl={storeUrl} onUnlock={unlockPlan} onRescan={rescan} data={scan} toast={toast} /> : null}
-        {route === 'checkout' ? <CheckoutScreen plan={plan} storeUrl={storeUrl} email={email || ''} scanId={scan && scan.scanId} onPaid={(tok) => { setRecoveryToken(tok || null); go('report'); }} onBack={() => go('results')} /> : null}
+        {route === 'results' ? <ResultsScreen storeUrl={storeUrl} onUnlock={unlockPlan} onRescan={rescan} onReopen={openSignIn} data={scan} toast={toast} /> : null}
+        {route === 'checkout' ? <CheckoutScreen plan={plan} storeUrl={storeUrl} email={email || ''} scanId={scan && scan.scanId} onPaid={(tok, em) => { if (em) { setEmail(em); LS.set('email', em); } setRecoveryToken(tok || null); fireConversion('purchase', { value: plan && plan.price, currency: 'USD', transaction_id: (scan && scan.scanId) || tok }); go('report'); }} onBack={() => go('results')} /> : null}
         {route === 'report' ? <FullReport plan={plan} storeUrl={storeUrl} scanId={scan && scan.scanId} recoveryToken={recoveryToken} onUpgrade={upgradeFromReport} onRescan={rescan} toast={toast} /> : null}
       </div>
-      {route === 'landing' || route === 'report' || route === 'results' ? <Footer /> : null}
+      {route === 'landing' || route === 'report' || route === 'results' ? <Footer onNav={goToSection} /> : null}
 
-      {(pendingPlan || signIn) && !email ? <AuthModal plan={pendingPlan || null} onClose={() => { setAuthFor(null); setSignIn(false); }} onAuthed={handleAuthed} /> : null}
+      {signIn ? <RecoverModal onClose={() => setSignIn(false)} onRecovered={handleRecovered} /> : null}
       {toastMsg ? <div className="toast">{toastMsg}</div> : null}
     </div>
   );

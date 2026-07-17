@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630"><title>Product Identifiers hero banner: GTIN, MPN and brand on Shopify</title>
+<defs>
+<linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#07101f"/><stop offset="1" stop-color="#0d1a30"/></linearGradient>
+<radialGradient id="glowC" cx="0.5" cy="0.5" r="0.5"><stop offset="0" stop-color="#41c6ee" stop-opacity="0.30"/><stop offset="1" stop-color="#41c6ee" stop-opacity="0"/></radialGradient>
+<radialGradient id="glowG" cx="0.5" cy="0.5" r="0.5"><stop offset="0" stop-color="#38d39a" stop-opacity="0.22"/><stop offset="1" stop-color="#38d39a" stop-opacity="0"/></radialGradient>
+<linearGradient id="bar" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#e9f0fa"/><stop offset="1" stop-color="#9fb2c9"/></linearGradient>
+</defs>
+<rect width="1200" height="630" fill="url(#bg)"/>
+<circle cx="980" cy="250" r="320" fill="url(#glowC)"/>
+<circle cx="240" cy="560" r="260" fill="url(#glowG)"/>
+<g fill="#25395a" opacity="0.5">
+<circle cx="80" cy="90" r="2.5"/><circle cx="140" cy="90" r="2.5"/><circle cx="200" cy="90" r="2.5"/><circle cx="80" cy="150" r="2.5"/><circle cx="140" cy="150" r="2.5"/><circle cx="200" cy="150" r="2.5"/><circle cx="80" cy="210" r="2.5"/><circle cx="140" cy="210" r="2.5"/><circle cx="200" cy="210" r="2.5"/>
+</g>
+<!-- Eyebrow -->
+<text x="100" y="250" font-family="Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="22" font-weight="700" letter-spacing="4" fill="#41c6ee">PRODUCT IDENTIFIERS</text>
+<!-- Thematic phrase -->
+<text x="98" y="338" font-family="Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="84" font-weight="800" fill="#e9f0fa">GTIN, MPN</text>
+<text x="98" y="430" font-family="Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="84" font-weight="800" fill="#e9f0fa">&amp; Brand</text>
+<text x="100" y="492" font-family="Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="24" font-weight="500" fill="#9fb2c9">The three unique product identifiers Google reads</text>
+<!-- Icon illustration: barcode + identifier tags -->
+<g transform="translate(800,170)">
+<rect x="0" y="0" width="320" height="290" rx="18" fill="#0e1c34" stroke="#25395a" stroke-width="1.5"/>
+<!-- barcode panel -->
+<rect x="32" y="34" width="256" height="120" rx="12" fill="#0a1526" stroke="#25395a" stroke-width="1"/>
+<g fill="url(#bar)">
+<rect x="52" y="56" width="6" height="62"/><rect x="64" y="56" width="3" height="62"/><rect x="73" y="56" width="9" height="62"/><rect x="88" y="56" width="4" height="62"/><rect x="98" y="56" width="6" height="62"/><rect x="110" y="56" width="3" height="62"/><rect x="119" y="56" width="11" height="62"/><rect x="136" y="56" width="4" height="62"/><rect x="146" y="56" width="6" height="62"/><rect x="158" y="56" width="9" height="62"/><rect x="173" y="56" width="3" height="62"/><rect x="182" y="56" width="6" height="62"/><rect x="194" y="56" width="4" height="62"/><rect x="204" y="56" width="10" height="62"/><rect x="220" y="56" width="3" height="62"/><rect x="229" y="56" width="6" height="62"/><rect x="241" y="56" width="9" height="62"/><rect x="256" y="56" width="4" height="62"/><rect x="266" y="56" width="6" height="62"/>
+</g>
+<text x="160" y="143" text-anchor="middle" font-family="Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="14" font-weight="600" letter-spacing="2" fill="#6b819c">8 12 13 14 DIGITS</text>
+<!-- identifier tag chips -->
+<g font-family="Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-weight="700" font-size="18">
+<rect x="32" y="180" width="80" height="44" rx="10" fill="#0a1526" stroke="#41c6ee" stroke-width="1.5"/>
+<text x="72" y="208" text-anchor="middle" fill="#41c6ee">GTIN</text>
+<rect x="124" y="180" width="80" height="44" rx="10" fill="#0a1526" stroke="#e89b3c" stroke-width="1.5"/>
+<text x="164" y="208" text-anchor="middle" fill="#e89b3c">MPN</text>
+<rect x="216" y="180" width="72" height="44" rx="10" fill="#0a1526" stroke="#38d39a" stroke-width="1.5"/>
+<text x="252" y="208" text-anchor="middle" fill="#38d39a">brand</text>
+</g>
+<text x="32" y="262" font-family="Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="14" font-weight="500" fill="#6b819c">Shopify Barcode field = the gtin attribute</text>
+</g>
+</svg>

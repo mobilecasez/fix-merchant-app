@@ -47,7 +47,12 @@ function CollectionsPanel({ credits }: { credits: number }) {
   const [msg, setMsg] = useState("");
   const [total, setTotal] = useState(0);
 
-  const keyOf = (g: string, c: any) => `${g}::${c.rule_field}::${c.rule_value}::${c.title}`;
+  const keyOf = (g: string, c: any) => `${g}::${c.title}::${(c.title_all || []).join("|")}::${c.product_type || ""}::${c.vendor || ""}`;
+  const ruleLabel = (c: any) => [
+    (c.title_all || []).length ? `title ∋ ${(c.title_all).join(" + ")}` : "",
+    c.product_type ? `type: ${c.product_type}` : "",
+    c.vendor ? `brand: ${c.vendor}` : "",
+  ].filter(Boolean).join(" · ");
 
   const suggest = async () => {
     setState("loading"); setMsg("");
@@ -80,7 +85,7 @@ function CollectionsPanel({ credits }: { credits: number }) {
     <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
       <div style={{ background: "#f0f9ff", border: "1px solid #7dd3fc", borderRadius: "10px", padding: "16px 20px" }}>
         <p style={{ margin: 0, fontSize: "14px", color: "#0c4a6e", lineHeight: 1.6 }}>
-          We read every product's <strong>tags, type and brand</strong>, then design a clean set of <strong>auto-updating smart collections</strong> (e.g. by category, gender, brand, phone model). New products that match a rule are added to the collection automatically — no manual sorting ever again.
+          Our AI reads <strong>every product title</strong> to identify the <strong>brand, model and category</strong> (e.g. "iPhone 15 Pro Max", "UAG", "Case"), then designs a rich set of <strong>auto-updating smart collections</strong> — by brand, device/model, category, material and more. New products that match are added automatically, so you never sort by hand again.
         </p>
       </div>
 
@@ -116,10 +121,8 @@ function CollectionsPanel({ credits }: { credits: number }) {
                       <span style={{ flex: 1 }}>
                         <span style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
                           <span style={{ fontSize: "13px", fontWeight: 700, color: "#212121" }}>{c.title}</span>
-                          <span style={{ fontSize: "10px", fontWeight: 700, color: "#6b7280", background: "#f3f4f6", border: "1px solid #e5e7eb", borderRadius: "4px", padding: "1px 6px" }}>
-                            {c.rule_field}: {c.rule_value}
-                          </span>
-                          {c.est_products ? <span style={{ fontSize: "11px", color: "#9ca3af" }}>~{c.est_products} products</span> : null}
+                          {typeof c.count === "number" ? <span style={{ fontSize: "10.5px", fontWeight: 700, color: "#166534", background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: "4px", padding: "1px 7px" }}>{c.count} products</span> : null}
+                          {ruleLabel(c) ? <span style={{ fontSize: "10px", fontWeight: 600, color: "#6b7280", background: "#f3f4f6", border: "1px solid #e5e7eb", borderRadius: "4px", padding: "1px 6px" }}>{ruleLabel(c)}</span> : null}
                         </span>
                         {c.description && <p style={{ margin: "2px 0 0 0", fontSize: "12px", color: "#6b7280" }}>{c.description}</p>}
                       </span>
@@ -214,12 +217,19 @@ function CrossSellPanel({ credits }: { credits: number }) {
   const [total, setTotal] = useState(0);
   const [msg, setMsg] = useState("");
   const [applied, setApplied] = useState<any>(null);
+  const [nextOffset, setNextOffset] = useState<number | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
 
-  const suggest = async () => {
-    setState("loading"); setMsg("");
-    const { ok, data } = await post("suggest_crosssell");
-    if (!ok) { setState("error"); setMsg(data.error || "Failed to analyse products."); return; }
-    setLinks(data.links || []); setTotal(data.totalProducts || 0); setState("ready");
+  const suggest = async (offset = 0, append = false) => {
+    if (append) setLoadingMore(true); else setState("loading");
+    setMsg("");
+    const { ok, data } = await post("suggest_crosssell", offset ? { offset } : {});
+    if (append) setLoadingMore(false);
+    if (!ok) { setMsg(data.error || "Failed to analyse products."); if (!append) setState("error"); return; }
+    setLinks((prev) => append ? [...prev, ...(data.links || [])] : (data.links || []));
+    setTotal(data.totalProducts || 0);
+    setNextOffset(typeof data.nextOffset === "number" ? data.nextOffset : null);
+    setState("ready");
   };
 
   const apply = async () => {
@@ -273,12 +283,18 @@ function CrossSellPanel({ credits }: { credits: number }) {
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: "14px", flexWrap: "wrap", borderTop: "1px solid #e5e7eb", paddingTop: "14px" }}>
                 {state !== "done" ? (
-                  <button className="feature-card-button" style={{ maxWidth: "280px" }} onClick={apply} disabled={state === "applying"}>
+                  <button className="feature-card-button" style={{ maxWidth: "280px" }} onClick={apply} disabled={state === "applying" || loadingMore}>
                     {state === "applying" ? "Saving to products…" : "💾 Apply Cross-Sell Links to All"}
                   </button>
                 ) : (
                   <span style={{ fontSize: "13px", fontWeight: 700, color: "#166534" }}>✓ {msg}</span>
                 )}
+                {nextOffset != null && state !== "applying" && (
+                  <button className="feature-card-button" style={{ maxWidth: "300px", background: "#fff", color: "#0369a1", border: "1.5px solid #7dd3fc" }} onClick={() => suggest(nextOffset, true)} disabled={loadingMore}>
+                    {loadingMore ? "Finding more…" : "➕ Find cross-sells for the next products"}
+                  </button>
+                )}
+                {msg && state !== "done" && <span style={{ fontSize: "12px", color: "#d72c0d" }}>{msg}</span>}
               </div>
 
               {/* One-click display setup after applying (Theme App Extension block) */}

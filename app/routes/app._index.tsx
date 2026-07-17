@@ -573,6 +573,54 @@ export default function Index() {
               </button>
             </Link>
           </div>
+
+          {/* Price Radar — per-product profit + AI Profit Advisor */}
+          <div className="feature-card">
+            <div className="feature-card-header">
+              <div className="feature-card-icon">💰</div>
+              <h3 className="feature-card-title">Price Radar &amp; Profit</h3>
+            </div>
+            <p className="feature-card-description">
+              See the real profit on every product — sessions, ad spend, shipping, RTO &amp; margin. The AI Profit Advisor screens 100% of your catalogue and builds an auto-updating best-sellers collection.
+            </p>
+            <Link to="/app/price-radar" style={{ textDecoration: 'none' }}>
+              <button className="feature-card-button">
+                Open Price Radar
+              </button>
+            </Link>
+          </div>
+
+          {/* AI Google Ads */}
+          <div className="feature-card">
+            <div className="feature-card-header">
+              <div className="feature-card-icon">🎯</div>
+              <h3 className="feature-card-title">AI Google Ads</h3>
+            </div>
+            <p className="feature-card-description">
+              Turn your profit report into an optimized Google Ads Performance Max plan — created paused for review, with money-losing and out-of-stock products excluded automatically.
+            </p>
+            <Link to="/app/ad-campaigns" style={{ textDecoration: 'none' }}>
+              <button className="feature-card-button">
+                Build Campaigns
+              </button>
+            </Link>
+          </div>
+
+          {/* Protect & Grow */}
+          <div className="feature-card">
+            <div className="feature-card-header">
+              <div className="feature-card-icon">🚀</div>
+              <h3 className="feature-card-title">Protect &amp; Grow</h3>
+            </div>
+            <p className="feature-card-description">
+              Keep an eye on your store with ongoing monitoring and proactive protection, and grow sales with merchandising and boost tools.
+            </p>
+            <Link to="/app/growth" style={{ textDecoration: 'none' }}>
+              <button className="feature-card-button">
+                Open Protect &amp; Grow
+              </button>
+            </Link>
+          </div>
         </div>
 
         {/* 5. Onboarding & Tutorial Card */}

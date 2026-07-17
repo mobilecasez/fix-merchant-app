@@ -1,0 +1,232 @@
+# ShopFlix AI prospect list — one Shopify store domain per line (https:// and www. optional).
+# Populate this from a Store Leads (storeleads.app), BuiltWith, or Commerce Inspector export.
+# Best-fit targets: small/medium stores, under ~1 year old. Filter your export first, then:
+#   node tools/prospect.cjs --max-age 365 --max-products 300
+mobilecasez.com
+trdst.co
+
+# --- Harvested 2026-06-24 via "Powered by Shopify" storefront fingerprint across 14 niches ---
+# NOT yet validated: confirm each is live + on Shopify + mid-segment with `node tools/prospect.cjs`.
+# A few may be false positives (mention "Shopify" without being a store, or too large/small).
+
+# home & decor
+thegoldentriangle.store
+furnisquare.com
+boconcept.com
+enamorardecor.com
+thepurpleturtles.com
+daamaira.com
+shophomeedition.com
+yellowverandah.in
+madewithspin.com
+thecraftroot.com
+thehomecostore.com
+home360stores.com
+
+# skincare & supplements
+minaturewellness.com
+skinluv.in
+anaayacosmetics.com
+theskincarelibrary.com
+organity.in
+beminimalist.co
+
+# pet supplies & jewelry
+pandajewelrystore.com
+wags4whiskers.com
+basilpetcare.com
+furelisepets.com
+bearhugsofficial.com
+emilypets.co
+petsnpets.com
+emmysbestpets.com
+lexandleviepetsupplies.com
+wuuffandmeow.com
+
+# coffee, candles & apparel
+theumbrellastore.in
+radlvng.com
+nookstore.in
+ekamonline.com
+thebrewcoffeeshop.ca
+classiccoffees.in
+
+# fitness & activewear
+silvertraq.com
+alcissports.com
+wodarmour.in
+bamboologytrends.com
+strch.com
+jolgeractive.com
+mikeydapparel.com
+
+# kitchen & cookware
+shopwithpraylady.com
+shopzira.in
+arttdinox.com
+kochenessential.com
+greenheirloom.in
+mycookwareshop.com
+nidhicookware.com
+zishta.com
+etbykayal.com
+
+# beauty & cosmetics
+houseofmakeup.com
+vt-cosmetics.in
+thebeautyworldstore.com
+colorbarcosmetics.com
+
+# baby, kids & toys
+allthingsbaby.com
+hopscotchstore.com
+samstoy.in
+shop-ourkids.com
+mmtoyworld.com
+dulaar.co
+viaanakidsstore.com
+
+# eco, sustainable & wellness
+yoursustainablestore.com
+qieco.com
+thesustainableshop.ca
+inbreathe.in
+naturessoulshop.com
+
+# fashion & clothing
+fugazee.com
+styleanny.in
+cossetclothing.com
+hypereffekt.com
+thecollectionindia.com
+aniclothing.in
+berrylush.com
+hookandeyeuk.com
+
+# shoes & footwear
+feetoesshoes.com
+delcoshoes.com
+zaydns.com
+dappershoes.in
+docsneakers.in
+nicheshoe.in
+
+# gifts, stationery & accessories
+isomarsshop.in
+originone.in
+topperskit.com
+thespringpalette.com
+bbag.in
+stationeryplug.com
+saikostationery.com
+gifthubmart.com
+
+# gourmet, snacks & tea
+udyantea.com
+celes-te.com
+makaibari.in
+khoyamithai.com
+thesnackcompany.in
+foodsmith.in
+chaayos.com
+mintritea.com
+
+# watches, bags & leather
+dharavimarket.com
+calonge-group.com
+karghaindia.in
+shopmistry.com
+theblackcanvas.in
+worldofwatchesindia.com
+myalmari.in
+perona.com
+
+# --- Harvested 2026-06-24 (batch 2, US/UK-weighted) ---
+# phone & tech accessories
+thebuzzatgreenhill.com
+heynezzie.com
+shopatthemix.com
+talentedfriendsboutique.com
+pgytech.com
+ohsnap.com
+spycentre.com
+
+# outdoor & camping
+backcountryessentials.net
+outdoorvitals.com
+hikerhunger.com
+fosteroutdoor.com
+gossamergear.com
+ridgeandriver.com
+walkaboutoutfitter.com
+minimalgear.com
+nextadventure.net
+
+# automotive & car accessories
+classicaccessories.com
+autofashion-usa.com
+loweredlifestyle.com
+partsvia.com
+dicksonsgiftshop.com
+oemcarpartsus.com
+
+# art prints & wall art
+mindflowers.shop
+catstudio.com
+ohanamoderndecor.com
+shutterandframe.com
+posterandframe.com
+sugarandcanvas.com
+wallartset.com
+shelfloveco.com
+artwise.co
+
+# eyewear & watches
+raen.com
+infiniteyewear.com
+opticnerve.com
+kohveyewear.com
+daxeyewear.com
+carveeyewear.com
+paradigmeyewear.com
+modo.com
+macv.in
+
+# yoga & wellness
+gaiam.com
+thegoodpatch.com
+tvlashop.com
+evewellness.com
+
+# handmade & ceramics (UK)
+shop.kettlesyard.co.uk
+maznash.com
+matthewjonesceramics.com
+beeshop.ltd
+
+# lingerie, swimwear & loungewear
+shopashleys.com
+tinasfinelingerie.com
+societylingerie.com
+felina.com
+topdrawerlingerie.com
+catriona.com
+louswim.com
+insidestory.ca
+
+# plants & garden
+greatgardenplants.com
+gabriellaplants.com
+pixiesgardens.com
+houseplantshop.com
+putaplantonit.shop
+junggardencenters.com
+
+# bakery, chocolate & gourmet
+thechocolateroombrooklyn.com
+mcfeelysgourmetchocolate.com
+nuuva.us
+vestachocolate.com
+bibamba.com
+mastmarket.com
+pennstatebakery.com

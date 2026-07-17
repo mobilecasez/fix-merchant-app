@@ -1,0 +1,88 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 600"><title>Rejected raw AliExpress listing versus approved differentiated listing</title>
+<defs>
+<linearGradient id="fpanel" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0e1c34"/><stop offset="1" stop-color="#0a1526"/></linearGradient>
+<radialGradient id="fglowR" cx="0.5" cy="0.5" r="0.5"><stop offset="0" stop-color="#ef6f6f" stop-opacity="0.16"/><stop offset="1" stop-color="#ef6f6f" stop-opacity="0"/></radialGradient>
+<radialGradient id="fglowG" cx="0.5" cy="0.5" r="0.5"><stop offset="0" stop-color="#38d39a" stop-opacity="0.16"/><stop offset="1" stop-color="#38d39a" stop-opacity="0"/></radialGradient>
+</defs>
+<rect width="1200" height="600" fill="#060d1b"/>
+<circle cx="250" cy="300" r="300" fill="url(#fglowR)"/>
+<circle cx="950" cy="300" r="300" fill="url(#fglowG)"/>
+
+<!-- ===== LEFT: REJECTED ===== -->
+<g transform="translate(60,70)">
+<rect x="0" y="0" width="440" height="470" rx="18" fill="url(#fpanel)" stroke="#25395a" stroke-width="1.5"/>
+<!-- header -->
+<circle cx="34" cy="40" r="15" fill="#0a1526" stroke="#ef6f6f" stroke-width="2"/>
+<path d="M28 34 L40 46 M40 34 L28 46" stroke="#ef6f6f" stroke-width="2.5" stroke-linecap="round"/>
+<text x="60" y="36" font-family="Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="21" font-weight="800" fill="#ef6f6f">DISAPPROVED</text>
+<text x="60" y="57" font-family="Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="15" font-weight="500" fill="#9fb2c9">Raw AliExpress import</text>
+<line x1="24" y1="78" x2="416" y2="78" stroke="#25395a" stroke-width="1"/>
+
+<!-- watermarked photo -->
+<rect x="24" y="96" width="160" height="160" rx="12" fill="#0a1526" stroke="#25395a" stroke-width="1.5"/>
+<rect x="68" y="138" width="72" height="56" rx="8" fill="none" stroke="#2a3f60" stroke-width="2.5"/>
+<text x="104" y="182" font-family="Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="17" font-weight="800" fill="#ef6f6f" opacity="0.6" text-anchor="middle" transform="rotate(-20 104 178)">WATERMARK</text>
+<text x="104" y="276" font-family="Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="13" font-weight="600" fill="#ef6f6f" text-anchor="middle">Watermarked photo</text>
+
+<!-- right column text faults -->
+<text x="204" y="116" font-family="Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="13" font-weight="700" letter-spacing="1" fill="#6b819c">TITLE</text>
+<rect x="204" y="126" width="212" height="9" rx="4.5" fill="#ef6f6f" opacity="0.5"/>
+<rect x="204" y="142" width="212" height="9" rx="4.5" fill="#ef6f6f" opacity="0.5"/>
+<rect x="204" y="158" width="150" height="9" rx="4.5" fill="#ef6f6f" opacity="0.5"/>
+<text x="204" y="189" font-family="Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="13" font-weight="600" fill="#ef6f6f">Keyword-stuffed, 200 chars</text>
+<text x="204" y="224" font-family="Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="13" font-weight="700" letter-spacing="1" fill="#6b819c">DESCRIPTION</text>
+<text x="204" y="248" font-family="Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="14" font-style="italic" fill="#9fb2c9">“Dear buyer…”</text>
+
+<!-- fault list -->
+<line x1="24" y1="288" x2="416" y2="288" stroke="#25395a" stroke-width="1"/>
+<g font-family="Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="16" fill="#e9f0fa">
+<g transform="translate(24,312)"><circle cx="9" cy="-5" r="9" fill="#0a1526" stroke="#ef6f6f" stroke-width="1.5"/><path d="M5 -9 L13 -1 M13 -9 L5 -1" stroke="#ef6f6f" stroke-width="2" stroke-linecap="round"/><text x="28" y="0">Machine-translated description</text></g>
+<g transform="translate(24,348)"><circle cx="9" cy="-5" r="9" fill="#0a1526" stroke="#ef6f6f" stroke-width="1.5"/><path d="M5 -9 L13 -1 M13 -9 L5 -1" stroke="#ef6f6f" stroke-width="2" stroke-linecap="round"/><text x="28" y="0">Emoji &amp; ALL CAPS spam</text></g>
+<g transform="translate(24,384)"><circle cx="9" cy="-5" r="9" fill="#0a1526" stroke="#ef6f6f" stroke-width="1.5"/><path d="M5 -9 L13 -1 M13 -9 L5 -1" stroke="#ef6f6f" stroke-width="2" stroke-linecap="round"/><text x="28" y="0">No correct identifiers</text></g>
+<g transform="translate(24,420)"><circle cx="9" cy="-5" r="9" fill="#0a1526" stroke="#ef6f6f" stroke-width="1.5"/><path d="M5 -9 L13 -1 M13 -9 L5 -1" stroke="#ef6f6f" stroke-width="2" stroke-linecap="round"/><text x="28" y="0">No trust signals</text></g>
+</g>
+</g>
+
+<!-- ===== ARROW ===== -->
+<g transform="translate(530,300)">
+<line x1="0" y1="0" x2="110" y2="0" stroke="#41c6ee" stroke-width="3.5" stroke-linecap="round"/>
+<path d="M98 -12 L116 0 L98 12" fill="none" stroke="#41c6ee" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="6" y="-26" width="104" height="30" rx="15" fill="#0a1526" stroke="#41c6ee" stroke-width="1.5" transform="translate(0,-30)"/>
+<text x="58" y="-44" font-family="Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="16" font-weight="700" fill="#41c6ee" text-anchor="middle">Differentiate</text>
+</g>
+
+<!-- ===== RIGHT: APPROVED ===== -->
+<g transform="translate(700,70)">
+<rect x="0" y="0" width="440" height="470" rx="18" fill="url(#fpanel)" stroke="#38d39a" stroke-width="1.5"/>
+<!-- header -->
+<circle cx="34" cy="40" r="15" fill="#0a1526" stroke="#38d39a" stroke-width="2"/>
+<path d="M27 40 l5 5 l9 -10" fill="none" stroke="#38d39a" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="60" y="36" font-family="Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="21" font-weight="800" fill="#38d39a">APPROVED</text>
+<text x="60" y="57" font-family="Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="15" font-weight="500" fill="#9fb2c9">Differentiated listing</text>
+<line x1="24" y1="78" x2="416" y2="78" stroke="#25395a" stroke-width="1"/>
+
+<!-- clean photo -->
+<rect x="24" y="96" width="160" height="160" rx="12" fill="#0a1526" stroke="#25395a" stroke-width="1.5"/>
+<rect x="62" y="134" width="84" height="62" rx="10" fill="none" stroke="#41c6ee" stroke-width="2.5"/>
+<circle cx="104" cy="165" r="14" fill="none" stroke="#41c6ee" stroke-width="2.5"/>
+<text x="104" y="232" font-family="Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="13" font-weight="600" fill="#38d39a" text-anchor="middle">Clean image, 800x800</text>
+
+<!-- right column clean text -->
+<text x="204" y="116" font-family="Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="13" font-weight="700" letter-spacing="1" fill="#6b819c">TITLE</text>
+<rect x="204" y="126" width="168" height="11" rx="5.5" fill="#e9f0fa"/>
+<text x="204" y="165" font-family="Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="13" font-weight="600" fill="#38d39a">Concise, 3–6 words</text>
+<text x="204" y="196" font-family="Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="13" font-weight="700" letter-spacing="1" fill="#6b819c">DESCRIPTION</text>
+<rect x="204" y="206" width="212" height="9" rx="4.5" fill="#2a3f60"/>
+<rect x="204" y="222" width="212" height="9" rx="4.5" fill="#2a3f60"/>
+<rect x="204" y="238" width="160" height="9" rx="4.5" fill="#2a3f60"/>
+
+<!-- approved list -->
+<line x1="24" y1="288" x2="416" y2="288" stroke="#25395a" stroke-width="1"/>
+<g font-family="Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="16" fill="#e9f0fa">
+<g transform="translate(24,312)"><circle cx="9" cy="-5" r="9" fill="#0a1526" stroke="#38d39a" stroke-width="1.5"/><path d="M4 -5 l4 4 l8 -9" fill="none" stroke="#38d39a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><text x="28" y="0">Rewritten in your own words</text></g>
+<g transform="translate(24,348)"><circle cx="9" cy="-5" r="9" fill="#0a1526" stroke="#38d39a" stroke-width="1.5"/><path d="M4 -5 l4 4 l8 -9" fill="none" stroke="#38d39a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><text x="28" y="0">No watermark or overlays</text></g>
+<g transform="translate(24,384)"><circle cx="9" cy="-5" r="9" fill="#0a1526" stroke="#38d39a" stroke-width="1.5"/><path d="M4 -5 l4 4 l8 -9" fill="none" stroke="#38d39a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><text x="28" y="0">Correct GTIN or identifier_exists</text></g>
+<g transform="translate(24,420)"><circle cx="9" cy="-5" r="9" fill="#0a1526" stroke="#38d39a" stroke-width="1.5"/><path d="M4 -5 l4 4 l8 -9" fill="none" stroke="#38d39a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><text x="28" y="0">Real trust signals on store</text></g>
+</g>
+</g>
+</svg>
